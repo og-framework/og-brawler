@@ -69,7 +69,6 @@ void SimulatableBrawler::integrate(
     const auto& attackBindings = m_physics.get<dAttackRadialSimulation::PhysicsDeclaration>().bindings;
     const auto& guardBindings  = m_physics.get<dAttackGuardSimulation::PhysicsDeclaration>().bindings;
 
-    if (dAttackMachineSimulation::MovementAndAimModeTest == 3)
     {
         auto deps = makeDependencies<dAttackMachineSimulation::Dependencies>(state);
         dAttackMachineSimulation::integrate3(dt,
