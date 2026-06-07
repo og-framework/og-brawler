@@ -13,6 +13,10 @@ const ActionDescriptor RightAttack { "RightAttack", ActionValueType::Boolean };
 const ActionDescriptor Jump        { "Jump",        ActionValueType::Boolean };
 const ActionDescriptor Look        { "Look",        ActionValueType::Axis2D };
 const ActionDescriptor BlockLook   { "BlockLook",   ActionValueType::Boolean };
+const ActionDescriptor HoldGuard   { "HoldGuard",   ActionValueType::Boolean };
+const ActionDescriptor SetSchemeCameraRelative  { "SetSchemeCameraRelative",  ActionValueType::Boolean };
+const ActionDescriptor SetSchemeAimRelative     { "SetSchemeAimRelative",     ActionValueType::Boolean };
+const ActionDescriptor SetSchemeMoveRelativeAim { "SetSchemeMoveRelativeAim", ActionValueType::Boolean };
 
 MappingContext buildDefaultContext()
 {
@@ -86,14 +90,49 @@ MappingContext buildDefaultContext()
 		ctx.actionMappings.push_back(std::move(mapping));
 	}
 
-	// BlockLook: Left Shift + Gamepad Left Trigger Axis
+	// BlockLook: Left Alt + Gamepad Left Trigger Axis
 	{
 		ActionMapping mapping;
 		mapping.action = &BlockLook;
 		mapping.bindings = {
-			{ KeyId::Key_LeftShift, KeyModifier::None },
+			{ KeyId::Key_LeftAlt, KeyModifier::None },
 			{ KeyId::Gamepad_LeftTriggerAxis, KeyModifier::None },
 		};
+		ctx.actionMappings.push_back(std::move(mapping));
+	}
+
+	// HoldGuard: Left Shift + Gamepad Left Bumper.
+	// Distinct physical inputs from BlockLook so the two semantics don't overlap on the
+	// same key — HoldGuard gates combat-stance behavior (freezes CMC movement so the
+	// character roots), while BlockLook owns cursor/mouse-aim suppression.
+	{
+		ActionMapping mapping;
+		mapping.action = &HoldGuard;
+		mapping.bindings = {
+			{ KeyId::Key_LeftShift, KeyModifier::None },
+			{ KeyId::Gamepad_LeftShoulder, KeyModifier::None },
+		};
+		ctx.actionMappings.push_back(std::move(mapping));
+	}
+
+	// Movement-scheme switch shortcuts: 7 = CameraRelative, 8 = AimRelative,
+	// 9 = MoveRelativeAim. Dev convenience for hot-swapping schemes in PIE.
+	{
+		ActionMapping mapping;
+		mapping.action = &SetSchemeCameraRelative;
+		mapping.bindings = { { KeyId::Key_7, KeyModifier::None } };
+		ctx.actionMappings.push_back(std::move(mapping));
+	}
+	{
+		ActionMapping mapping;
+		mapping.action = &SetSchemeAimRelative;
+		mapping.bindings = { { KeyId::Key_8, KeyModifier::None } };
+		ctx.actionMappings.push_back(std::move(mapping));
+	}
+	{
+		ActionMapping mapping;
+		mapping.action = &SetSchemeMoveRelativeAim;
+		mapping.bindings = { { KeyId::Key_9, KeyModifier::None } };
 		ctx.actionMappings.push_back(std::move(mapping));
 	}
 

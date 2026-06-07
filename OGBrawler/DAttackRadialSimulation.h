@@ -123,17 +123,27 @@ class DerivedState
 public:
 	DerivedState()
 		: attackHits(4)
+		, guardHits(4)
 	{}
 
 	DerivedState(const DerivedState& other)
 		: attackHits(other.attackHits)
+		, guardHits(other.guardHits)
 	{}
 
 	const std::vector<DAttackHit>& getAttackHits() const { return attackHits; }
 	std::vector<DAttackHit>& editAttackHits() { return attackHits; }
 
+	// Positions where the weapon intersected another character's guard during this
+	// attack. Recorded alongside hasHitGuard in integrate() and cleared at the same
+	// point as attackHits (firstResimStep / new attack sequence). Visualization renders
+	// these as blue spheres in dAttackRadialVisualization.
+	const std::vector<DAttackHit>& getGuardHits() const { return guardHits; }
+	std::vector<DAttackHit>& editGuardHits() { return guardHits; }
+
 private:
 	std::vector<DAttackHit> attackHits;
+	std::vector<DAttackHit> guardHits;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -435,6 +445,36 @@ void collisionCheck(float deltaSeconds,
 			const glm::vec3 collisionDirection = rootTranslation - collidingPosition;
 			const glm::vec3 normalizedCollisionDirection = glm::normalize(collisionDirection);
 
+			// Compute the indicator position on the attacker's weapon line. Two cases:
+			//   1. If the weapon line (rootTranslation + t * currentDirection) crosses the
+			//      opponent's inner circle, use the near intersection (entry side, closer
+			//      to the attacker). Math: quadratic t² + 2bt + c = 0 with b = dot(v, d),
+			//      c = |v|² - r², v = attacker - opponent; smaller root = -b - sqrt(...).
+			//   2. If the weapon line misses the inner circle (guard hits can register via
+			//      spatial overlap even when the weapon direction is off to one side), fall
+			//      back to the closest point on the weapon line to the opponent — the foot
+			//      of the perpendicular from opponent onto the line: t = dot(opponent - attacker, d).
+			// In both cases t is clamped to the visible weapon segment [0, outerRadius] so
+			// the indicator can never appear off the end of the blade or behind the attacker.
+			auto weaponHitIndicatorPosition = [&]() -> glm::vec3 {
+				const glm::vec2 weaponDirXY = glm::normalize(glm::vec2(currentDirection.x, currentDirection.y));
+				const glm::vec2 attackerXY(rootTranslation.x, rootTranslation.y);
+				const glm::vec2 opponentXY(hit.objectPosition.x, hit.objectPosition.y);
+				const glm::vec2 v = attackerXY - opponentXY;
+				const float innerR = staticData.getAttackCircle().getInnerRadius();
+				const float outerR = staticData.getAttackCircle().getOuterRadius();
+				const float b = glm::dot(v, weaponDirXY);
+				const float c = glm::dot(v, v) - innerR * innerR;
+				const float discriminant = b * b - c;
+				float t;
+				if (discriminant >= 0.f)
+					t = -b - std::sqrt(discriminant); // near intersection on inner circle
+				else
+					t = glm::dot(opponentXY - attackerXY, weaponDirXY); // closest point on weapon line
+				t = glm::clamp(t, 0.f, outerR);
+				return glm::vec3(attackerXY.x + t * weaponDirXY.x, attackerXY.y + t * weaponDirXY.y, hit.objectPosition.z);
+			};
+
 			const float arcRadius = std::min(staticData.getAttackCircle().getOuterRadius(), glm::length(collisionDirection));
 			const float targetAngleDifference = std::acos(glm::dot(normalizedCollisionDirection, guardForward));
 			if (targetAngleDifference < outerShieldAngle)
@@ -445,6 +485,7 @@ void collisionCheck(float deltaSeconds,
 					if (initialConditions.activeAttackSequence == 4)
 					{
 						state.hasHitGuard = true;
+						derivedState.editGuardHits().push_back({ weaponHitIndicatorPosition(), hit.objectIndex });
 						break;
 					}
 				}
@@ -453,11 +494,13 @@ void collisionCheck(float deltaSeconds,
 					if (guardAxis.z > 0.f && (initialConditions.activeAttackSequence == 0 || initialConditions.activeAttackSequence == 2))
 					{
 						state.hasHitGuard = true;
+						derivedState.editGuardHits().push_back({ weaponHitIndicatorPosition(), hit.objectIndex });
 						break;
 					}
 					if (guardAxis.z < 0.f && (initialConditions.activeAttackSequence == 1 || initialConditions.activeAttackSequence == 3))
 					{
 						state.hasHitGuard = true;
+						derivedState.editGuardHits().push_back({ weaponHitIndicatorPosition(), hit.objectIndex });
 						break;
 					}
 				}
@@ -491,6 +534,7 @@ void deactivate(float deltaSeconds,
 	state.currenSequenceId = InvalidAttackSequenceId;
 
 	derivedState.editAttackHits().clear();
+	derivedState.editGuardHits().clear();
 	state.hasHitGuard = false;
 }
 

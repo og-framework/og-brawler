@@ -114,6 +114,10 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	if(!radialSimulationDerivedState.getAttackHits().empty())
 		for (const auto& hit : radialSimulationDerivedState.getAttackHits())
 			rendererFunctor.drawPoint(hit.position);
+	// Guard-hit indicator: 15 cm blue (colorId 2) sphere at every position where the
+	// weapon intersected another character's guard. Populated alongside hasHitGuard.
+	for (const auto& hit : radialSimulationDerivedState.getGuardHits())
+		rendererFunctor.drawSphere(hit.position, 15.f, 2, 0.333f);
 }
 
 
@@ -223,6 +227,10 @@ void visualize2(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	if (!radialSimulationDerivedState.getAttackHits().empty())
 		for (const auto& hit : radialSimulationDerivedState.getAttackHits())
 			rendererFunctor.drawPoint(hit.position);
+	// Guard-hit indicator: 15 cm blue (colorId 2) sphere at every position where the
+	// weapon intersected another character's guard.
+	for (const auto& hit : radialSimulationDerivedState.getGuardHits())
+		rendererFunctor.drawSphere(hit.position, 15.f, 2, 0.333f);
 }
 
 }

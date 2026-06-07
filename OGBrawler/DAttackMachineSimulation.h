@@ -377,8 +377,14 @@ void integrate3(float deltaTime,
 			const glm::vec3 aimDirectionXY = glm::normalize(glm::vec3(playerInput.aimDirection.x, playerInput.aimDirection.y, 0.f));
 
 
-			//get signed angle between aim direction and movement direction
-			const float angle = glm::acos(glm::dot(aimDirection, moveDirectionXY));
+			//get signed angle between aim direction and movement direction.
+			//Both terms must be the XY-projected vectors — using the 3D aimDirection here
+			//inflates the angle by aim's downward z (mouse-on-floor projection from a
+			//character capsule offset above z=0), which trips the threshold even when the
+			//XY directions are aligned and causes left/right/forward flicker.
+			//Clamp the dot to [-1, 1] so FP rounding can't push it above 1.0 and turn acos into NaN.
+			const float dotXY = glm::clamp(glm::dot(aimDirectionXY, moveDirectionXY), -1.f, 1.f);
+			const float angle = glm::acos(dotXY);
 			const float signedAngle = glm::sign(glm::cross(aimDirectionXY, moveDirectionXY).z) * angle;
 
 			const float attackDirectionAngleIncrement = glm::pi<float>() / 6.f;

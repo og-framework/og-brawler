@@ -88,6 +88,13 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 	                               * glm::mat4_cast(radialState.bodyState.rotation);
 	const glm::vec3 rootTranslation = glm::vec3(rootTransform[3]);
 
+	// GuardFlinch indicator: 50 cm blue (colorId 2) sphere on the character's position
+	// while DAttackState::GuardFlinch is active. Matches the body-hit indicator size
+	// (drawPoint = 50 cm red sphere) so both hit and guard-flinch indicators read at the
+	// same scale.
+	if (machineSimulationState.m_currentState == DAttackState::GuardFlinch)
+		rendererFunctor.drawSphere(rootTranslation, 50.f, 2);
+
 	const glm::mat4 guardTransform = glm::translate(glm::mat4(1.f), guardState.bodyState.position)
 	                                * glm::mat4_cast(guardState.bodyState.rotation);
 	const glm::vec3 guardTranslation = glm::vec3(guardTransform[3]);
@@ -126,7 +133,9 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 			continue;
 
 		glm::vec3 closeGuardPoint = rootTranslation + normalizedCollisionDirection * staticData.getAttackCircle().getInnerRadius();
-		rendererFunctor.drawLine(closeGuardPoint, collidingPosition, 2, 1.f);
+		// Blue line connecting the inner-radius guard point to each guarded character —
+		// commented out temporarily per request.
+		//rendererFunctor.drawLine(closeGuardPoint, collidingPosition, 2, 1.f);
 
 		const glm::vec3 guardAxis = glm::cross(normalizedCollisionDirection, input.getAimDirection());
 		dAttackVisualizationUtils::drawSegmentOutline(rendererFunctor, rootTranslation, normalizedCollisionDirection, guardAxis, shieldAngle * 2.f, staticData.getAttackCircle().getInnerRadius(), 0.f, 2, 1.f);

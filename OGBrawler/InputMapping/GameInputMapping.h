@@ -19,6 +19,11 @@ extern OGBRAWLER_API const ActionDescriptor RightAttack;
 extern OGBRAWLER_API const ActionDescriptor Jump;
 extern OGBRAWLER_API const ActionDescriptor Look;
 extern OGBRAWLER_API const ActionDescriptor BlockLook;
+extern OGBRAWLER_API const ActionDescriptor HoldGuard;
+// Movement-scheme switch shortcuts — dev convenience, bound to digit keys 7/8/9.
+extern OGBRAWLER_API const ActionDescriptor SetSchemeCameraRelative;
+extern OGBRAWLER_API const ActionDescriptor SetSchemeAimRelative;
+extern OGBRAWLER_API const ActionDescriptor SetSchemeMoveRelativeAim;
 
 OGBRAWLER_API MappingContext buildDefaultContext();
 
