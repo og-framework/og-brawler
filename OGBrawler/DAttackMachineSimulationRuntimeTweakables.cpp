@@ -2,7 +2,11 @@
 #include "DAttackMachineSimulationRuntimeTweakables.h"
 #include <algorithm>
 #include <cstdio>
-#include <stdexcept>
+#include <cstdlib>  // std::strtof — exception-free float parsing (UE server/release
+                    // builds disable exceptions via bEnableExceptions = false, so the
+                    // try/catch around std::stof we used previously fails to compile
+                    // with C4530 "exception handler used, but unwind semantics are not
+                    // enabled").
 
 namespace dAttackMachineSimulation
 {
@@ -16,14 +20,15 @@ namespace dAttackMachineSimulation
     namespace {
         bool parseClampedFloat(const std::string& value, std::atomic<float>& target, const char* name)
         {
-            try {
-                const float parsed = std::stof(value);
-                target = std::clamp(parsed, 0.f, 1.f);
-                return true;
-            } catch (const std::exception&) {
+            char* endPtr = nullptr;
+            const float parsed = std::strtof(value.c_str(), &endPtr);
+            if (endPtr == value.c_str())
+            {
                 fprintf(stderr, "[OGBrawler] SetVariable: '%s' could not parse value '%s' as float\n", name, value.c_str());
                 return false;
             }
+            target = std::clamp(parsed, 0.f, 1.f);
+            return true;
         }
     }
 
@@ -56,14 +61,15 @@ namespace dAttackMachineSimulation
         }
         if (name == "MoveSpeed")
         {
-            try {
-                const float parsed = std::stof(value);
-                g_moveSpeed = std::max(0.f, parsed);
-                return true;
-            } catch (const std::exception&) {
+            char* endPtr = nullptr;
+            const float parsed = std::strtof(value.c_str(), &endPtr);
+            if (endPtr == value.c_str())
+            {
                 fprintf(stderr, "[OGBrawler] SetVariable: 'MoveSpeed' could not parse value '%s' as float\n", value.c_str());
                 return false;
             }
+            g_moveSpeed = std::max(0.f, parsed);
+            return true;
         }
         if (name == "GamepadMoveStickFeedsAim")
         {

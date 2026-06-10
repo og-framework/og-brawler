@@ -6,6 +6,10 @@
 #include <glm/gtc/quaternion.hpp>
 #include "DAttackRadialSequence.h"
 #include "DAttackRadialSimulation.h"
+// brawlerProjectileSimulation + InputSequence intentionally not included —
+// see SimulatableBrawlerTypes.h for the un-wire rationale.
+// #include "OGBrawler/BrawlerProjectileSimulation.h"
+// #include "OGBrawler/InputSequence/InputSequence.h"
 #include "OGSimulation/SimulationDependencies.h"
 #include "OGSimulation/SimulationComparisonGlm.h"
 #include "OGSimulation/SimulationFieldDescriptors.h"
@@ -26,7 +30,6 @@ class DAttackRadialSequence;
 
 namespace dAttackMachineSimulation
 {
-
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -361,6 +364,9 @@ void integrate3(float deltaTime,
 	{
 	case DAttackState::Idle:
 	{
+		// Hadouken/triggeredActionId path intentionally removed while the projectile
+		// sub-sim is un-wired from the brawler composite — see SimulatableBrawlerTypes.h.
+
 		if(playerInput.attackLeft || playerInput.attackRight)
 		{
 			//get 3d normalized movedirection

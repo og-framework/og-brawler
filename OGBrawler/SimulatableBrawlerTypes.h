@@ -15,6 +15,14 @@
 #include "OGBrawler/DAttackRadialSimulation.h"
 #include "OGBrawler/DAttackGuardSimulation.h"
 #include "OGBrawler/DAttackMachineSimulation.h"
+// brawlerProjectileSimulation is intentionally NOT wired into the brawler
+// composite right now — the projectile sub-sim's State+InitialConditions
+// addition pushed simulatableBrawler::State past the FSimulationStateSyncBuffer
+// wire-format budget at 100Hz tick. The sub-sim files (BrawlerProjectileSimulation.h,
+// BrawlerProjectileVisualization.h, InputSequence/*) and their Catch2 tests
+// remain in the tree for the eventual re-wiring once OGBrawlerNetworkModelResearch
+// lands the transport changes.
+// #include "OGBrawler/BrawlerProjectileSimulation.h"
 #include "OGSimulation/SimulationDependencies.h"
 
 #pragma optimize("", off)

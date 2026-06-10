@@ -6,6 +6,8 @@
 #include "OGBrawler/DAttackRadialSimulation.h"
 #include "OGBrawler/DAttackGuardSimulation.h"
 #include "OGBrawler/DAttackMachineSimulation.h"
+// brawlerProjectileSimulation intentionally not included — see SimulatableBrawlerTypes.h.
+// #include "OGBrawler/BrawlerProjectileSimulation.h"
 #include "OGBrawler/DAttackMachineSimulationRuntimeTweakables.h"
 #include "OGSimulation/SimulationTimeContext.h"
 #include "OGSimulation/SimulationDependencies.h"
