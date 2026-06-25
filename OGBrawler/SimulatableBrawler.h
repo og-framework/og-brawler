@@ -6,8 +6,7 @@
 #include "OGBrawler/DAttackRadialSimulation.h"
 #include "OGBrawler/DAttackGuardSimulation.h"
 #include "OGBrawler/DAttackMachineSimulation.h"
-// brawlerProjectileSimulation intentionally not included — see SimulatableBrawlerTypes.h.
-// #include "OGBrawler/BrawlerProjectileSimulation.h"
+#include "OGBrawler/BrawlerProjectileSimulation.h"
 #include "OGBrawler/DAttackMachineSimulationRuntimeTweakables.h"
 #include "OGSimulation/SimulationTimeContext.h"
 #include "OGSimulation/SimulationDependencies.h"
@@ -31,6 +30,13 @@ public:
     void updateVizState() { m_vizState = m_allState; }
     const simulatableBrawler::AllState& getVizState() const { return m_vizState; }
 
+    // Per-character bindings (T33). Populated ONCE at registration time
+    // (SimulationManagerUImpl::tryRegister) from the authoritative parentBodyId.
+    // Consumed by the machine sub-sim's integrate3 (the Hadouken trigger reads the
+    // capsule transform on-demand from it). See BrawlerMovementSimulation.h.
+    void setCharacterBindings(const brawlerMovementSimulation::CharacterBindings& cb) { m_characterBindings = cb; }
+    const brawlerMovementSimulation::CharacterBindings& getCharacterBindings() const { return m_characterBindings; }
+
     template <PhysicsBodyAdapter PhysAdapterT, SpatialQueryAdapter QueryAdapterT>
     void integrate(
         const SimulationTimeStep& step,
@@ -48,9 +54,13 @@ public:
 private:
     simulatableBrawler::AllState m_allState;
     simulatableBrawler::AllState m_vizState;
+    brawlerMovementSimulation::CharacterBindings m_characterBindings;
     SimulationPhysicsComposite<
         dAttackRadialSimulation::PhysicsDeclaration,
-        dAttackGuardSimulation::PhysicsDeclaration> m_physics;
+        dAttackGuardSimulation::PhysicsDeclaration,
+        brawlerProjectileSimulation::PhysicsDeclaration<0>,
+        brawlerProjectileSimulation::PhysicsDeclaration<1>,
+        brawlerProjectileSimulation::PhysicsDeclaration<2>> m_physics;
 };
 
 template <PhysicsBodyAdapter PhysAdapterT, SpatialQueryAdapter QueryAdapterT>
@@ -62,9 +72,11 @@ void SimulatableBrawler::integrate(
     const simulatableBrawler::StaticData& staticData)
 {
     const float dt = step.getDeltaSeconds();
-    dAttackRadialSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT>  radialUtils (dt, physAdapter, queryAdapter);
-    dAttackGuardSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT>   guardUtils  (dt, physAdapter, queryAdapter);
-    dAttackMachineSimulation::IntegrationUtils<PhysAdapterT>                machineUtils(dt, staticData.m_attackSequences, physAdapter);
+    const uint32_t currentTick = step.getTick();
+    dAttackRadialSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT>     radialUtils    (dt, physAdapter, queryAdapter);
+    dAttackGuardSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT>      guardUtils     (dt, physAdapter, queryAdapter);
+    brawlerProjectileSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT> projectileUtils(dt, currentTick, physAdapter, queryAdapter);
+    dAttackMachineSimulation::IntegrationUtils<PhysAdapterT> machineUtils(dt, staticData.m_attackSequences, physAdapter, staticData.m_projectileStaticData);
 
     auto& state        = m_allState.editState();
     auto& derivedState = m_allState.editDerivedState();
@@ -76,7 +88,7 @@ void SimulatableBrawler::integrate(
         dAttackMachineSimulation::integrate3(dt,
             dAttackMachineSimulation::AllInput<PhysAdapterT>(
                 input.get<dAttackMachineSimulation::PlayerInput>(), machineUtils),
-            deps);
+            deps, m_characterBindings);
     }
 
     {
@@ -86,6 +98,20 @@ void SimulatableBrawler::integrate(
                 input.get<dAttackGuardSimulation::PlayerInput>(), guardUtils),
             staticData.m_guardSimulationStaticData, deps,
             guardBindings, derivedState.m_guardDerivedState);
+    }
+    
+    {
+        auto deps = makeDependencies<brawlerProjectileSimulation::Dependencies>(state);
+        const std::array<brawlerProjectileSimulation::RuntimeBindings, brawlerProjectileSimulation::kMaxProjectilePoolSize> projectileBindings = {
+            m_physics.get<brawlerProjectileSimulation::PhysicsDeclaration<0>>().bindings,
+            m_physics.get<brawlerProjectileSimulation::PhysicsDeclaration<1>>().bindings,
+            m_physics.get<brawlerProjectileSimulation::PhysicsDeclaration<2>>().bindings
+        };
+        brawlerProjectileSimulation::integrate(dt,
+            brawlerProjectileSimulation::AllInput<PhysAdapterT, QueryAdapterT>(
+                input.get<brawlerProjectileSimulation::PlayerInput>(), projectileUtils),
+            staticData.m_projectileStaticData, deps,
+            projectileBindings, derivedState.m_projectileDerivedState);
     }
 
     {

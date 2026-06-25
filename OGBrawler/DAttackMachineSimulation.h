@@ -6,18 +6,26 @@
 #include <glm/gtc/quaternion.hpp>
 #include "DAttackRadialSequence.h"
 #include "DAttackRadialSimulation.h"
-// brawlerProjectileSimulation + InputSequence intentionally not included —
-// see SimulatableBrawlerTypes.h for the un-wire rationale.
-// #include "OGBrawler/BrawlerProjectileSimulation.h"
-// #include "OGBrawler/InputSequence/InputSequence.h"
+#include "OGBrawler/DAttackSequenceId.h"
+#include "OGBrawler/BrawlerProjectileSimulation.h"
+#include "OGBrawler/BrawlerMovementSimulation.h"
+#include "OGBrawler/InputSequence/InputSequence.h"
 #include "OGSimulation/SimulationDependencies.h"
 #include "OGSimulation/SimulationComparisonGlm.h"
 #include "OGSimulation/SimulationFieldDescriptors.h"
 #include "OGBrawlerLog.h"
 
+// [Task 25] Hadouken commitment duration. When integrate3 fires a Hadouken it transitions
+// Idle -> Attacking with the kHadoukenSequenceSentinel active (the sentinel lives at file
+// scope in DAttackRadialSimulation.h, included above). Without a commitment window the
+// machine exits Attacking -> Idle one tick later (the radial early-returns and leaves
+// currenSequenceId == InvalidAttackSequenceId), which lets a still-held attack button chain
+// an immediate normal swing. This minimum dwell (0.3 s ≈ 18 ticks at 60 Hz) keeps the
+// machine in Attacking for the projectile cast before the normal exit-to-Idle gate fires.
+static constexpr float kHadoukenCommitmentSeconds = 0.3f;
+
 
 #pragma optimize( "", off )
-
 
 enum class DAttackState
 {
@@ -42,6 +50,11 @@ public:
 	bool attackRight = false;
 	glm::vec2 moveDirection{};
 	glm::vec3 moveDirectionWorld{};
+	// Set by the input-layer motion matcher (buildPlayerInput) to inputSequence::kHadoukenActionId
+	// on the tick a Hadouken sequence completes; 0 otherwise. Appended last so the existing
+	// 5-arg aggregate-init call sites keep compiling (C++20 parenthesized aggregate init
+	// defaults this to 0). Travels through the PlayerInput RPC like any other input field.
+	uint32_t triggeredActionId = 0;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -52,19 +65,28 @@ class IntegrationUtils
 public:
 	IntegrationUtils(float deltaTime,
 		const std::vector<DAttackRadialSequence>& attackSequences,
-		PhysicsAdapterType& physicsAdapter)
+		PhysicsAdapterType& physicsAdapter,
+		const brawlerProjectileSimulation::StaticData& projectileStaticData)
 		: deltaTime(deltaTime)
 		, attackSequences(attackSequences)
 		, m_physicsAdapter(physicsAdapter)
+		, m_projectileStaticData(projectileStaticData)
 	{}
 
 	float getDeltaTime() const { return deltaTime; }
 	PhysicsAdapterType& getPhysicsAdapter() const { return m_physicsAdapter; }
+	// Projectile launch parameters — needed by the Hadouken trigger block in integrate3 to
+	// write the projectile InitialConditions. The parent capsule position is no longer
+	// pre-resolved here (T33): integrate3 looks it up on-demand via the physics adapter from
+	// the CharacterBindings handle, matching the bindings-as-integrate-param pattern radial/
+	// guard/projectile already use.
+	const brawlerProjectileSimulation::StaticData& getProjectileStaticData() const { return m_projectileStaticData; }
 
 private:
 	float deltaTime;
 	const std::vector<DAttackRadialSequence>& attackSequences;
 	PhysicsAdapterType& m_physicsAdapter;
+	const brawlerProjectileSimulation::StaticData& m_projectileStaticData;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -86,7 +108,8 @@ struct Dependencies {
 	using Owned = OwnedDeps<dAttackMachineSimulation::State>;
 	using External = ExternalDeps<
 		const dAttackRadialSimulation::State&,
-		dAttackRadialSimulation::InitialConditions&>;
+		dAttackRadialSimulation::InitialConditions&,
+		brawlerProjectileSimulation::InitialConditions&>;
 	using InputType = dAttackMachineSimulation::PlayerInput;
 	Owned owned;
 	External external;
@@ -342,10 +365,15 @@ inline const char* dAttackStateName(DAttackState s)
 	return "?";
 }
 
+// [Task 35] CharacterBindings now lives in BrawlerMovementSimulation.h, included above with no
+// include cycle, so integrate3 takes a plain const reference (the T33 templated workaround is
+// gone). The Hadouken trigger resolves the parent capsule transform on-demand from the bindings
+// handle — matching the bindings-as-integrate-param pattern radial/guard/projectile already use.
 template <typename PhysicsAdapterType>
 void integrate3(float deltaTime,
 	const AllInput<PhysicsAdapterType>& input,
-	Dependencies deps)
+	Dependencies deps,
+	const brawlerMovementSimulation::CharacterBindings& characterBindings)
 {
 	const dAttackRadialSimulation::State& attackState = deps.external.get<dAttackRadialSimulation::State>();
 	dAttackRadialSimulation::InitialConditions& attackIntialConditions = deps.external.edit<dAttackRadialSimulation::InitialConditions>();
@@ -364,8 +392,47 @@ void integrate3(float deltaTime,
 	{
 	case DAttackState::Idle:
 	{
-		// Hadouken/triggeredActionId path intentionally removed while the projectile
-		// sub-sim is un-wired from the brawler composite — see SimulatableBrawlerTypes.h.
+		// Hadouken trigger: the input-layer motion matcher (buildPlayerInput) sets
+		// triggeredActionId to kHadoukenActionId on the tick a motion completes. Spawn a
+		// projectile in the aim direction and hand the radial weapon a sentinel sequence so
+		// it stays in its idle pose. This sits AHEAD of the plain attackLeft/attackRight
+		// handling so a matched motion takes priority over the idle swing on the same tick.
+		if (playerInput.triggeredActionId == inputSequence::kHadoukenActionId)
+		{
+			brawlerProjectileSimulation::InitialConditions& projectileIC =
+				deps.external.edit<brawlerProjectileSimulation::InitialConditions>();
+			const brawlerProjectileSimulation::StaticData& projSD =
+				input.getIntegrationUtils().getProjectileStaticData();
+			// [Task 33] Resolve the parent capsule position on-demand from the CharacterBindings
+			// handle, instead of receiving it pre-resolved via IntegrationUtils. This matches the
+			// radial/guard/projectile pattern (bindings passed to integrate, physics queried inside).
+			const glm::vec3 parentPosition = glm::vec3(
+				input.getIntegrationUtils().getPhysicsAdapter().getBodyTransform(
+					characterBindings.capsuleBodyId)[3]);
+
+			// XY-projected aim, with a degenerate-aim fallback to avoid a NaN from normalize.
+			const glm::vec3 aimXYraw(playerInput.aimDirection.x, playerInput.aimDirection.y, 0.f);
+			const glm::vec3 aimXY = (glm::length(aimXYraw) < 0.0001f)
+				? glm::vec3(1.f, 0.f, 0.f)
+				: glm::normalize(aimXYraw);
+
+			// Closed-form launch parameters (Task 13): write spawnDir, NOT velocity — the
+			// projectile sim derives velocity = spawnDir * projectileSpeed each tick.
+			projectileIC.spawnRequestPending = 1;
+			projectileIC.spawnPos = parentPosition
+				+ aimXY * projSD.spawnForwardOffset
+				+ glm::vec3(0.f, 0.f, projSD.spawnZOffset);
+			projectileIC.spawnDir = aimXY;
+
+			// Hand the radial weapon the sentinel so its integrate early-returns (idle pose)
+			// instead of indexing attackSequences[] out of bounds.
+			state.m_activeAttackSequence = kHadoukenSequenceSentinel;
+			attackIntialConditions.activeAttackSequence = kHadoukenSequenceSentinel;
+			state.m_currentState = DAttackState::Attacking;
+			state.m_timeInCurrentState = 0.f;
+			OGBLOG_G("[Machine.transition] Idle -> Attacking (Hadouken, projectile spawn requested)");
+			break;
+		}
 
 		if(playerInput.attackLeft || playerInput.attackRight)
 		{
@@ -466,7 +533,16 @@ void integrate3(float deltaTime,
 			}
 		}
 
-		if (attackState.currenSequenceId == InvalidAttackSequenceId)
+		// [Task 25] Hold the Hadouken-Attacking state for a minimum commitment window before
+		// the normal exit-to-Idle gate may fire. The radial sim early-returns on the sentinel
+		// (leaving currenSequenceId == InvalidAttackSequenceId from tick T+1), so without this
+		// guard the machine would drop back to Idle one tick after the trigger and a still-held
+		// attack button would chain an immediate normal swing.
+		const bool inHadoukenCommitment =
+			state.m_activeAttackSequence == kHadoukenSequenceSentinel
+			&& state.m_timeInCurrentState < kHadoukenCommitmentSeconds;
+
+		if (!inHadoukenCommitment && attackState.currenSequenceId == InvalidAttackSequenceId)
 		{
 			if (state.m_queuedAttackSequence != InvalidAttackSequenceId)
 			{
@@ -531,7 +607,8 @@ struct SerializableFields<dAttackMachineSimulation::PlayerInput>
 			MemberFieldDesc<&dAttackMachineSimulation::PlayerInput::attackLeft>{},
 			MemberFieldDesc<&dAttackMachineSimulation::PlayerInput::attackRight>{},
 			MemberFieldDesc<&dAttackMachineSimulation::PlayerInput::moveDirection>{},
-			MemberFieldDesc<&dAttackMachineSimulation::PlayerInput::moveDirectionWorld>{});
+			MemberFieldDesc<&dAttackMachineSimulation::PlayerInput::moveDirectionWorld>{},
+			MemberFieldDesc<&dAttackMachineSimulation::PlayerInput::triggeredActionId>{});
 	}
 };
 

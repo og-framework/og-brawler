@@ -15,14 +15,19 @@
 #include "OGBrawler/DAttackRadialSimulation.h"
 #include "OGBrawler/DAttackGuardSimulation.h"
 #include "OGBrawler/DAttackMachineSimulation.h"
-// brawlerProjectileSimulation is intentionally NOT wired into the brawler
-// composite right now — the projectile sub-sim's State+InitialConditions
-// addition pushed simulatableBrawler::State past the FSimulationStateSyncBuffer
-// wire-format budget at 100Hz tick. The sub-sim files (BrawlerProjectileSimulation.h,
-// BrawlerProjectileVisualization.h, InputSequence/*) and their Catch2 tests
-// remain in the tree for the eventual re-wiring once OGBrawlerNetworkModelResearch
-// lands the transport changes.
-// #include "OGBrawler/BrawlerProjectileSimulation.h"
+// Phase 2 / Task 15 (2026-06-24): projectile sub-sim RE-WIRED into the brawler
+// composite. The transport changes it was blocked on (og-netcode-v1-impl Stage 1/2,
+// 60 Hz + split watermark-trimmed buffers) landed 2026-06-22, and the T13 closed-form
+// projectile State redesign shrank the per-character wire footprint (115 B vs 196 B).
+// FSimulationStateSyncBuffer::kBufferBytes was bumped to 384 (T14) to fit the re-wired
+// composite (~304 B).
+#include "OGBrawler/BrawlerProjectileSimulation.h"
+// [Task 35] CharacterBindings relocated to its own minimal header (the eventual home of the
+// planned character-movement sub-sim). Eagerly include it here so the composite — and any
+// downstream consumer that includes SimulatableBrawlerTypes.h — keeps transitive visibility
+// on the type (relevant for the parked T34 migration that folds it into every sub-sim's
+// RuntimeBindings).
+#include "OGBrawler/BrawlerMovementSimulation.h"
 #include "OGSimulation/SimulationDependencies.h"
 
 #pragma optimize("", off)
@@ -30,13 +35,18 @@
 namespace simulatableBrawler
 {
 
-// Serialization wire order: radialIC -> radialState -> guardState -> guardIC (0 bytes) -> machineState
+// Serialization wire order: radialIC -> radialState -> guardState -> guardIC (0 bytes)
+//   -> machineState -> projectileIC -> projectileState
+// (projectile slices appended last per Task 15; machine writes projectileIC, projectile
+//  consumes it — see ExecutionOrder below.)
 using State = SimulationStateComposite<
     dAttackRadialSimulation::InitialConditions,
     dAttackRadialSimulation::State,
     dAttackGuardSimulation::State,
     dAttackGuardSimulation::InitialConditions,
-    dAttackMachineSimulation::State
+    dAttackMachineSimulation::State,
+    brawlerProjectileSimulation::InitialConditions,
+    brawlerProjectileSimulation::State
 >;
 
 class DerivedState
@@ -46,6 +56,7 @@ public:
 
     dAttackRadialSimulation::DerivedState m_attackDerivedState;
     dAttackGuardSimulation::DerivedState m_guardDerivedState;
+    brawlerProjectileSimulation::DerivedState m_projectileDerivedState;
 };
 
 class AllState
@@ -64,11 +75,12 @@ private:
     DerivedState m_derivedState;
 };
 
-// Serialization wire order: radialInput -> machineInput -> guardInput
+// Serialization wire order: radialInput -> machineInput -> guardInput -> projectileInput
 using PlayerInput = SimulationInputComposite<
     dAttackRadialSimulation::PlayerInput,
     dAttackMachineSimulation::PlayerInput,
-    dAttackGuardSimulation::PlayerInput
+    dAttackGuardSimulation::PlayerInput,
+    brawlerProjectileSimulation::PlayerInput
 >;
 
 inline PlayerInput getZeroPlayerInput()
@@ -77,7 +89,8 @@ inline PlayerInput getZeroPlayerInput()
         dAttackRadialSimulation::PlayerInput(glm::vec3(0.f, 0.f, 1.f), false, false),
         dAttackMachineSimulation::PlayerInput(glm::vec3(0.f, 0.f, 1.f), false, false,
                                               glm::vec2(0.f), glm::vec3(0.f)),
-        dAttackGuardSimulation::PlayerInput(glm::vec3(0.f, 0.f, 1.f))
+        dAttackGuardSimulation::PlayerInput(glm::vec3(0.f, 0.f, 1.f)),
+        brawlerProjectileSimulation::PlayerInput{}
     );
 }
 
@@ -145,12 +158,22 @@ public:
         )
         , m_attackSimulationStaticData(m_attackSequences, m_attackCircle)
         , m_guardSimulationStaticData(m_attackCircle)
+        // 0.875 s × 800 cm/s = 700 cm = 7 m travel distance (T26).
+        // 6th arg (T29; narrowed T31) = guardMiddleSectionHalfAngle 0.25 rad (≈14.3°) →
+        //   only a near-centre-line guard alignment blocks the projectile, matching the
+        //   radial sim's middle-section threshold (DAttackRadialSimulation.h:450 shieldAngle).
+        // 7th arg (T30) = innerCircleRadius — the brawler attack circle inner radius, so a
+        //   blocked projectile's marker lands on that circle (edge facing the shooter).
+        // 8th arg (T30) = indicatorPersistTicks 20 ≈ 0.333 s at 60 Hz (radial guard-hit feel).
+        , m_projectileStaticData(800.f, 0.875f, 40.f, 60.f, 50.f, 0.25f,
+                                 m_attackCircle.getInnerRadius(), 20)
     {}
 
     DAttackCircle m_attackCircle;
     std::vector<DAttackRadialSequence> m_attackSequences;
     dAttackRadialSimulation::StaticData m_attackSimulationStaticData;
     dAttackGuardSimulation::StaticData m_guardSimulationStaticData;
+    brawlerProjectileSimulation::StaticData m_projectileStaticData;
 };
 
 // [Task 55/60] Execution order validation — declared order must satisfy dependency edges.
@@ -159,7 +182,8 @@ public:
 using ExecutionOrder = std::tuple<
     dAttackMachineSimulation::Dependencies,
     dAttackGuardSimulation::Dependencies,
-    dAttackRadialSimulation::Dependencies>;
+    dAttackRadialSimulation::Dependencies,
+    brawlerProjectileSimulation::Dependencies>;
 inline constexpr auto executionViolation_ =
     compositeDetail::findFirstViolation<ExecutionOrder>();
 using ExecutionOrderDiagnostic_ =

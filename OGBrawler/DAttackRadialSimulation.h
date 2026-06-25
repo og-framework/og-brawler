@@ -8,6 +8,7 @@
 #include "glm/vec3.hpp"
 #include <glm/gtc/quaternion.hpp>
 #include "DAttackRadialSequence.h"
+#include "OGBrawler/DAttackSequenceId.h"
 #include "OGBrawler/DAttackCircle.h"
 #include "OGSimulation/SimulationDependencies.h"
 #include "OGSimulation/SimulationComparisonGlm.h"
@@ -25,7 +26,9 @@
 
 class DAttackRadialSequence;
 
-static constexpr unsigned int InvalidAttackSequenceId = std::numeric_limits<unsigned int>::max();
+// [Task 36] InvalidAttackSequenceId, kHadoukenSequenceSentinel, and isRealAttackSequence
+// were relocated to the minimal shared header OGBrawler/DAttackSequenceId.h (included above).
+// They form an attack-sequence-ID value domain owned by neither sub-sim — see that header.
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -565,6 +568,18 @@ void integrate(float deltaSeconds,
 
 	OGBLOG_G("[Radial.integrate] ic.activeSeq=%u state.curSeq=%u state.attackTimer=%.4f",
 		initialConditions.activeAttackSequence, state.currenSequenceId, state.attackTimer);
+
+	// Hadouken sentinel: the machine sim owns this "attack" via the projectile sub-sim.
+	// Keep the weapon idle (the attachment math above already re-parents it this tick) and
+	// reset currenSequenceId so the machine's Attacking->Idle exit fires naturally next
+	// tick. Returning here also avoids the setInitialConditions path indexing
+	// attackSequences[kHadoukenSequenceSentinel] out of bounds.
+	if (initialConditions.activeAttackSequence == kHadoukenSequenceSentinel)
+	{
+		OGBLOG_G("[Radial.branch] hadouken sentinel — weapon idle, projectile owns this attack");
+		state.currenSequenceId = InvalidAttackSequenceId;
+		return;
+	}
 
 	if (initialConditions.activeAttackSequence == InvalidAttackSequenceId && state.currenSequenceId != InvalidAttackSequenceId)
 	{

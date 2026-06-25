@@ -6,6 +6,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include "DAttackRadialSimulation.h"
+#include "OGBrawler/DAttackSequenceId.h"
 #include "DAttackCircle.h"
 #include "OGSimulation/DMathUtil.h"
 #include "DAttackVisualizationUtils.h"
@@ -72,7 +73,15 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	const dAttackRadialSimulation::StaticData& radialSimulationStaticData,
 	State& state)
 {
-	const DAttackRadialSequence& sequence = radialSimulationStaticData.getAttackSequences()[simulationInitialConditions.activeAttackSequence];
+	// activeAttackSequence may carry a reserved sentinel (e.g. kHadoukenSequenceSentinel)
+	// for the 1+ ticks between the machine writing it and the Attacking→Idle exit clearing
+	// it. The aim viz does not consume the sequence, but the bare index would still read
+	// ~4 billion entries out of bounds, so gate it behind isRealAttackSequence.
+	if (isRealAttackSequence(simulationInitialConditions.activeAttackSequence))
+	{
+		const DAttackRadialSequence& sequence = radialSimulationStaticData.getAttackSequences()[simulationInitialConditions.activeAttackSequence];
+		(void)sequence; // currently unused in the aim viz; bound for parity with the radial viz sites
+	}
 	const DAttackCircle& circle = radialSimulationStaticData.getAttackCircle();
 	auto rendererFunctor = input.getRendererFunctorImpl();
 

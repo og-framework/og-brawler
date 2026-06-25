@@ -23,7 +23,11 @@ MappingContext buildDefaultContext()
 	MappingContext ctx;
 	ctx.name = "IMC_Default";
 
-	// Move: WASD + Gamepad Left Stick
+	// Move: WASD + Gamepad Left Stick + Gamepad D-pad
+	// The D-pad mirrors the WASD modifier shapes exactly: Up=SwizzleAxis (Y+1),
+	// Down=NegateAndSwizzle (Y-1), Left=Negate (X-1), Right=None (X+1). Each D-pad
+	// direction is a digital duplicate of the left-stick Move; diagonals aggregate
+	// through Enhanced Input the same way W+D etc. do.
 	{
 		ActionMapping mapping;
 		mapping.action = &Move;
@@ -33,6 +37,10 @@ MappingContext buildDefaultContext()
 			{ KeyId::Key_A, KeyModifier::Negate },
 			{ KeyId::Key_D, KeyModifier::None },
 			{ KeyId::Gamepad_LeftStick_XY, KeyModifier::None },
+			{ KeyId::Gamepad_DPad_Up, KeyModifier::SwizzleAxis },
+			{ KeyId::Gamepad_DPad_Down, KeyModifier::NegateAndSwizzle },
+			{ KeyId::Gamepad_DPad_Left, KeyModifier::Negate },
+			{ KeyId::Gamepad_DPad_Right, KeyModifier::None },
 		};
 		ctx.actionMappings.push_back(std::move(mapping));
 	}
@@ -68,13 +76,16 @@ MappingContext buildDefaultContext()
 		ctx.actionMappings.push_back(std::move(mapping));
 	}
 
-	// LeftAttack: Mouse Left + Gamepad Left Trigger
+	// LeftAttack: Mouse Left + Gamepad Right Shoulder (RB)
+	// RB chosen over LT because LeftShoulder is taken by HoldGuard and the
+	// LT axis form is taken by BlockLook; RightShoulder was previously unbound.
+	// Gamepad_LeftTrigger is intentionally left unbound (freed for future use).
 	{
 		ActionMapping mapping;
 		mapping.action = &LeftAttack;
 		mapping.bindings = {
 			{ KeyId::Mouse_Left, KeyModifier::None },
-			{ KeyId::Gamepad_LeftTrigger, KeyModifier::None },
+			{ KeyId::Gamepad_RightShoulder, KeyModifier::None },
 		};
 		ctx.actionMappings.push_back(std::move(mapping));
 	}

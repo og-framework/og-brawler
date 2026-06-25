@@ -6,6 +6,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include "DAttackRadialSimulation.h"
+#include "OGBrawler/DAttackSequenceId.h"
 #include "DAttackCircle.h"
 #include "OGSimulation/DMathUtil.h"
 #include "DAttackVisualizationUtils.h"
@@ -63,7 +64,6 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	const dAttackRadialSimulation::StaticData& radialSimulationStaticData,
 	State& state)
 {
-	const DAttackRadialSequence& sequence = radialSimulationStaticData.getAttackSequences()[simulationInitialConditions.activeAttackSequence];
 	const DAttackCircle& circle = radialSimulationStaticData.getAttackCircle();
 	auto rendererFunctor = input.getRendererFunctorImpl();
 
@@ -77,8 +77,9 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	input.getLoggingFunctor().logVec3("dAttackRadialVisualization currentDirection: ", currentDirection);
 
 
-	if (simulationInitialConditions.activeAttackSequence != InvalidAttackSequenceId)
+	if (isRealAttackSequence(simulationInitialConditions.activeAttackSequence))
 	{
+		const DAttackRadialSequence& sequence = radialSimulationStaticData.getAttackSequences()[simulationInitialConditions.activeAttackSequence];
 		const DAttackSegment segment = dAttackRadialSimulation::getAttackSegment(simulationInitialConditions, radialSimulationStaticData, currentDirection);
 		input.getLoggingFunctor().logInt("dAttackRadialVisualization active segment: ", segment.index);
 
@@ -129,7 +130,6 @@ void visualize2(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	const dAttackRadialSimulation::StaticData& radialSimulationStaticData,
 	State& state)
 {
-	const DAttackRadialSequence& sequence = radialSimulationStaticData.getAttackSequences()[simulationInitialConditions.activeAttackSequence];
 	const DAttackCircle& circle = radialSimulationStaticData.getAttackCircle();
 	auto rendererFunctor = input.getRendererFunctorImpl();
 
@@ -190,8 +190,9 @@ void visualize2(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	//}
 	
 
-	if (simulationInitialConditions.activeAttackSequence != InvalidAttackSequenceId)
+	if (isRealAttackSequence(simulationInitialConditions.activeAttackSequence))
 	{
+		const DAttackRadialSequence& sequence = radialSimulationStaticData.getAttackSequences()[simulationInitialConditions.activeAttackSequence];
 		const DAttackSegment segment = dAttackRadialSimulation::getAttackSegment(simulationInitialConditions, radialSimulationStaticData, currentDirection);
 		input.getLoggingFunctor().logInt("dAttackRadialVisualization active segment: ", segment.index);
 
