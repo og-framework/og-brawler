@@ -22,6 +22,10 @@
 // FSimulationStateSyncBuffer::kBufferBytes was bumped to 384 (T14) to fit the re-wired
 // composite (~304 B).
 #include "OGBrawler/BrawlerProjectileSimulation.h"
+// [hit-resolution T2] Inbound-hit signal carried on the composite DerivedState. Off-wire
+// (no SerializableFields specialization), so including it here adds no bytes to the State
+// composite — see current_state.md §D1.
+#include "OGBrawler/BrawlerInboundHit.h"
 // [Task 35] CharacterBindings relocated to its own minimal header (the eventual home of the
 // planned character-movement sub-sim). Eagerly include it here so the composite — and any
 // downstream consumer that includes SimulatableBrawlerTypes.h — keeps transitive visibility
@@ -57,6 +61,10 @@ public:
     dAttackRadialSimulation::DerivedState m_attackDerivedState;
     dAttackGuardSimulation::DerivedState m_guardDerivedState;
     brawlerProjectileSimulation::DerivedState m_projectileDerivedState;
+    // [hit-resolution T2] Per-tick inbound-hit signal. Reset + populated by the manager's
+    // routing pass (T3); read the following tick by the machine sim's integrate3 to drive
+    // the HitFlinch transition. Off-wire (see D1) — no SerializableFields entry.
+    brawlerInboundHit::DerivedState m_inboundHitDerivedState;
 };
 
 class AllState

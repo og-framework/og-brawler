@@ -114,7 +114,13 @@ struct PhysicsSetup
         {
             ShapeDescriptor{
                 SphereGeometry{30.f},
-                CollisionCategories::single(collisionCategory::body)
+                // [hit-resolution T13] Projectile body has its own collision category
+                // so a projectile-vs-projectile overlap can be distinguished from a
+                // projectile-vs-character-body overlap. Before T13 this was
+                // `collisionCategory::body`, causing the projectile-projectile case
+                // to fall through the character-body branch and route a HitFlinch
+                // to each owning character via T3/T11 rootBodyId lookup.
+                CollisionCategories::single(collisionCategory::projectile)
             }
         }
     };
@@ -124,7 +130,11 @@ struct PhysicsSetup
         return {
             QueryVolumeDescriptor{
                 SphereGeometry{staticData.colliderRadius},
-                collisionCategory::bodyAndGuard,
+                // [hit-resolution T13] Include the projectile category so projectiles
+                // still detect each other (both cancel via the endReason=3 branch in
+                // the hit loop). Drop `projectile` from this mask if pass-through
+                // semantics are preferred over mutual cancellation.
+                collisionCategory::bodyGuardProjectile,
                 glm::mat4(1.f),
                 collisionCategory::queryRouting
             }
@@ -163,8 +173,8 @@ struct ProjectileSlot
     glm::vec3 spawnPos       {};
     glm::vec3 spawnDir       {};    // unit vector; velocity = spawnDir * projectileSpeed
     uint32_t  endTick        = 0;   // 0 == still alive; >0 == ended at this tick
-    uint8_t   endReason      = 0;   // 0=alive, 1=lifetimeExpired, 2=hit
-    int32_t   hitObjectIndex = -1;  // meaningful only when endReason == 2
+    uint8_t   endReason      = 0;   // 0=alive, 1=lifetimeExpired, 2=hit, 3=cancelledByProjectile [T13], 4=blockedByGuard [T14]
+    BodyId    hitRootBodyId;        // actor-level id of struck character; meaningful only when endReason == 2
 
     // Transient, LOCAL-ONLY body state. Recomputed each tick from the closed
     // form and used by the physics composite's captureBodyStatesAll() (which
@@ -193,7 +203,7 @@ struct ProjectileSlot
         return spawnTick == o.spawnTick
             && endTick == o.endTick
             && endReason == o.endReason
-            && hitObjectIndex == o.hitObjectIndex
+            && hitRootBodyId == o.hitRootBodyId
             && isSimilarToField(spawnPos, o.spawnPos)
             && isSimilarToField(spawnDir, o.spawnDir);
     }
@@ -240,7 +250,7 @@ public:
 struct ProjectileIndicator
 {
     glm::vec3 position{};
-    int       objectIndex = -1;
+    BodyId    rootBodyId;        // actor-level id of the struck character (viz-only tag)
     uint32_t  tickStamp   = 0;
 };
 
@@ -445,6 +455,27 @@ void integrate(float dt,
             if (hit.bodyId == bindings[i].parentBodyId)
                 continue;
 
+            // [hit-resolution T13] Projectile-vs-projectile cancellation. When the
+            // overlap returns another projectile (own or opposing), end this slot
+            // WITHOUT recording a routable hit: endReason=3 excludes the slot from
+            // T3's routing filter (which only routes endReason==2), so neither
+            // owning character enters HitFlinch. Both sides detect the collision
+            // independently on the same tick — each character's own projectile sim
+            // processes its own slot, so no cross-character mutation is needed.
+            // parkBody + endTick=currentTick despawn the projectile the same way a
+            // regular hit does; the viz's spawnTick/endTick guard skips rendering.
+            // The slot recycles naturally on the next tick per isFree(currentTick)
+            // (endTick != 0 && currentTick >= endTick).
+            if (hit.objectCategories.contains(collisionCategory::projectile))
+            {
+                slot.endTick       = currentTick;
+                slot.endReason     = 3;
+                slot.hitRootBodyId = BodyId{};   // clear defensively — routing filters on endReason==2 first
+                OGBLOG_G("[Projectile.cancel] slot %u cancelled by opposing projectile", i);
+                parkBody(physics, bindings[i].ownBodyId);
+                break;
+            }
+
             // T29 — classify guard hits inside the front cone as BLOCKS; everything
             // else (guard outside the cone, or a plain body hit) is a damage hit.
             bool blocked = false;
@@ -472,8 +503,21 @@ void integrate(float dt,
             }
 
             slot.endTick        = currentTick;
-            slot.endReason      = 2;
-            slot.hitObjectIndex = hit.objectIndex;
+            // [hit-resolution T14] Distinguish blocked vs unblocked at the endReason
+            // level so T3 routing (which filters on endReason==2) does NOT fire
+            // HitFlinch on a target whose guard successfully absorbed the projectile.
+            // Pre-T11 this was silently correct because the routing map was keyed on
+            // the radial hurtbox body UniqueIdx and the block path pushed the guard
+            // body's UniqueIdx into `hitObjectIndex` — different values, map lookup
+            // failed. T11's rootBodyId refactor made both bodies emit the target's
+            // capsule id as rootBodyId, so the routing map lookup started succeeding
+            // for guard blocks and fired HitFlinch on the guarding character. Split
+            // the endReason to fix.
+            slot.endReason      = blocked ? 4 /* blockedByGuard */ : 2 /* hit */;
+            // hitRootBodyId is meaningful only for endReason==2 (routing consumer).
+            // Clear it defensively on block so a future consumer that forgets the
+            // filter doesn't accidentally route a block to HitFlinch.
+            slot.hitRootBodyId  = blocked ? BodyId{} : hit.rootBodyId;
             if (blocked)
             {
                 // T30 — place the block marker on the inner circle where the launch ray
@@ -507,13 +551,13 @@ void integrate(float dt,
                 if (!foundIntersection)
                     OGBLOG_G("[Projectile.block] ray missed inner circle, fallback to hit position");
 
-                derived.blocks.push_back({ blockPos, hit.objectIndex, currentTick });
-                OGBLOG_G("[Projectile.block] slot %u blocked by objectIndex=%d", i, hit.objectIndex);
+                derived.blocks.push_back({ blockPos, hit.rootBodyId, currentTick });
+                OGBLOG_G("[Projectile.block] slot %u blocked by rootBodyId=%u", i, hit.rootBodyId.value);
             }
             else
             {
-                derived.hits.push_back({ hit.objectPosition, hit.objectIndex, currentTick });
-                OGBLOG_G("[Projectile.hit] slot %u hit objectIndex=%d", i, hit.objectIndex);
+                derived.hits.push_back({ hit.objectPosition, hit.rootBodyId, currentTick });
+                OGBLOG_G("[Projectile.hit] slot %u hit rootBodyId=%u", i, hit.rootBodyId.value);
             }
             parkBody(physics, bindings[i].ownBodyId);
             break;
@@ -537,7 +581,7 @@ void integrate(float dt,
             slot.spawnDir       = ic.spawnDir;
             slot.endTick        = 0;
             slot.endReason      = 0;
-            slot.hitObjectIndex = -1;
+            slot.hitRootBodyId  = BodyId{};   // no-hit sentinel (meaningful only when endReason == 2)
 
             // Snap the body to the launch pose so it is correctly placed on the
             // spawn tick (elapsed == 0 ⇒ derivedPos == spawnPos).
@@ -565,7 +609,9 @@ void integrate(float dt,
 // transient local-only field (recomputed each tick from the closed form) and is
 // deliberately EXCLUDED so it never hits the wire and never drives correction.
 // Per-slot wire size = 4 (spawnTick) + 12 (spawnPos) + 12 (spawnDir)
-//                    + 4 (endTick) + 1 (endReason) + 4 (hitObjectIndex) = 37 bytes.
+//                    + 4 (endTick) + 1 (endReason) + 4 (hitRootBodyId) = 37 bytes.
+// hitRootBodyId is a BodyId (single uint32_t) so it serializes as 4 bytes exactly like
+// the int32_t it replaced — the wire footprint is unchanged (T11 is compile-time-only).
 template <>
 struct SerializableFields<brawlerProjectileSimulation::ProjectileSlot>
 {
@@ -578,7 +624,7 @@ struct SerializableFields<brawlerProjectileSimulation::ProjectileSlot>
             SIM_MEMBER(S, spawnDir),
             SIM_MEMBER(S, endTick),
             SIM_MEMBER(S, endReason),
-            SIM_MEMBER(S, hitObjectIndex));
+            SIM_MEMBER(S, hitRootBodyId));
     }
 };
 

@@ -78,9 +78,10 @@ void visualize(const Input<RendererFunctorType>& input,
     const float    dt           = input.getDeltaTime();
     const uint32_t persistTicks = input.getStaticData().indicatorPersistTicks;
 
-    // Damage hit → drawPoint (50 cm red sphere), the EXACT radial body-damage style.
-    for (const auto& hit : derivedState.hits)
-        rendererFunctor.drawPoint(hit.position);
+    // [hit-resolution T4] The world-space red-point damage-hit loop was removed here:
+    // derivedState.hits is now T3's manager-side routing source, not a viz marker.
+    // Projectile body hits are shown target-side via the HitFlinch sphere
+    // (DAttackTargetVisualizationTwo).
 
     // Block → 15 cm blue (colorId 2) sphere, the EXACT radial guard-hit call shape,
     // but with a time-based residual lifetime (the projectile has no attack-sequence

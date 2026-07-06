@@ -95,6 +95,14 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 	if (machineSimulationState.m_currentState == DAttackState::GuardFlinch)
 		rendererFunctor.drawSphere(rootTranslation, 50.f, 2);
 
+	// [hit-resolution T4] HitFlinch indicator: 50 cm red (colorId 0) sphere on the
+	// character's position while DAttackState::HitFlinch is active. Mirrors the
+	// GuardFlinch render exactly — uses radialState.bodyState.position (rootTranslation)
+	// so the sphere follows the target through the flinch duration. Default lifetime
+	// (single-frame draw) keeps the moving sphere trail-free, same as GuardFlinch.
+	if (machineSimulationState.m_currentState == DAttackState::HitFlinch)
+		rendererFunctor.drawSphere(rootTranslation, 50.f, 0);
+
 	const glm::mat4 guardTransform = glm::translate(glm::mat4(1.f), guardState.bodyState.position)
 	                                * glm::mat4_cast(guardState.bodyState.rotation);
 	const glm::vec3 guardTranslation = glm::vec3(guardTransform[3]);

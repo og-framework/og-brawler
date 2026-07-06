@@ -112,9 +112,9 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 		//rendererFunctor.drawSolidBox(bladeMidPoint, rootRotation, glm::vec3(bladeLength * 0.5f, 15.f, 1.f), colorId);
 	}
 
-	if(!radialSimulationDerivedState.getAttackHits().empty())
-		for (const auto& hit : radialSimulationDerivedState.getAttackHits())
-			rendererFunctor.drawPoint(hit.position);
+	// [hit-resolution T4] The world-space red-point body-hit loop was removed here:
+	// getAttackHits() is now T3's manager-side routing source, not a viz marker. Body
+	// hits are shown target-side via the HitFlinch sphere (DAttackTargetVisualizationTwo).
 	// Guard-hit indicator: 15 cm blue (colorId 2) sphere at every position where the
 	// weapon intersected another character's guard. Populated alongside hasHitGuard.
 	for (const auto& hit : radialSimulationDerivedState.getGuardHits())
@@ -225,9 +225,9 @@ void visualize2(const Input<RendererFunctorType, LoggingFunctorType>& input,
 		//rendererFunctor.drawSolidBox(bladeMidPoint, rootRotation, glm::vec3(bladeLength * 0.5f, 15.f, 1.f), colorId);
 	}
 
-	if (!radialSimulationDerivedState.getAttackHits().empty())
-		for (const auto& hit : radialSimulationDerivedState.getAttackHits())
-			rendererFunctor.drawPoint(hit.position);
+	// [hit-resolution T4] The world-space red-point body-hit loop was removed here:
+	// getAttackHits() is now T3's manager-side routing source, not a viz marker. Body
+	// hits are shown target-side via the HitFlinch sphere (DAttackTargetVisualizationTwo).
 	// Guard-hit indicator: 15 cm blue (colorId 2) sphere at every position where the
 	// weapon intersected another character's guard.
 	for (const auto& hit : radialSimulationDerivedState.getGuardHits())

@@ -64,7 +64,7 @@ private:
 struct DAttackHit
 {
 	glm::vec3 position;
-	int hitObjectIndex;
+	BodyId hitRootBodyId;   // actor-level id of the struck character (SpatialQueryHit::rootBodyId)
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -366,20 +366,20 @@ void collisionCheck(float deltaSeconds,
 	if (queryReport.empty())
 		return;
 
-	struct ActorHitData
+	struct RootHitData
 	{
-		int actorId = 1337;
+		BodyId rootBodyId;
 		unsigned int guardHitIndex = 1337;
 		unsigned int bodyHitIndex = 1337;
 	};
-	std::vector<ActorHitData> actorHits;
+	std::vector<RootHitData> actorHits;
 
 	for (size_t i = 0; i < queryReport.size(); ++i)
 	{
 		const auto& hit = queryReport[i];
 
 		if (std::find_if(derivedState.editAttackHits().begin(), derivedState.editAttackHits().end(), [&hit](const DAttackHit& hitIteratorValue) {
-			return hitIteratorValue.hitObjectIndex == hit.objectIndex;
+			return hitIteratorValue.hitRootBodyId == hit.rootBodyId;
 			}) != derivedState.editAttackHits().end())
 		{
 			continue;
@@ -404,12 +404,22 @@ void collisionCheck(float deltaSeconds,
 			continue;
 
 		{
-			auto findIt = std::find_if(actorHits.begin(), actorHits.end(), [&hit](const ActorHitData& hitData) {
-				return hitData.actorId == hit.objectIndex;
+			auto findIt = std::find_if(actorHits.begin(), actorHits.end(), [&hit](const RootHitData& hitData) {
+				return hitData.rootBodyId == hit.rootBodyId;
 				});
 			if (findIt == actorHits.end())
 			{
-				actorHits.push_back({ hit.objectIndex, 0, 0 });
+				// [hit-resolution T11] Merge body and guard hits by ACTOR-level identity
+				// (rootBodyId). Both the hurtbox and the guard shape on a character now
+				// report the same rootBodyId (the capsule), so the two shape hits merge
+				// into ONE RootHitData with both bodyHitIndex and guardHitIndex set — the
+				// guard directional check below then runs on the correct pairing.
+				// The 1337 sentinels guard the body-only vs guard-case fork below
+				// (`bodyHitIndex == 1337` continue; `guardHitIndex == 1337` body-only
+				// branch). T10 fixed these initializers from 0 to 1337; T11 restores the
+				// body+guard merge that pre-D8 relied on, so the sentinel path is no
+				// longer load-bearing but is kept correct for standalone-body cases.
+				actorHits.push_back({ hit.rootBodyId, 1337, 1337 });
 				findIt = actorHits.end() - 1;
 			}
 
@@ -428,7 +438,7 @@ void collisionCheck(float deltaSeconds,
 		if(actorHit.guardHitIndex == 1337)
 		{
 			const auto& hit = queryReport[actorHit.bodyHitIndex];
-			derivedState.editAttackHits().push_back({ hit.objectPosition, hit.objectIndex});
+			derivedState.editAttackHits().push_back({ hit.objectPosition, hit.rootBodyId });
 		}
 		else
 		{
@@ -488,7 +498,7 @@ void collisionCheck(float deltaSeconds,
 					if (initialConditions.activeAttackSequence == 4)
 					{
 						state.hasHitGuard = true;
-						derivedState.editGuardHits().push_back({ weaponHitIndicatorPosition(), hit.objectIndex });
+						derivedState.editGuardHits().push_back({ weaponHitIndicatorPosition(), hit.rootBodyId });
 						break;
 					}
 				}
@@ -497,19 +507,19 @@ void collisionCheck(float deltaSeconds,
 					if (guardAxis.z > 0.f && (initialConditions.activeAttackSequence == 0 || initialConditions.activeAttackSequence == 2))
 					{
 						state.hasHitGuard = true;
-						derivedState.editGuardHits().push_back({ weaponHitIndicatorPosition(), hit.objectIndex });
+						derivedState.editGuardHits().push_back({ weaponHitIndicatorPosition(), hit.rootBodyId });
 						break;
 					}
 					if (guardAxis.z < 0.f && (initialConditions.activeAttackSequence == 1 || initialConditions.activeAttackSequence == 3))
 					{
 						state.hasHitGuard = true;
-						derivedState.editGuardHits().push_back({ weaponHitIndicatorPosition(), hit.objectIndex });
+						derivedState.editGuardHits().push_back({ weaponHitIndicatorPosition(), hit.rootBodyId });
 						break;
 					}
 				}
 			}
 
-			derivedState.editAttackHits().push_back({ hit.objectPosition, hit.objectIndex });
+			derivedState.editAttackHits().push_back({ hit.objectPosition, hit.rootBodyId });
 		}
 	}
 

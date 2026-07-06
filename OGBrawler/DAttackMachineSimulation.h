@@ -9,6 +9,10 @@
 #include "OGBrawler/DAttackSequenceId.h"
 #include "OGBrawler/BrawlerProjectileSimulation.h"
 #include "OGBrawler/BrawlerMovementSimulation.h"
+// [hit-resolution T2] brawlerInboundHit::DerivedState — read by integrate3 as a plain
+// by-ref param (NOT an ExternalDep, see current_state.md §D7). Zero-dependency header,
+// no include cycle.
+#include "OGBrawler/BrawlerInboundHit.h"
 #include "OGBrawler/InputSequence/InputSequence.h"
 #include "OGSimulation/SimulationDependencies.h"
 #include "OGSimulation/SimulationComparisonGlm.h"
@@ -24,6 +28,14 @@
 // machine in Attacking for the projectile cast before the normal exit-to-Idle gate fires.
 static constexpr float kHadoukenCommitmentSeconds = 0.3f;
 
+// [hit-resolution T1] Minimum dwell for the target-side HitFlinch state. When an inbound hit
+// signal arrives (T2 threads the real External; T1 gates on a false placeholder), the machine
+// transitions Idle/Attacking -> HitFlinch and stays there until m_timeInCurrentState exceeds this
+// window, then returns to Idle. Mirrors the existing GuardFlinch duration (0.3 s ≈ 18 ticks at
+// 60 Hz). File-scope constant matches the kHadoukenCommitmentSeconds precedent above; the eventual
+// lift into DAttackMachineSimulationRuntimeTweakables.h is R-P1 cleanup tracked separately.
+static constexpr float kHitFlinchDuration = 0.3f;
+
 
 #pragma optimize( "", off )
 
@@ -32,6 +44,7 @@ enum class DAttackState
 	Attacking,
 	Idle,
 	GuardFlinch,
+	HitFlinch,
 };
 
 class DAttackRadialSequence;
@@ -155,6 +168,21 @@ void integrate(float deltaTime,
 
 	const PlayerInput& playerInput = input.getPlayerInput();
 
+	// [hit-resolution T1] Inbound-hit veto. Placeholder signal (always false until T2 threads the
+	// real brawlerInboundHit::DerivedState External). Read at the top of the integrate body — before
+	// case dispatch and before any attack-input handling — so a live signal vetoes attack inputs on
+	// the hit tick. On a live hit we cancel the active/queued sequences (mirroring the GuardFlinch
+	// cancellation) and drop into HitFlinch; the switch below then lands in the HitFlinch case with
+	// m_timeInCurrentState freshly reset.
+	const bool inboundHit_PLACEHOLDER = false;
+	if (inboundHit_PLACEHOLDER && state.m_currentState != DAttackState::HitFlinch)
+	{
+		state.m_currentState = DAttackState::HitFlinch; state.m_timeInCurrentState = 0.f;
+		state.m_activeAttackSequence = InvalidAttackSequenceId;
+		state.m_queuedAttackSequence = InvalidAttackSequenceId;
+		attackIntialConditions.activeAttackSequence = InvalidAttackSequenceId;
+	}
+
 	switch (state.m_currentState)
 	{
 	case DAttackState::Idle:
@@ -243,6 +271,17 @@ void integrate(float deltaTime,
 		}
 		break;
 	}
+	case DAttackState::HitFlinch:
+	{
+		// [hit-resolution T1] Mirrors GuardFlinch: dwell for kHitFlinchDuration, no attack-input
+		// reads (gating is automatic — the switch never reaches Idle/Attacking while flinching),
+		// then return to Idle.
+		if (state.m_timeInCurrentState > kHitFlinchDuration)
+		{
+			state.m_currentState = DAttackState::Idle; state.m_timeInCurrentState = 0.f;
+		}
+		break;
+	}
 	default:
 		break;
 	}
@@ -260,6 +299,21 @@ void integrate2(float deltaTime,
 	state.m_timeInCurrentState += deltaTime;
 
 	const PlayerInput& playerInput = input.getPlayerInput();
+
+	// [hit-resolution T1] Inbound-hit veto. Placeholder signal (always false until T2 threads the
+	// real brawlerInboundHit::DerivedState External). Read at the top of the integrate body — before
+	// case dispatch and before any attack-input handling — so a live signal vetoes attack inputs on
+	// the hit tick. On a live hit we cancel the active/queued sequences (mirroring the GuardFlinch
+	// cancellation) and drop into HitFlinch; the switch below then lands in the HitFlinch case with
+	// m_timeInCurrentState freshly reset.
+	const bool inboundHit_PLACEHOLDER = false;
+	if (inboundHit_PLACEHOLDER && state.m_currentState != DAttackState::HitFlinch)
+	{
+		state.m_currentState = DAttackState::HitFlinch; state.m_timeInCurrentState = 0.f;
+		state.m_activeAttackSequence = InvalidAttackSequenceId;
+		state.m_queuedAttackSequence = InvalidAttackSequenceId;
+		attackIntialConditions.activeAttackSequence = InvalidAttackSequenceId;
+	}
 
 	switch (state.m_currentState)
 	{
@@ -349,6 +403,17 @@ void integrate2(float deltaTime,
 		}
 		break;
 	}
+	case DAttackState::HitFlinch:
+	{
+		// [hit-resolution T1] Mirrors GuardFlinch: dwell for kHitFlinchDuration, no attack-input
+		// reads (gating is automatic — the switch never reaches Idle/Attacking while flinching),
+		// then return to Idle.
+		if (state.m_timeInCurrentState > kHitFlinchDuration)
+		{
+			state.m_currentState = DAttackState::Idle; state.m_timeInCurrentState = 0.f;
+		}
+		break;
+	}
 	default:
 		break;
 	}
@@ -361,6 +426,7 @@ inline const char* dAttackStateName(DAttackState s)
 		case DAttackState::Idle:        return "Idle";
 		case DAttackState::Attacking:   return "Attacking";
 		case DAttackState::GuardFlinch: return "GuardFlinch";
+		case DAttackState::HitFlinch:   return "HitFlinch";
 	}
 	return "?";
 }
@@ -373,7 +439,8 @@ template <typename PhysicsAdapterType>
 void integrate3(float deltaTime,
 	const AllInput<PhysicsAdapterType>& input,
 	Dependencies deps,
-	const brawlerMovementSimulation::CharacterBindings& characterBindings)
+	const brawlerMovementSimulation::CharacterBindings& characterBindings,
+	const brawlerInboundHit::DerivedState& inboundHit)
 {
 	const dAttackRadialSimulation::State& attackState = deps.external.get<dAttackRadialSimulation::State>();
 	dAttackRadialSimulation::InitialConditions& attackIntialConditions = deps.external.edit<dAttackRadialSimulation::InitialConditions>();
@@ -387,6 +454,47 @@ void integrate3(float deltaTime,
 		dAttackStateName(state.m_currentState), state.m_activeAttackSequence, state.m_queuedAttackSequence,
 		attackState.currenSequenceId, attackState.attackTimer,
 		playerInput.attackLeft ? 1 : 0, playerInput.attackRight ? 1 : 0);
+
+	// [hit-resolution T2] Inbound-hit veto. Real signal read from the plain by-ref parameter
+	// (T1's compile-time-false placeholder is gone). inboundHit is a per-character
+	// brawlerInboundHit::DerivedState slice on the composite DerivedState, populated by the
+	// manager's routing pass (T3) on the prior tick. It is passed as a plain integrate3 param
+	// (NOT via deps.external) because it lives on the DerivedState composite, not the serialized
+	// State composite — see current_state.md §D7. Sits AHEAD of the switch — and therefore ahead
+	// of the Idle case's Hadouken trigger and attack-input handling — so a live signal vetoes both
+	// attack inputs and the Hadouken trigger on the hit tick. On a live hit we cancel the
+	// active/queued sequences (mirroring the Attacking -> GuardFlinch cancellation) and drop into
+	// HitFlinch; the switch below then lands in the HitFlinch case with m_timeInCurrentState
+	// freshly reset.
+	if (inboundHit.wasHitThisTick && state.m_currentState != DAttackState::HitFlinch)
+	{
+		OGBLOG_G("[Machine.transition] %s -> HitFlinch (inbound hit)", dAttackStateName(state.m_currentState));
+		state.m_currentState = DAttackState::HitFlinch; state.m_timeInCurrentState = 0.f;
+		state.m_activeAttackSequence = InvalidAttackSequenceId;
+		state.m_queuedAttackSequence = InvalidAttackSequenceId;
+		attackIntialConditions.activeAttackSequence = InvalidAttackSequenceId;
+	}
+
+	// [hit-resolution T15] Shooter-side GuardFlinch from a blocked projectile.
+	// The manager routing pass sets wasProjectileBlockedThisTick=true on THIS character
+	// (the shooter) when any of its projectile slots ended the prior tick with
+	// endReason=4 (blockedByGuard, per T14). Fires the same recoil the radial swing's
+	// attacker-side hasHitGuard path produces (see the switch cases below). Unlike the
+	// hasHitGuard path, this one intentionally fires from any origin state — including
+	// Idle — because a projectile can be blocked long after the shooter's Hadouken
+	// commitment window has expired and they've returned to Idle. Same cancellation
+	// as the HitFlinch veto above: active/queued sequences cleared so the switch below
+	// lands in the GuardFlinch case with m_timeInCurrentState freshly reset. The
+	// `!= GuardFlinch` guard prevents re-transition if the character is already
+	// flinching (rapid successive blocks coalesce to a single flinch window).
+	if (inboundHit.wasProjectileBlockedThisTick && state.m_currentState != DAttackState::GuardFlinch)
+	{
+		OGBLOG_G("[Machine.transition] %s -> GuardFlinch (projectile blocked)", dAttackStateName(state.m_currentState));
+		state.m_currentState = DAttackState::GuardFlinch; state.m_timeInCurrentState = 0.f;
+		state.m_activeAttackSequence = InvalidAttackSequenceId;
+		state.m_queuedAttackSequence = InvalidAttackSequenceId;
+		attackIntialConditions.activeAttackSequence = InvalidAttackSequenceId;
+	}
 
 	switch (state.m_currentState)
 	{
@@ -570,6 +678,18 @@ void integrate3(float deltaTime,
 		if (state.m_timeInCurrentState > guardFlinchDuration)
 		{
 			OGBLOG_G("[Machine.transition] GuardFlinch -> Idle");
+			state.m_currentState = DAttackState::Idle; state.m_timeInCurrentState = 0.f;
+		}
+		break;
+	}
+	case DAttackState::HitFlinch:
+	{
+		// [hit-resolution T1] Mirrors GuardFlinch: dwell for kHitFlinchDuration, no attack-input
+		// reads (gating is automatic — the switch never reaches Idle/Attacking while flinching),
+		// then return to Idle.
+		if (state.m_timeInCurrentState > kHitFlinchDuration)
+		{
+			OGBLOG_G("[Machine.transition] HitFlinch -> Idle");
 			state.m_currentState = DAttackState::Idle; state.m_timeInCurrentState = 0.f;
 		}
 		break;
