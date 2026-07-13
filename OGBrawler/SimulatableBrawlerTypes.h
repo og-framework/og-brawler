@@ -177,6 +177,18 @@ public:
                                  m_attackCircle.getInnerRadius(), 20)
     {}
 
+    // Non-copyable / non-movable, compiler-enforced. The sub-StaticData members
+    // (m_attackSimulationStaticData / m_guardSimulationStaticData) hold references
+    // into this object's own sibling members (m_attackSequences / m_attackCircle);
+    // any copy or move would rebind those references to the source instance and
+    // dangle once it is destroyed. This is the type-level guarantee behind the
+    // "constructed in place once, never moved" ownership invariant documented at
+    // ASimulationManagerUImpl::m_staticData (the canonical instance's home).
+    StaticData(const StaticData&) = delete;
+    StaticData(StaticData&&) = delete;
+    StaticData& operator=(const StaticData&) = delete;
+    StaticData& operator=(StaticData&&) = delete;
+
     DAttackCircle m_attackCircle;
     std::vector<DAttackRadialSequence> m_attackSequences;
     dAttackRadialSimulation::StaticData m_attackSimulationStaticData;

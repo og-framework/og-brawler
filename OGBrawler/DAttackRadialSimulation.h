@@ -44,10 +44,14 @@ public:
 		, attackCircle(attackCircle)
 	{}
 
-	StaticData(const StaticData& other)
-		: attackSequences(other.attackSequences)
-		, attackCircle(other.attackCircle)
-	{}
+	// Holds references into sibling members of the owning simulatableBrawler::StaticData
+	// (attackSequences / attackCircle). Copying/moving would rebind those references to
+	// the source object's members, dangling once the source is destroyed. The former
+	// hand-written copy ctor did exactly that silently — now compiler-enforced non-copyable.
+	StaticData(const StaticData&) = delete;
+	StaticData(StaticData&&) = delete;
+	StaticData& operator=(const StaticData&) = delete;
+	StaticData& operator=(StaticData&&) = delete;
 
 	const std::vector<DAttackRadialSequence>& getAttackSequences() const { return attackSequences; }
 	const DAttackCircle& getAttackCircle() const { return attackCircle; }
