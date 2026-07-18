@@ -52,23 +52,27 @@ public:
 	Input(float deltaTime,
 		const glm::vec3& aimDirection,
 		SpatialQueryAdapterType& queryAdapter,
-		RendererFunctorType rendererFunctorImpl)
+		RendererFunctorType rendererFunctorImpl,
+		bool showLegacyEnemyRangeArcs)
 		: m_deltaTime(deltaTime)
 		, aimDirection(aimDirection)
 		, m_queryAdapter(queryAdapter)
 		, rendererFunctorImpl(rendererFunctorImpl)
+		, m_showLegacyEnemyRangeArcs(showLegacyEnemyRangeArcs)
 	{}
 
 	const glm::vec3& getAimDirection() const { return aimDirection; }
 	float getDeltaTime() const { return m_deltaTime; }
 	SpatialQueryAdapterType& getQueryAdapter() const { return m_queryAdapter; }
 	RendererFunctorType getRendererFunctorImpl() const { return rendererFunctorImpl; }
+	bool getShowLegacyEnemyRangeArcs() const { return m_showLegacyEnemyRangeArcs; }
 
 private:
 	float m_deltaTime;
 	const glm::vec3 aimDirection;
 	SpatialQueryAdapterType& m_queryAdapter;
 	RendererFunctorType rendererFunctorImpl;
+	bool m_showLegacyEnemyRangeArcs;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -103,6 +107,14 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 	if (machineSimulationState.m_currentState == DAttackState::HitFlinch)
 		rendererFunctor.drawSphere(rootTranslation, 50.f, 0);
 
+	// Legacy per-enemy inner-circle arc indicators (outlined + solid). Preserved
+	// behind DAttackTargetVisualization.legacyEnemyRangeArcsEnabled CVar (default
+	// false) for A/B comparison against the new attacker-side block-prediction viz
+	// (dAttackBlockPredictionVisualization). Scheduled for deletion in a follow-up
+	// initiative once the new viz is confirmed as an improvement. See initiative
+	// ogbrawler-guardandattackvizrework for context.
+	if (input.getShowLegacyEnemyRangeArcs())
+	{
 	const glm::mat4 guardTransform = glm::translate(glm::mat4(1.f), guardState.bodyState.position)
 	                                * glm::mat4_cast(guardState.bodyState.rotation);
 	const glm::vec3 guardTranslation = glm::vec3(guardTransform[3]);
@@ -193,8 +205,9 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 
 
 				//dAttackVisualizationUtils::drawArcTriangle(rendererFunctor, rootTranslation, middlePointDirection, guardAxis, shieldAngleDiff, staticData.getAttackCircle().getInnerRadius(), 2);
-			}		
+			}
 		}
+	}
 	}
 }
 

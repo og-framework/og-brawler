@@ -104,12 +104,39 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 		}
 	}
 
+	// Active-swing weapon visualization — replaces the previous thick blue line with the
+	// shared drawWeapon helper (handle line + shaft rectangle + triangle tip + mid-line).
+	// Only rendered while the radial sim is actively running an attack sequence; when Idle
+	// no weapon is shown (no swing in progress).
+	//
+	// Weapon geometry:
+	//   handleStart = rootTranslation (character center)
+	//   handleEnd   = rootTranslation + currentDirection · innerRadius
+	//                 (the handle spans the interior of the character's swing envelope)
+	//   weaponEnd   = rootTranslation + currentDirection · outerRadius (blade tip)
+	//   shaftPerp   = perpendicular to weapon axis, IN the swing plane (which is the
+	//                 plane perpendicular to worldSequenceRotationAxis). Computed via
+	//                 cross(currentDirection, rotationAxis) — makes the shaft look flat
+	//                 along the swing direction regardless of seq (horizontal for L/R,
+	//                 vertical for the forward-thrust seq).
+	if (isRealAttackSequence(simulationInitialConditions.activeAttackSequence))
 	{
-		const float bladeLength = circle.getOuterRadius() - circle.getInnerRadius();
-		const glm::vec3 bladeTip = rootTranslation + currentDirection * circle.getOuterRadius();
-		const glm::vec3 bladeMidPoint = rootTranslation + currentDirection * (circle.getInnerRadius() + bladeLength * 0.5f);
-		rendererFunctor.drawLine(rootTranslation, bladeTip, 2, 5.f);
-		//rendererFunctor.drawSolidBox(bladeMidPoint, rootRotation, glm::vec3(bladeLength * 0.5f, 15.f, 1.f), colorId);
+		// Recompute the rotation axis at this scope (the earlier segment-draw block
+		// declares it as a local; keep separate blocks separate — same computation, cheap).
+		const DAttackRadialSequence& activeSeq = radialSimulationStaticData.getAttackSequences()[simulationInitialConditions.activeAttackSequence];
+		const glm::mat4 initialAimRotation = glm::rotate(glm::mat4(1.f),
+			simulationInitialConditions.initialAimAngle,
+			simulationInitialConditions.initialAimRotationAxis);
+		const glm::vec3 worldSequenceRotationAxis = glm::vec3(initialAimRotation * glm::vec4(activeSeq.getRotationAxis(), 0.f));
+
+		const glm::vec3 handleStart = rootTranslation;
+		const glm::vec3 handleEnd   = rootTranslation + currentDirection * circle.getInnerRadius();
+		const glm::vec3 bladeTip    = rootTranslation + currentDirection * circle.getOuterRadius();
+		const glm::vec3 shaftPerp   = glm::normalize(glm::cross(currentDirection, worldSequenceRotationAxis));
+
+		dAttackVisualizationUtils::drawWeapon(rendererFunctor,
+			handleStart, handleEnd, bladeTip, shaftPerp,
+			0 /*Red*/, 4.f /*handleThickness*/, 15.f /*shaftWidth*/, 15.f /*triangleSide*/);
 	}
 
 	// [hit-resolution T4] The world-space red-point body-hit loop was removed here:
@@ -217,12 +244,39 @@ void visualize2(const Input<RendererFunctorType, LoggingFunctorType>& input,
 			}
 	}
 
+	// Active-swing weapon visualization — replaces the previous thick blue line with the
+	// shared drawWeapon helper (handle line + shaft rectangle + triangle tip + mid-line).
+	// Only rendered while the radial sim is actively running an attack sequence; when Idle
+	// no weapon is shown (no swing in progress).
+	//
+	// Weapon geometry:
+	//   handleStart = rootTranslation (character center)
+	//   handleEnd   = rootTranslation + currentDirection · innerRadius
+	//                 (the handle spans the interior of the character's swing envelope)
+	//   weaponEnd   = rootTranslation + currentDirection · outerRadius (blade tip)
+	//   shaftPerp   = perpendicular to weapon axis, IN the swing plane (which is the
+	//                 plane perpendicular to worldSequenceRotationAxis). Computed via
+	//                 cross(currentDirection, rotationAxis) — makes the shaft look flat
+	//                 along the swing direction regardless of seq (horizontal for L/R,
+	//                 vertical for the forward-thrust seq).
+	if (isRealAttackSequence(simulationInitialConditions.activeAttackSequence))
 	{
-		const float bladeLength = circle.getOuterRadius() - circle.getInnerRadius();
-		const glm::vec3 bladeTip = rootTranslation + currentDirection * circle.getOuterRadius();
-		const glm::vec3 bladeMidPoint = rootTranslation + currentDirection * (circle.getInnerRadius() + bladeLength * 0.5f);
-		rendererFunctor.drawLine(rootTranslation, bladeTip, 2, 5.f);
-		//rendererFunctor.drawSolidBox(bladeMidPoint, rootRotation, glm::vec3(bladeLength * 0.5f, 15.f, 1.f), colorId);
+		// Recompute the rotation axis at this scope (the earlier segment-draw block
+		// declares it as a local; keep separate blocks separate — same computation, cheap).
+		const DAttackRadialSequence& activeSeq = radialSimulationStaticData.getAttackSequences()[simulationInitialConditions.activeAttackSequence];
+		const glm::mat4 initialAimRotation = glm::rotate(glm::mat4(1.f),
+			simulationInitialConditions.initialAimAngle,
+			simulationInitialConditions.initialAimRotationAxis);
+		const glm::vec3 worldSequenceRotationAxis = glm::vec3(initialAimRotation * glm::vec4(activeSeq.getRotationAxis(), 0.f));
+
+		const glm::vec3 handleStart = rootTranslation;
+		const glm::vec3 handleEnd   = rootTranslation + currentDirection * circle.getInnerRadius();
+		const glm::vec3 bladeTip    = rootTranslation + currentDirection * circle.getOuterRadius();
+		const glm::vec3 shaftPerp   = glm::normalize(glm::cross(currentDirection, worldSequenceRotationAxis));
+
+		dAttackVisualizationUtils::drawWeapon(rendererFunctor,
+			handleStart, handleEnd, bladeTip, shaftPerp,
+			0 /*Red*/, 4.f /*handleThickness*/, 15.f /*shaftWidth*/, 15.f /*triangleSide*/);
 	}
 
 	// [hit-resolution T4] The world-space red-point body-hit loop was removed here:

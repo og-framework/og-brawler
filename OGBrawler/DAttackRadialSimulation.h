@@ -254,6 +254,52 @@ OGBRAWLER_API DAttackSegment getAttackSegment(const InitialConditions& initialCo
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// Pure block predicate shared by collisionCheck (below) and the attacker-side
+// block-prediction visualization (dAttackBlockPredictionVisualization). Extracting it
+// makes sim/viz drift structurally impossible. No side effects. Returns true iff a swing
+// of `activeAttackSequence` from `attackerRoot` (the attacker's own body position,
+// State::bodyState.position / physics.getBodyTransform(bindings.ownBodyId)[3]) would be
+// blocked by a guard body whose current world transform is `guardTransform` and whose
+// overlap position in the query is `guardOverlapPosition` (SpatialQueryHit::objectPosition
+// of the guard-category hit). Constants and the outer gate mirror collisionCheck exactly:
+// shieldAngle = 0.25f, outerShieldAngle = pi/2 (0.5 double literal → implicit narrowing,
+// preserved verbatim), and the POSITIVE `td < outerShieldAngle` gate (NOT a negated
+// early-return) preserves the sim's "NaN falls through to attack-lands" semantics.
+inline bool wouldGuardBlock(
+	unsigned int     activeAttackSequence,
+	const glm::vec3& attackerRoot,
+	const glm::mat4& guardTransform,
+	const glm::vec3& guardOverlapPosition)
+{
+	const glm::vec3 guardForward = glm::vec3(guardTransform[0]);
+	glm::vec3 collidingPosition = guardOverlapPosition;
+	collidingPosition.z = attackerRoot.z;
+	const glm::vec3 collisionDirection = attackerRoot - collidingPosition;
+	const glm::vec3 normalizedCollisionDirection = glm::normalize(collisionDirection);
+	const float shieldAngle      = 0.25f;
+	const float outerShieldAngle = glm::pi<float>() * 0.5;   // implicit narrowing — matches sim
+	const float td = std::acos(glm::dot(normalizedCollisionDirection, guardForward));
+	if (td < outerShieldAngle)
+	{
+		const glm::vec3 guardAxis = glm::cross(normalizedCollisionDirection, guardForward);
+		if (td < shieldAngle)
+		{
+			if (activeAttackSequence == 4)
+				return true;
+		}
+		else
+		{
+			if (guardAxis.z > 0.f && (activeAttackSequence == 0 || activeAttackSequence == 2))
+				return true;
+			if (guardAxis.z < 0.f && (activeAttackSequence == 1 || activeAttackSequence == 3))
+				return true;
+		}
+	}
+	return false;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 namespace
 {
 
@@ -446,21 +492,9 @@ void collisionCheck(float deltaSeconds,
 		}
 		else
 		{
-			const float shieldAngle = 0.25f;
-			const float outerShieldAngle = glm::pi<float>() * 0.5;
-			const float shieldAngleDiff = outerShieldAngle - shieldAngle;
-			const float middlePointShieldAngle = shieldAngle + (shieldAngleDiff * 0.5f);
-
 			const auto& hit = queryReport[actorHit.guardHitIndex];
 			// Query guard body transform via PhysicsBodyAdapter using hit's BodyId
 			const glm::mat4x4 guardTransform = physics.getBodyTransform(hit.bodyId);
-			const glm::vec3 guardTranslation = glm::vec3(guardTransform[3]);
-			const glm::vec3 guardForward = glm::vec3(guardTransform[0]);
-
-			glm::vec3 collidingPosition = hit.objectPosition;
-			collidingPosition.z = rootTranslation.z;
-			const glm::vec3 collisionDirection = rootTranslation - collidingPosition;
-			const glm::vec3 normalizedCollisionDirection = glm::normalize(collisionDirection);
 
 			// Compute the indicator position on the attacker's weapon line. Two cases:
 			//   1. If the weapon line (rootTranslation + t * currentDirection) crosses the
@@ -492,35 +526,16 @@ void collisionCheck(float deltaSeconds,
 				return glm::vec3(attackerXY.x + t * weaponDirXY.x, attackerXY.y + t * weaponDirXY.y, hit.objectPosition.z);
 			};
 
-			const float arcRadius = std::min(staticData.getAttackCircle().getOuterRadius(), glm::length(collisionDirection));
-			const float targetAngleDifference = std::acos(glm::dot(normalizedCollisionDirection, guardForward));
-			if (targetAngleDifference < outerShieldAngle)
+			// Guard directional block classification now lives in the shared
+			// dAttackRadialSimulation::wouldGuardBlock predicate (above) so the sim and
+			// the attacker-side block-prediction viz cannot drift. Side effects stay at
+			// the call site: weaponHitIndicatorPosition() depends on currentDirection,
+			// which is not an input to the pure predicate.
+			if (wouldGuardBlock(initialConditions.activeAttackSequence, rootTranslation, guardTransform, hit.objectPosition))
 			{
-				const glm::vec3 guardAxis = glm::cross(normalizedCollisionDirection, guardForward);
-				if (targetAngleDifference < shieldAngle)
-				{
-					if (initialConditions.activeAttackSequence == 4)
-					{
-						state.hasHitGuard = true;
-						derivedState.editGuardHits().push_back({ weaponHitIndicatorPosition(), hit.rootBodyId });
-						break;
-					}
-				}
-				else
-				{
-					if (guardAxis.z > 0.f && (initialConditions.activeAttackSequence == 0 || initialConditions.activeAttackSequence == 2))
-					{
-						state.hasHitGuard = true;
-						derivedState.editGuardHits().push_back({ weaponHitIndicatorPosition(), hit.rootBodyId });
-						break;
-					}
-					if (guardAxis.z < 0.f && (initialConditions.activeAttackSequence == 1 || initialConditions.activeAttackSequence == 3))
-					{
-						state.hasHitGuard = true;
-						derivedState.editGuardHits().push_back({ weaponHitIndicatorPosition(), hit.rootBodyId });
-						break;
-					}
-				}
+				state.hasHitGuard = true;
+				derivedState.editGuardHits().push_back({ weaponHitIndicatorPosition(), hit.rootBodyId });
+				break;
 			}
 
 			derivedState.editAttackHits().push_back({ hit.objectPosition, hit.rootBodyId });

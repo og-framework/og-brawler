@@ -91,9 +91,6 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	glm::mat3 rootRotation = glm::mat3(rootTransform);
 
 
-	const float attackDirectionAngleIncrement = glm::pi<float>() / 6.f;
-	const float sideAngle = (glm::pi<float>() / 2.f) - (attackDirectionAngleIncrement);
-
 	const float aimArchAngle = 0.1f;
 	rendererFunctor.drawLine(rootTranslation - input.getAimDirection() * 30.f, rootTranslation + input.getAimDirection() * radialSimulationStaticData.getAttackCircle().getOuterRadius(), 1, 1.f);
 	// Green outer arc visualizing the forward-strike window. UE DrawDebugCircleArc sweeps
@@ -121,38 +118,14 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	const glm::vec3 currentDirection = glm::vec3(rootTransform * defaultForward4);
 	input.getLoggingFunctor().logVec3("dAttackRadialVisualization currentDirection: ", currentDirection);
 
+	// moveDirectionWorld normalized — retained for the yellow move-direction line below.
+	// The forward/left/right classification, the inner-circle origin point, and the
+	// predicted attack-sequence id are now produced by the shared pure helper
+	// dAttackVisualizationUtils::computeAttackIndicatorGeometry (see below), so the aim
+	// viz and the new block-prediction viz cannot drift on either value.
 	const glm::vec3 moveDirection = glm::normalize(glm::vec3(input.getMoveDirectionWorld()));
-	const glm::vec3 moveDirectionXY = glm::normalize(glm::vec3(moveDirection.x, moveDirection.y, 0.f));
 
-	const glm::vec3 aimDirection = glm::normalize(input.getAimDirection());
-	const glm::vec3 aimDirectionXY = glm::normalize(glm::vec3(input.getAimDirection().x, input.getAimDirection().y, 0.f));
-	const glm::vec4 aimDirectionXY4 = glm::vec4(aimDirectionXY, 0.f);
 
-	// Both terms must be XY-projected; mirrors the fix in dAttackMachineSimulation::integrate3.
-	// Using the 3D aimDirection inflates the angle by aim's downward z and causes the viz
-	// to flicker between forward and side indicators when XY directions are aligned.
-	const float dotXY = glm::clamp(glm::dot(aimDirectionXY, moveDirectionXY), -1.f, 1.f);
-	const float angle = glm::acos(dotXY);
-	const float signedAngle = glm::sign(glm::cross(aimDirectionXY, moveDirectionXY).z) * angle;
-
-	const glm::vec3 attackAxis = [angle, &moveDirectionXY, &aimDirectionXY]() {
-		if (angle < 0.01f)
-			return glm::vec3(0.f, 0.f, 1.f);
-		else
-			return glm::normalize(glm::cross(moveDirectionXY, aimDirectionXY));
-		}();
-	const glm::vec3 attackSegmentRoot = glm::vec3(rootTransform[3]) + glm::vec3(0.f, 0.f, 5.f);
-
-	//Visualize angle intervals where the different attack directions will occur
-	//dAttackVisualizationUtils::drawSegmentOutline(rendererFunctor, attackSegmentRoot, aimDirectionXY, attackAxis, attackDirectionAngleIncrement * 2, radialSimulationStaticData.getAttackCircle().getInnerRadius() * 0.5f, 0.f, 0, 1.f);
-	//glm::mat4 leftMiddlePointAttackRotation = glm::rotate(glm::mat4(1.f), sideAngle, attackAxis);
-	//glm::vec3 leftMiddlePointDirection = glm::vec3(leftMiddlePointAttackRotation * aimDirectionXY4);
-	//glm::mat4 rightMiddlePointAttackRotation = glm::rotate(glm::mat4(1.f), sideAngle, -attackAxis);
-	//glm::vec3 rightMiddlePointDirection = glm::vec3(rightMiddlePointAttackRotation * aimDirectionXY4);
-	//dAttackVisualizationUtils::drawSegmentOutline(rendererFunctor, attackSegmentRoot, leftMiddlePointDirection, attackAxis, sideAngle, radialSimulationStaticData.getAttackCircle().getInnerRadius() * 0.5f, 1.f, 0, 1.f);
-	//dAttackVisualizationUtils::drawSegmentOutline(rendererFunctor, attackSegmentRoot, rightMiddlePointDirection, -attackAxis, sideAngle, radialSimulationStaticData.getAttackCircle().getInnerRadius() * 0.5f, 1.f, 0, 1.f);
-
-	
 	// Red lined attack-direction indicator (thicker than the green reference arcs above).
 	//   Forward strike  → π/2 vertical arc from the character's up vector down to the aim
 	//                     direction (XY-projected). Drawn manually with N short line
@@ -168,81 +141,101 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	const float kIndicatorThickness = 4.f; // green reference arcs use 1.f
 	const unsigned int kIndicatorColor = 0; // 0 = red per DAttackCircularVisualizationUImpl::idToColor
 
-	const bool forwardCase =
-		glm::length(input.getMoveDirection()) < 0.00001f
-		|| (signedAngle < attackDirectionAngleIncrement && signedAngle > -attackDirectionAngleIncrement);
+	// Shared classifier + inner-circle origin point. The block-prediction viz consumes the
+	// same helper (and its predictedSequenceIdFromIdle) so the two indicators can't diverge.
+	const dAttackVisualizationUtils::AttackIndicatorGeometry attackGeometry =
+		dAttackVisualizationUtils::computeAttackIndicatorGeometry(
+			input.getAimDirection(),
+			input.getMoveDirection(),
+			input.getMoveDirectionWorld(),
+			rootTranslation,
+			kIndicatorRadius);
 
-	if (forwardCase)
+	// Weapon-shape attack indicator (redesign — replaces the previous 3-line L / 3-point
+	// path). The shape is stylised to read as a weapon held in a ready stance:
+	//   - Handle: a straight LINE (drawLine primitive, same thickness as the previous
+	//             indicator). Length varies by kind:
+	//               - Side (left/right): handle extends from the "back" intersection
+	//                 of the weapon-line with the inner circle to the "front"
+	//                 intersection (i.e. the handle IS the inner-circle chord of the
+	//                 weapon line). The blade then continues from the front intersection
+	//                 outward to the aim tip.
+	//               - Forward: handle extends 50cm from a point above the character's head
+	//                 along the weapon axis; the "inner-circle chord" concept doesn't
+	//                 apply to a diagonal top→aimTip line, so a fixed length is used.
+	//   - Blade:  a rectangular shaft + equilateral triangular tip, from where the handle
+	//             ends to the aim tip. Shaft orientation differs by kind:
+	//               - Side (left/right): shaft lies flat in the XY plane (horizontal swing).
+	//               - Forward:           shaft stands vertical, in the plane containing
+	//                                    the weapon axis and +Z (upright thrust).
+	//
+	// The whole weapon indicator is HIDDEN while the radial sim is actively running an
+	// attack sequence — showing "where the next attack would go" while an actual attack
+	// is in-progress is confusing, and the ongoing swing viz (DAttackRadialVisualization)
+	// already conveys the active attack.
+	constexpr float kShaftWidth   = 15.f;   // shaft perpendicular width (blade)
+	constexpr float kTriangleSide = 15.f;   // triangular tip side length (equilateral)
+
+	if (!isRealAttackSequence(simulationInitialConditions.activeAttackSequence))
 	{
-		// Forward indicator: a forward L plus a diagonal "ceiling" line forming a closed
-		// wedge over the character.
-		//   Horizontal: character position → forwardEnd (inner radius along aim).
-		//   Diagonal:   top (inner radius above character) → aim tip (outer radius along
-		//               aim, matching the green aim line's forward end).
-		//   Vertical:   forwardEnd → the point where the vertical line through forwardEnd
-		//               meets the diagonal. Shortened from the previous full-innerRadius
-		//               height so the three lines form a closed shape.
-		const glm::vec3 up(0.f, 0.f, 1.f);
-		const glm::vec3 forwardEnd = rootTranslation + aimDirectionXY * kIndicatorRadius;
-		const glm::vec3 top        = rootTranslation + up * kIndicatorRadius;
-		const glm::vec3 aimTip     = rootTranslation + input.getAimDirection() * radialSimulationStaticData.getAttackCircle().getOuterRadius();
+		const glm::vec3 aimTip = rootTranslation + input.getAimDirection() * radialSimulationStaticData.getAttackCircle().getOuterRadius();
 
-		// Project onto XY to solve for s ∈ [0, 1] along the diagonal where the vertical
-		// line through forwardEnd intersects: forwardEnd.xy = top.xy + s*(aimTip.xy - top.xy).
-		const glm::vec3 diagonal  = aimTip - top;
-		const glm::vec3 toForward = forwardEnd - top;
-		const glm::vec2 diagonalXY(diagonal.x, diagonal.y);
-		const glm::vec2 toForwardXY(toForward.x, toForward.y);
-		const float diagonalXYLenSq = glm::dot(diagonalXY, diagonalXY);
-		const float s = (diagonalXYLenSq > KINDA_SMALL_NUMBER)
-			? glm::dot(toForwardXY, diagonalXY) / diagonalXYLenSq
-			: 0.f;
-		const glm::vec3 verticalEnd = top + s * diagonal;
+		// Compute the "reference handle length" — the chord of the inner circle traced by
+		// a canonical (+π/6 CCW from aim) threshold line to aimTip. This is the L/R
+		// handle length; the forward case reuses the same value so both indicators have
+		// visually identical handle proportions.
+		const glm::vec3 aimDirectionXY = glm::normalize(
+			glm::vec3(input.getAimDirection().x, input.getAimDirection().y, 0.f));
+		const float refThresholdAngle = glm::pi<float>() / 6.f;
+		const glm::mat4 refRot = glm::rotate(glm::mat4(1.f), refThresholdAngle, glm::vec3(0.f, 0.f, 1.f));
+		const glm::vec3 refThresholdDir = glm::vec3(refRot * glm::vec4(aimDirectionXY, 0.f));
+		const glm::vec3 refFrontPoint = rootTranslation + refThresholdDir * kIndicatorRadius;
+		const glm::vec2 refLineDirXY = glm::normalize(glm::vec2(refFrontPoint.x - aimTip.x, refFrontPoint.y - aimTip.y));
+		const float kSideHandleLength = std::abs(-2.f * kIndicatorRadius
+			* glm::dot(glm::vec2(refThresholdDir.x, refThresholdDir.y), refLineDirXY));
 
-		rendererFunctor.drawLine(rootTranslation, forwardEnd,  kIndicatorColor, kIndicatorThickness);
-		rendererFunctor.drawLine(forwardEnd,      verticalEnd, kIndicatorColor, kIndicatorThickness);
-		rendererFunctor.drawLine(top,             aimTip,      kIndicatorColor, kIndicatorThickness);
-	}
-	else
-	{
-		// Side indicator: a three-point path through (aim tip → threshold point → back
-		// intersection). The threshold angle (= attackDirectionAngleIncrement = π/6 from
-		// aim — defined here and matched in dAttackMachineSimulation::integrate3 where
-		// it controls the forward-vs-side branch in the if-cascade) is the angle that
-		// determines whether the player's move direction lands a forward or side strike.
-		//   1. Point A — aim tip (rootTranslation + aimDirection*outerRadius), same as
-		//      the green aim line's forward end.
-		//   2. Point B — threshold point on the inner circle (rootTranslation +
-		//      thresholdDir*innerRadius).
-		//   3. Point C — extending in the (A → B) XY direction past B until the line
-		//      intersects the inner circle a second time. The inner circle lies in the
-		//      XY plane at character z, so the next-intersection math is purely 2D:
-		//      ray P(t) = B + t*d with d = normalize(B.xy - A.xy); substituting into
-		//      |P - center|² = r² (with |B - center|² = r²) gives
-		//         t² + 2tr·dot(thresholdDir, d) = 0
-		//      and the non-zero root is t = -2r·dot(thresholdDir, d).
-		//   Left strike  → threshold CCW +π/6 from aim (positive +Z rotation, matches
-		//                  integrate3's positive signedAngle → seq 1 labeling).
-		//   Right strike → threshold CW -π/6 from aim.
-		const bool isLeft = signedAngle > attackDirectionAngleIncrement;
-		const float thresholdOffset = isLeft ? attackDirectionAngleIncrement : -attackDirectionAngleIncrement;
-		const glm::mat4 thresholdRot = glm::rotate(glm::mat4(1.f), thresholdOffset, glm::vec3(0.f, 0.f, 1.f));
-		const glm::vec3 thresholdDir = glm::vec3(thresholdRot * glm::vec4(aimDirectionXY, 0.f));
+		if (attackGeometry.kind == dAttackVisualizationUtils::AttackDirectionKind::Forward)
+		{
+			// Forward: handle starts above the character's head (top = rootTranslation + up ·
+			// innerRadius) and extends kSideHandleLength (matches L/R handle length) toward
+			// the aim tip; blade continues to aim tip. Vertical shaft.
+			const glm::vec3 up(0.f, 0.f, 1.f);
+			const glm::vec3 top       = rootTranslation + up * kIndicatorRadius;
+			const glm::vec3 weaponDir = glm::normalize(aimTip - top);
+			const glm::vec3 handleEnd = top + weaponDir * kSideHandleLength;
 
-		const glm::vec3 aimTip     = rootTranslation + input.getAimDirection() * radialSimulationStaticData.getAttackCircle().getOuterRadius();
-		const glm::vec3 frontPoint = rootTranslation + thresholdDir * kIndicatorRadius;
+			// Vertical shaft: perp is in the plane containing weapon axis and +Z.
+			const glm::vec3 horizontalPerp = glm::normalize(glm::cross(weaponDir, glm::vec3(0.f, 0.f, 1.f)));
+			const glm::vec3 shaftPerp     = glm::normalize(glm::cross(weaponDir, horizontalPerp));
+			dAttackVisualizationUtils::drawWeapon(rendererFunctor,
+				top, handleEnd, aimTip, shaftPerp,
+				kIndicatorColor, kIndicatorThickness, kShaftWidth, kTriangleSide);
+		}
+		else
+		{
+			// Side (left or right): handle is the chord of the inner circle traced by the
+			// weapon line. It ENTERS the inner circle at backPoint (behind the character)
+			// and EXITS at frontPoint (the threshold point at ±π/6 from aim). Blade
+			// continues from frontPoint outward to the aim tip.
+			const glm::vec3 frontPoint   = attackGeometry.originOnInnerCircle;
+			const glm::vec3 thresholdDir = attackGeometry.attackDirectionXY;
+			const glm::vec2 lineDirXY = glm::normalize(glm::vec2(frontPoint.x - aimTip.x, frontPoint.y - aimTip.y));
+			const float tExit         = -2.f * kIndicatorRadius * glm::dot(glm::vec2(thresholdDir.x, thresholdDir.y), lineDirXY);
+			const glm::vec3 backPoint(frontPoint.x + tExit * lineDirXY.x,
+			                         frontPoint.y + tExit * lineDirXY.y,
+			                         rootTranslation.z);
 
-		const glm::vec2 lineDirXY = glm::normalize(glm::vec2(frontPoint.x - aimTip.x, frontPoint.y - aimTip.y));
-		const float tExit         = -2.f * kIndicatorRadius * glm::dot(glm::vec2(thresholdDir.x, thresholdDir.y), lineDirXY);
-		const glm::vec3 backPoint(frontPoint.x + tExit * lineDirXY.x, frontPoint.y + tExit * lineDirXY.y, rootTranslation.z);
-
-		rendererFunctor.drawLine(aimTip,          frontPoint, kIndicatorColor, kIndicatorThickness);
-		rendererFunctor.drawLine(frontPoint,      backPoint,  kIndicatorColor, kIndicatorThickness);
-		rendererFunctor.drawLine(rootTranslation, backPoint,  kIndicatorColor, kIndicatorThickness);
+			// Horizontal shaft: perp lies in XY plane, perpendicular to weapon axis.
+			const glm::vec3 weaponDir = glm::normalize(aimTip - backPoint);
+			const glm::vec3 shaftPerp = glm::normalize(glm::cross(weaponDir, glm::vec3(0.f, 0.f, 1.f)));
+			dAttackVisualizationUtils::drawWeapon(rendererFunctor,
+				backPoint, frontPoint, aimTip, shaftPerp,
+				kIndicatorColor, kIndicatorThickness, kShaftWidth, kTriangleSide);
+		}
 	}
 
 	if (glm::length(input.getMoveDirection()) > 0.0001f)
-		input.getRendererFunctorImpl().drawLine(rootTranslation - moveDirection*30.f, rootTranslation + moveDirection * radialSimulationStaticData.getAttackCircle().getInnerRadius(), 3, 2.f);
+		input.getRendererFunctorImpl().drawLine(rootTranslation - moveDirection*15.f, rootTranslation + moveDirection * radialSimulationStaticData.getAttackCircle().getInnerRadius() * 0.4f, 3, 1.f);
 
 	// render 
 
