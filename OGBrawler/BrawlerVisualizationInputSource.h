@@ -13,11 +13,30 @@
 //                       block-prediction wedge) move at display rate instead of
 //                       stepping at the 60 Hz sim tick.
 //
-//   REMOTE proxy     -> CorrectionCache::getLatestInput(), unchanged. There is no
-//                       live local input for a remote player; the server-corrected,
-//                       tick-quantized cache value is the ONLY source available,
-//                       and echoing our own local input onto someone else's
-//                       character would be plainly wrong.
+//   REMOTE proxy     -> the LAST RELAYED INPUT for that character
+//                       (SimulationNetSync::getLastRelayedInput, i.e. the relay
+//                       store's `lastKnown`). There is no live local input for a
+//                       remote player; the server-published, tick-quantized value
+//                       is the ONLY source available, and echoing our own local
+//                       input onto someone else's character would be plainly wrong.
+//
+// [og-netcode-v2-input-relay T7] THE REMOTE SOURCE MOVED, THE RULE DID NOT.
+// It used to be `CorrectionCache::getLatestInput()`, fed by the SERVER->CLIENT
+// correction-INPUT channel — **[T8] which is now deleted, making the relay store
+// the only remote source that exists**. The relay store carries the same
+// character's real input from the same authority, so the rule above is untouched
+// in substance; what changed is which structure holds the value. Two consequences
+// worth knowing here:
+//   * FRESHER, not merely different. The correction channel's input is what the
+//     server applied ~1 RTT ago and had to travel back to us; a relayed entry is
+//     published on the same schedule but is the input the authority is applying
+//     (or is about to apply) — it is the same value the sim's own proxy prediction
+//     runs on, so the cue and the simulated pose can no longer be sourced from two
+//     different generations of the same player's input.
+//   * THE NULLOPT CONTRACT IS IDENTICAL, deliberately, so this rule needed no
+//     change at all: a remote character with nothing relayed yet yields nullopt
+//     exactly as a cold correction cache did, and the caller still skips the
+//     input-carrying viz for that frame.
 //
 // Why this rule lives in the core rather than inline at the call site:
 //   * it is the substance of T13, and og-brawler-tests cannot link the UE
@@ -62,25 +81,30 @@ namespace simulatableBrawler
 //                       observe a live read at all, and a test can assert that by
 //                       counting invocations.
 //
-//   cachedInput       : the tick-quantized correction-cache read-back. Returned
-//                       verbatim on the remote path, INCLUDING nullopt (a cold or
-//                       absent cache means the viz is skipped this frame, which is
-//                       the pre-existing behaviour T13 must not change).
+//   relayedInput      : the tick-quantized last-known relayed input for this
+//                       character ([T7]; was named cachedInput when it came from
+//                       the correction cache). Returned verbatim on the remote
+//                       path, INCLUDING nullopt (an absent or cold SOURCE means
+//                       the viz is skipped this frame, which is the pre-existing
+//                       behaviour neither T13 nor T7 may change).
 //
-// LISTEN-SERVER IMPROVEMENT (intended, new in T13): getLatestInput returns nullopt
-// on the authority because the authority keeps no correction caches, so the host's
-// own input-carrying viz was previously skipped on every frame. The live sampler
-// has no such gap, so the host now echoes like any other local character. This is
-// a strict improvement, and it falls out of the rule rather than being special-cased.
+// LISTEN-SERVER IMPROVEMENT (intended, new in T13; UNAFFECTED by T7's re-source):
+// the remote-path value is nullopt on the authority — before T7 because the
+// authority keeps no correction caches, after T7 because it allocates no relay
+// stores — so the host's own input-carrying viz was previously skipped on every
+// frame. The live sampler has no such gap, so the host echoes like any other local
+// character. That is a strict improvement, and it falls out of the rule rather than
+// being special-cased; note it does not even depend on the remote source's
+// emptiness, since the host takes the LOCAL branch on `hasLiveLocalInput`.
 template <typename LiveSampler>
 std::optional<PlayerInput> selectVisualizationInput(bool hasLiveLocalInput,
                                                     LiveSampler&& sampleLive,
-                                                    const std::optional<PlayerInput>& cachedInput)
+                                                    const std::optional<PlayerInput>& relayedInput)
 {
     if (hasLiveLocalInput)
         return std::optional<PlayerInput>(std::forward<LiveSampler>(sampleLive)());
 
-    return cachedInput;
+    return relayedInput;
 }
 
 } // namespace simulatableBrawler
