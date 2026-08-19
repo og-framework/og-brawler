@@ -67,13 +67,14 @@ private:
 	float m_cameraBoomLength;
 };
 
-#pragma optimize( "", off )
+#include "OGSimulation/CompilerControl.h"
+OGSIM_OPTIMIZE_OFF
 
 namespace dAttackCameraBehaviour
 {
 	OGBRAWLER_API void integrate(float deltaSeconds, const DAttackCameraInput& input, DAttackCameraState& state);
 }
-#pragma optimize( "", on )
+OGSIM_OPTIMIZE_ON
 
 
 class DAttackCameraBehaviour

@@ -11,7 +11,8 @@
 #include "OGSimulation/DMathUtil.h"
 #include "DAttackVisualizationUtils.h"
 
-#pragma optimize( "", off )
+#include "OGSimulation/CompilerControl.h"
+OGSIM_OPTIMIZE_OFF
 
 
 class DAttackRadialSequence;
@@ -243,7 +244,7 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 
 }
 
-#pragma optimize( "", on )
+OGSIM_OPTIMIZE_ON
 
 
 

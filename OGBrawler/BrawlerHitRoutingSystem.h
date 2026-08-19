@@ -26,9 +26,15 @@
 // this initiative ratified that convention (lead D12, 2026-07-07). The design
 // corpus's `ogsim::` qualification is schematic.
 //
-// PRAGMA NOTE (N-1): the `#pragma optimize("", off/on)` convention is scoped to
-// OGSim-core headers (tasks 1-5). OGBrawler-core headers — this one included —
-// do not use it; match the existing OGBrawler convention (no pragma).
+// PRAGMA NOTE (N-1, corrected by item 77 2026-08-17): the backlog previously
+// claimed OGBrawler-core headers don't use the debugger-friendliness pragma;
+// that was stale. They do — 16 of the 45 files in this directory carry the
+// pair (this file is one of the 29 that don't), same as OGSim-core, and as of
+// item 77 all three subtrees (og-simulation, og-brawler, the UE adapters)
+// share ONE macro pair, OGSIM_OPTIMIZE_OFF/ON, defined in
+// OGSimulation/CompilerControl.h — not a per-subtree convention anymore. This
+// file specifically has no pair to convert; it simply doesn't wrap its
+// routing pass in one.
 //
 // Deterministic order (D4): iterates attackers in ascending SimulatableBrawler
 // id — sorts the storage-view snapshot internally so the routing outcome is

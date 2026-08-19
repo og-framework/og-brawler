@@ -34,7 +34,8 @@
 #include "OGBrawler/BrawlerMovementSimulation.h"
 #include "OGSimulation/SimulationDependencies.h"
 
-#pragma optimize("", off)
+#include "OGSimulation/CompilerControl.h"
+OGSIM_OPTIMIZE_OFF
 
 namespace simulatableBrawler
 {
@@ -212,4 +213,4 @@ static_assert(sizeof(ExecutionOrderDiagnostic_) >= 0);
 
 } // namespace simulatableBrawler
 
-#pragma optimize("", on)
+OGSIM_OPTIMIZE_ON

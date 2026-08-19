@@ -17,7 +17,8 @@
 #include "OGSimulation/QueryGeometry.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
 
-#pragma optimize( "", off )
+#include "OGSimulation/CompilerControl.h"
+OGSIM_OPTIMIZE_OFF
 
 
 class DAttackRadialSequence;
@@ -292,7 +293,7 @@ static_assert(SimulationState<dAttackGuardSimulation::State>);
 static_assert(SimulationInput<dAttackGuardSimulation::PlayerInput>);
 static_assert(SimulationInitialConditions<dAttackGuardSimulation::InitialConditions>);
 
-#pragma optimize( "", on )
+OGSIM_OPTIMIZE_ON
 
 
 

@@ -11,7 +11,8 @@
 #include "DAttackCircle.h"
 #include "OGSimulation/OGAssert.h"
 
-#pragma optimize( "", off )
+#include "OGSimulation/CompilerControl.h"
+OGSIM_OPTIMIZE_OFF
 
 
 namespace dAttackVisualizationUtils
@@ -249,5 +250,5 @@ inline AttackIndicatorGeometry computeAttackIndicatorGeometry(
 
 }
 
-#pragma optimize( "", on )
+OGSIM_OPTIMIZE_ON
  

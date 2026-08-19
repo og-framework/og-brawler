@@ -15,7 +15,8 @@
 #include "OGSimulation/SpatialQueryResult.h"
 #include "OGSimulation/QueryGeometry.h"
 
-#pragma optimize( "", off )
+#include "OGSimulation/CompilerControl.h"
+OGSIM_OPTIMIZE_OFF
 
 // Attacker-side block-prediction visualization. Renders a fading orange "attack
 // area" pie slice (colorId 6) from the attacker's circle CENTER outward — always
@@ -404,4 +405,4 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 
 }
 
-#pragma optimize( "", on )
+OGSIM_OPTIMIZE_ON

@@ -21,7 +21,8 @@
 #include "OGBrawlerLog.h"
 #include "OGSimulation/OGAssert.h"
 
-#pragma optimize( "", off )
+#include "OGSimulation/CompilerControl.h"
+OGSIM_OPTIMIZE_OFF
 
 
 class DAttackRadialSequence;
@@ -708,7 +709,7 @@ static_assert(SimulationState<dAttackRadialSimulation::State>);
 static_assert(SimulationInput<dAttackRadialSimulation::PlayerInput>);
 static_assert(SimulationInitialConditions<dAttackRadialSimulation::InitialConditions>);
 
-#pragma optimize( "", on )
+OGSIM_OPTIMIZE_ON
 
 
 

@@ -15,7 +15,8 @@
 #include "OGSimulation/SpatialQueryResult.h"
 #include "OGSimulation/QueryGeometry.h"
 
-#pragma optimize( "", off )
+#include "OGSimulation/CompilerControl.h"
+OGSIM_OPTIMIZE_OFF
 
 class DAttackRadialSequence;
 
@@ -215,7 +216,7 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 
 }
 
-#pragma optimize( "", on )
+OGSIM_OPTIMIZE_ON
 
 
 

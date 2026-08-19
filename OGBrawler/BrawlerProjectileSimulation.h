@@ -23,7 +23,8 @@
 #include "OGBrawler/DAttackRadialSimulation.h"
 #include "OGBrawlerLog.h"
 
-#pragma optimize("", off)
+#include "OGSimulation/CompilerControl.h"
+OGSIM_OPTIMIZE_OFF
 
 namespace brawlerProjectileSimulation
 {
@@ -666,4 +667,4 @@ static_assert(SimulationState<brawlerProjectileSimulation::State>);
 static_assert(SimulationInitialConditions<brawlerProjectileSimulation::InitialConditions>);
 static_assert(SimulationInput<brawlerProjectileSimulation::PlayerInput>);
 
-#pragma optimize("", on)
+OGSIM_OPTIMIZE_ON
