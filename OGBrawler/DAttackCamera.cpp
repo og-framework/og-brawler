@@ -4,7 +4,8 @@
 #include <stdexcept>
 #include "glm/geometric.hpp"
 
-#pragma optimize( "", off )
+#include "OGSimulation/CompilerControl.h"
+OGSIM_OPTIMIZE_OFF
 
 DAttackCameraBehaviour::DAttackCameraBehaviour(float test)
 {
@@ -55,4 +56,4 @@ namespace dAttackCameraBehaviour
 		state.setCameraBoomLength(900.f - 500.f * distanceFactor);
 	}
 }
-#pragma optimize( "", on )
+OGSIM_OPTIMIZE_ON

@@ -14,7 +14,7 @@
 //   * resolveTriggeredActionId — held/edge derivation + the matchSequence call,
 //                          i.e. the entire matcher invocation.
 //   * DelayLineMotionHistory — the production History adapter over
-//                          ClientInputDelayLine.
+//                          LocalInputCache.
 //
 // WHY IT WAS EXTRACTED. All of the above used to live inline in
 // UOGBrawlerInputCollectionComponent::buildPlayerInput, a method on a
@@ -56,7 +56,7 @@
 // edge computation, "previously held" was read from `capture(T-1-d)`, leaving a
 // rising edge open for `d+1` consecutive ticks).
 //
-// ClientInputDelayLine is capture-tick-keyed, so reading it gives the matcher
+// LocalInputCache is capture-tick-keyed, so reading it gives the matcher
 // exactly the raw contiguous history it was specified against, at every `d`.
 //
 // AND THE SEAM CANNOT BE BRIDGED FROM THE LIVE SIDE — do not try. matchSequence
@@ -77,7 +77,7 @@
 #include "OGBrawler/BrawlerInputPackaging.h"
 #include "OGBrawler/InputSequence/InputSequence.h"
 #include "OGBrawler/SimulatableBrawlerTypes.h"
-#include "OGSimulation/Network/ClientInputDelayLine.h"
+#include "OGSimulation/Network/LocalInputCache.h"
 
 namespace simulatableBrawler
 {
@@ -106,12 +106,12 @@ inline constexpr std::size_t kMotionMatcherDeepestReachTicks =
 
 inline constexpr std::size_t kMotionMatcherResidencyMarginTicks = 8u;
 
-static_assert(kClientInputDelayLineCapacityTicks
+static_assert(kLocalInputCacheCapacityTicks
                   >= kMotionMatcherDeepestReachTicks + kMotionMatcherResidencyMarginTicks,
-              "ClientInputDelayLine is now too short to serve the motion matcher's history "
+              "LocalInputCache is now too short to serve the motion matcher's history "
               "window: matchSequence reaches inputSequence::kHistoryWindowFrames ticks back, "
               "and a line shorter than that (plus margin) truncates the window silently "
-              "instead of failing. Raise kClientInputDelayLineCapacityTicks, or lower "
+              "instead of failing. Raise kLocalInputCacheCapacityTicks, or lower "
               "kHistoryWindowFrames deliberately.");
 
 // The 2-bit held mask matchSequence's MotionCommand::requiredButtonEdge is
@@ -184,7 +184,7 @@ uint32_t resolveTriggeredActionId(const History&                             his
 //
 // Two things it does that a bare forward would not:
 //
-//  1. IT IS has()-GATED. ClientInputDelayLine::at() answers with the NEUTRAL
+//  1. IT IS has()-GATED. LocalInputCache::at() answers with the NEUTRAL
 //     input for a tick that was never captured — it never returns null. Handing
 //     that straight to matchSequence would put a fabricated entry in the history
 //     for every absent tick. Behaviourally the two are near-equivalent today
@@ -200,14 +200,14 @@ uint32_t resolveTriggeredActionId(const History&                             his
 // uint32_t at the call, so a range that runs below tick 0 arrives here as a very
 // large unsigned value. Casting straight back to int32_t recovers the original
 // negative tick (C++20 makes that conversion modular, not implementation-
-// defined), and ClientInputDelayLine::has() answers false for every negative
+// defined), and LocalInputCache::has() answers false for every negative
 // tick by contract. The pre-session window therefore reads as absent, which is
 // exactly right.
 // ---------------------------------------------------------------------------
 class DelayLineMotionHistory
 {
 public:
-    explicit DelayLineMotionHistory(const ClientInputDelayLine<PlayerInput>& line)
+    explicit DelayLineMotionHistory(const LocalInputCache<PlayerInput>& line)
         : m_line(&line)
     {
     }
@@ -223,7 +223,7 @@ public:
     }
 
 private:
-    const ClientInputDelayLine<PlayerInput>* m_line;
+    const LocalInputCache<PlayerInput>* m_line;
 };
 
 } // namespace simulatableBrawler

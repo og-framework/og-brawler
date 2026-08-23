@@ -265,5 +265,3 @@ glm::vec2 DAttackRadialSequence::getVectorInRotationPlane(glm::vec3 vectorInWorl
 		return glm::vec2(vectorInWorld);
 }
 
-
-#pragma optimize( "", on )

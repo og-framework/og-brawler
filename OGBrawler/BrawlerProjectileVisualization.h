@@ -4,7 +4,8 @@
 #include <algorithm>   // std::max
 #include "BrawlerProjectileSimulation.h"
 
-#pragma optimize("", off)
+#include "OGSimulation/CompilerControl.h"
+OGSIM_OPTIMIZE_OFF
 
 namespace brawlerProjectileVisualization
 {
@@ -96,4 +97,4 @@ void visualize(const Input<RendererFunctorType>& input,
 
 } // namespace brawlerProjectileVisualization
 
-#pragma optimize("", on)
+OGSIM_OPTIMIZE_ON

@@ -37,7 +37,8 @@ static constexpr float kHadoukenCommitmentSeconds = 0.3f;
 static constexpr float kHitFlinchDuration = 0.3f;
 
 
-#pragma optimize( "", off )
+#include "OGSimulation/CompilerControl.h"
+OGSIM_OPTIMIZE_OFF
 
 enum class DAttackState
 {
@@ -735,7 +736,7 @@ struct SerializableFields<dAttackMachineSimulation::PlayerInput>
 static_assert(SimulationState<dAttackMachineSimulation::State>);
 static_assert(SimulationInput<dAttackMachineSimulation::PlayerInput>);
 
-#pragma optimize( "", on )
+OGSIM_OPTIMIZE_ON
 
 
 
