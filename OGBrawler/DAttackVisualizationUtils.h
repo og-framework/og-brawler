@@ -8,6 +8,7 @@
 #include "glm/ext/scalar_constants.hpp"
 #include "DAttackRadialSimulation.h"
 #include "DAttackMachineSimulation.h"
+#include "OGBrawler/DAttackDirectionClassifier.h"
 #include "DAttackCircle.h"
 #include "OGSimulation/OGAssert.h"
 
@@ -207,24 +208,18 @@ inline AttackIndicatorGeometry computeAttackIndicatorGeometry(
 	const glm::vec3& rootTranslation,
 	float innerRadius)
 {
-	const glm::vec3 moveDirectionN  = glm::normalize(glm::vec3(moveDirectionWorld));
-	const glm::vec3 moveDirectionXY = glm::normalize(glm::vec3(moveDirectionN.x, moveDirectionN.y, 0.f));
-	const glm::vec3 aimDirectionXY  = glm::normalize(glm::vec3(aimDirection.x, aimDirection.y, 0.f));
+	// ⛔ THE DECISION IS NOT MADE HERE. dAttackDirection::classify is the ONE
+	// definition, shared with the authoritative simulation path, so the indicator
+	// cannot draw one direction while the attack goes another. This function only
+	// turns that decision into geometry.
+	const unsigned int attackSequenceId =
+		dAttackDirection::classify(aimDirection, moveDirectionWorld, moveDirection);
 
-	// Both terms XY-projected; mirrors dAttackMachineSimulation::integrate3. Clamp the
-	// dot to [-1, 1] so FP rounding can't push it above 1.0 and turn acos into NaN.
-	const float dotXY       = glm::clamp(glm::dot(aimDirectionXY, moveDirectionXY), -1.f, 1.f);
-	const float angle       = glm::acos(dotXY);
-	const float signedAngle = glm::sign(glm::cross(aimDirectionXY, moveDirectionXY).z) * angle;
-
-	const float attackDirectionAngleIncrement = glm::pi<float>() / 6.f;
-
-	const bool forwardCase =
-		glm::length(moveDirection) < 0.00001f
-		|| (signedAngle < attackDirectionAngleIncrement && signedAngle > -attackDirectionAngleIncrement);
+	const glm::vec3 aimDirectionXY =
+		glm::normalize(glm::vec3(aimDirection.x, aimDirection.y, 0.f));
 
 	AttackIndicatorGeometry geometry;
-	if (forwardCase)
+	if (attackSequenceId == dAttackDirection::kForwardSequenceId)
 	{
 		geometry.kind                       = AttackDirectionKind::Forward;
 		geometry.attackDirectionXY          = aimDirectionXY;
@@ -233,8 +228,9 @@ inline AttackIndicatorGeometry computeAttackIndicatorGeometry(
 	}
 	else
 	{
-		const bool isLeft            = signedAngle > attackDirectionAngleIncrement;
-		const float thresholdOffset  = isLeft ? attackDirectionAngleIncrement : -attackDirectionAngleIncrement;
+		const bool isLeft            = attackSequenceId == dAttackDirection::kLeftSequenceId;
+		const float thresholdOffset  = isLeft ? dAttackDirection::kForwardConeHalfAngle
+		                                      : -dAttackDirection::kForwardConeHalfAngle;
 		const glm::mat4 thresholdRot = glm::rotate(glm::mat4(1.f), thresholdOffset, glm::vec3(0.f, 0.f, 1.f));
 		const glm::vec3 thresholdDir = glm::vec3(thresholdRot * glm::vec4(aimDirectionXY, 0.f));
 

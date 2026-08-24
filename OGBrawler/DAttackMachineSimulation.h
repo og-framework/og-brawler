@@ -7,6 +7,7 @@
 #include "DAttackRadialSequence.h"
 #include "DAttackRadialSimulation.h"
 #include "OGBrawler/DAttackSequenceId.h"
+#include "OGBrawler/DAttackDirectionClassifier.h"
 #include "OGBrawler/BrawlerProjectileSimulation.h"
 #include "OGBrawler/BrawlerMovementSimulation.h"
 // [hit-resolution T2] brawlerInboundHit::DerivedState — read by integrate3 as a plain
@@ -545,48 +546,14 @@ void integrate3(float deltaTime,
 
 		if(playerInput.attackLeft || playerInput.attackRight)
 		{
-			//get 3d normalized movedirection
-			//const glm::vec3 moveDirection = glm::normalize(playerInput.getBody(0).getLinearVelocity()); //need to get parent velocity
-			////get a version of moveDirection that is only in the x-y plane
-			//const glm::vec3 moveDirectionXY = glm::normalize(glm::vec3(moveDirection.x, moveDirection.y, 0.f));
-			const glm::vec3 moveDirection = glm::normalize(glm::vec3(playerInput.moveDirectionWorld));
-			//get a version of moveDirection that is only in the x-y plane
-			const glm::vec3 moveDirectionXY = glm::normalize(glm::vec3(moveDirection.x, moveDirection.y, 0.f));
-
-			//get 3dnormalized aim direction
-			const glm::vec3 aimDirection = glm::normalize(playerInput.aimDirection);
-			//get version of aimDirection that is only in the x-y plane
-			const glm::vec3 aimDirectionXY = glm::normalize(glm::vec3(playerInput.aimDirection.x, playerInput.aimDirection.y, 0.f));
-
-
-			//get signed angle between aim direction and movement direction.
-			//Both terms must be the XY-projected vectors — using the 3D aimDirection here
-			//inflates the angle by aim's downward z (mouse-on-floor projection from a
-			//character capsule offset above z=0), which trips the threshold even when the
-			//XY directions are aligned and causes left/right/forward flicker.
-			//Clamp the dot to [-1, 1] so FP rounding can't push it above 1.0 and turn acos into NaN.
-			const float dotXY = glm::clamp(glm::dot(aimDirectionXY, moveDirectionXY), -1.f, 1.f);
-			const float angle = glm::acos(dotXY);
-			const float signedAngle = glm::sign(glm::cross(aimDirectionXY, moveDirectionXY).z) * angle;
-
-			const float attackDirectionAngleIncrement = glm::pi<float>() / 6.f;
-
-			if (glm::length(playerInput.moveDirection) < 0.00001f)
-			{
-				state.m_activeAttackSequence = 4;
-			}
-			else if (signedAngle < attackDirectionAngleIncrement && signedAngle > -attackDirectionAngleIncrement)
-			{
-				state.m_activeAttackSequence = 4;
-			}
-			else if (signedAngle > attackDirectionAngleIncrement)
-			{
-				state.m_activeAttackSequence = 1;
-			}
-			else if (signedAngle < -attackDirectionAngleIncrement)
-			{
-				state.m_activeAttackSequence = 0;
-			}
+			// ⛔ ONE DEFINITION, SHARED WITH THE INDICATOR. The forward/side decision
+			// lives in dAttackDirection::classify so the drawn indicator and the attack
+			// that fires cannot disagree. This path is AUTHORITATIVE; the classifier
+			// knows nothing about rendering.
+			state.m_activeAttackSequence = dAttackDirection::classify(
+				playerInput.aimDirection,
+				glm::vec3(playerInput.moveDirectionWorld),
+				glm::vec2(playerInput.moveDirection));
 
 			if (state.m_activeAttackSequence != InvalidAttackSequenceId)
 			{
