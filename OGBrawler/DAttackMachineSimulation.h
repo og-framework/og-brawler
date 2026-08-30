@@ -49,6 +49,10 @@ enum class DAttackState
 	HitFlinch,
 };
 
+// The enumerator count, kept ADJACENT so adding a state without bumping it is visible
+// in the same few lines. A display that folds over DAttackState sweeps against this.
+inline constexpr unsigned char kDAttackStateCount = 4u;
+
 class DAttackRadialSequence;
 
 namespace dAttackMachineSimulation
