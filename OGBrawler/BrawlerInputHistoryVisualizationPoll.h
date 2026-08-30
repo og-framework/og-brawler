@@ -253,9 +253,20 @@ struct TickLanePollCounts
 	// What the gate decided for this tick. Elided means NEITHER lane was written.
 	LaneAdmission admission = LaneAdmission::Recorded;
 
-	// The one reading that sees a hard resync, 0 or 1 per poll. It answers for a
-	// BACKWARD resync only; a forward one is not visible to this poll.
+	// The poll's own test, 0 or 1 per poll: the tick it was handed sits behind the last
+	// one the gate saw. It answers for a BACKWARD resync only.
 	uint32_t axisBreaksBackward = 0u;
+
+	// The clock's own resync count moving, 0 or 1 per poll. EITHER DIRECTION, and the
+	// only witness a forward resync leaves this poll.
+	uint32_t axisBreaksFromSeam = 0u;
+
+	// The two arms above disagreeing about a BACKWARD jump, 0 or 1 per poll.
+	// ⛔ IT IS A FINDING, NOT A TIE TO BREAK: the clock and the poll differ about time.
+	uint32_t axisBreakDisagreements = 0u;
+
+	// Rate marks this poll filed: one per KIND that moved, never one per event.
+	uint32_t rateMarksFiled = 0u;
 
 	uint32_t provenanceCellsRecorded  = 0u;
 	uint32_t provenanceCellsUpdated   = 0u;
@@ -479,9 +490,11 @@ inline void pollInputDelayLane(const AppliedCaptureInversion&         inversion,
 // `clock` is this poll's ONE read of the client clock, or nullopt on a role that does not
 // predict. ⛔ NOTED ABOVE THE GATE TOO -- a paused display must still show the clock.
 //
-// The axis BREAK a BACKWARD hard resync makes is detected here and decided by the gate,
-// from one reading this poll already holds: the gate's own last polled tick.
-// ⛔ NO SECOND SEAM IS OPENED FOR IT, and residency stays DERIVED from the sweep.
+// The axis BREAK a hard resync makes is detected here and decided by the gate, from two
+// readings this poll already holds: the gate's own last polled tick, which sees a
+// backward jump and nothing else, and the clock's own resync count, which sees either
+// direction and names the exact tick the clock left.
+// ⛔ RESIDENCY IS NOT CONSULTED: its edges cannot tell a wipe from a mid-sweep push.
 template <typename SlotReader>
 TickLanePollCounts pollInputHistoryLanes(const SlotReader&               reader,
                                          uint32_t                        liveSimTick,
@@ -496,12 +509,42 @@ TickLanePollCounts pollInputHistoryLanes(const SlotReader&               reader,
 {
 	TickLanePollCounts counts;
 
+	// ⛔ READ BEFORE THE NOTE BELOW OVERWRITES IT, AND BY VALUE: every difference this
+	//   poll takes is against this reading, and a reference would be re-seated under it.
+	const std::optional<ClockDriftReading> previousClock = lanes.clockDriftReading();
+
 	// The clock reading is filed against THIS poll's own tick, and before the gate can
 	// end the poll early. ⛔ AN ELIDED POLL STILL MOVES IT -- a frozen reading would leave
 	//   the marker on a column while authority ran past everything the bar holds.
 	lanes.noteAuthorityReading(predictionOffsetTicks, liveSimTick);
 	lanes.noteDelayReading(delay, liveSimTick);
 	lanes.noteClockDriftReading(clock, liveSimTick);
+
+	// A counter is a total, so a first reading has nothing to be a difference against.
+	// ⛔ ONE POLL CANNOT SEE AN EVENT AND TWO CAN.
+	const bool hasClockDelta = clock.has_value() && previousClock.has_value();
+
+	const uint32_t skipDelta   = hasClockDelta
+		? clockEventDelta(previousClock->skipCount, clock->skipCount) : 0u;
+	const uint32_t stallDelta  = hasClockDelta
+		? clockEventDelta(previousClock->stallCount, clock->stallCount) : 0u;
+	const uint32_t resyncDelta = hasClockDelta
+		? clockEventDelta(previousClock->hardResyncCount, clock->hardResyncCount) : 0u;
+
+	// ONE MARK PER KIND PER POLL, CARRYING ITS COUNT, and filed above the gate for the
+	// same reason the readings are. The clock keeps only the LAST tick of each kind, so a
+	// poll that saw three skips files one mark saying so rather than three it cannot place.
+	if (skipDelta != 0u)
+	{
+		lanes.noteRateMark(RateMark{ RateMarkKind::Skip, clock->lastSkipTick, skipDelta });
+		++counts.rateMarksFiled;
+	}
+
+	if (stallDelta != 0u)
+	{
+		lanes.noteRateMark(RateMark{ RateMarkKind::Stall, clock->lastStallTick, stallDelta });
+		++counts.rateMarksFiled;
+	}
 
 	// ⭐ FILED ABOVE THE GATE, LIKE THE THREE READINGS ABOVE -- a frozen residency edge would
 	// draw long-evicted cells as still live while the player is idle.
@@ -517,13 +560,32 @@ TickLanePollCounts pollInputHistoryLanes(const SlotReader&               reader,
 	// A hard resync is the ONLY assignment to the client's prediction tick; every other
 	// step the clock takes is monotone.
 	// ⛔ SO A TICK BEHIND THE LAST POLLED ONE IS CERTAIN, NOT A HEURISTIC.
-	// ⛔ NO FORWARD EQUIVALENT: past the clamp, only a tolerance separates a wipe from a push.
+	// It is blind forward, though: a derived test on the residency edges separates a wipe
+	// from a mid-sweep push only by a tolerance, and this meter allows none. The seam is
+	// what sees that direction, and it is a count rather than a derivation.
 	if (lastPolledSimTick.has_value() && liveSimTick < *lastPolledSimTick)
 		counts.axisBreaksBackward = 1u;
 
-	// The break, taken from the tick the previous epoch was last polled at.
+	if (resyncDelta != 0u)
+		counts.axisBreaksFromSeam = 1u;
+
+	// Only a BACKWARD jump is one the poll's own tick could have witnessed, so it is the
+	// only claim the two arms can be held against each other on.
+	const bool seamSawBackward = (counts.axisBreaksFromSeam != 0u)
+		&& (clock->lastHardResyncToTick < clock->lastHardResyncFromTick);
+
+	// ⛔ REPORTED, NEVER RESOLVED HERE -- one arm alone means the clock and the poll
+	//   disagree about time, which is a finding.
+	if (hasClockDelta && seamSawBackward != (counts.axisBreaksBackward != 0u))
+		counts.axisBreakDisagreements = 1u;
+
+	// ONE BREAK, NEVER TWO AND NEVER NONE. The seam names the exact tick the clock left,
+	// so the marker's label is `to - from`; the backward arm can name only the last tick
+	// this poll saw, which is a bound on it.
 	const std::optional<uint32_t> axisBreakFromSimTick =
-		(counts.axisBreaksBackward != 0u) ? lastPolledSimTick : std::nullopt;
+		(counts.axisBreaksFromSeam != 0u)
+			? std::optional<uint32_t>(clock->lastHardResyncFromTick)
+			: (counts.axisBreaksBackward != 0u) ? lastPolledSimTick : std::nullopt;
 
 	// A tick the poll could not classify is one worth recording.
 	// ⛔ AN UNREADABLE CAPTURE IS NOT IDLE.

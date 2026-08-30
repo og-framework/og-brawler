@@ -611,10 +611,16 @@ struct ResidencyReading
 };
 
 // The client's clock as ONE poll read it: the two ticks whose difference IS the drift,
-// what the clock would do next, the tier-transition debt it is paying, and the poll's
-// own tick. Skips and stalls cannot be seen as events from here -- the drift that drives
-// them can, and this is that state.
+// what the clock would do next, the tier-transition debt it is paying, the clock's own
+// event counters with the last tick of each kind, and the poll's own tick.
+//
+// The counters are what makes a skip, a stall and a FORWARD resync visible as events at
+// all. Nothing derived from the correction ring's own edges can separate one of those
+// from a push that landed mid-sweep, so the clock's own count is the only race-free
+// witness there is -- and it also names the exact tick the clock left, which no reading
+// taken on this side can.
 // ⛔ ONE SNAPSHOT, TAKEN ONCE, exactly like the three readings above.
+// ⛔ THIS IS A DIAGNOSTIC READ AND MUST STAY ONE.
 struct ClockDriftReading
 {
 	uint32_t predictionTick = 0u;
@@ -627,10 +633,70 @@ struct ClockDriftReading
 
 	uint32_t stallDebtTicks = 0u;   // getRequiredInputDelayIncreaseStallTicks()
 
+	// The clock's event seam, taken in the same snapshot. Each count is a TOTAL since the
+	// clock was built, so only the difference between two readings says anything about a
+	// poll; the clock keeps the last tick of each kind and no history behind it.
+	// ⛔ FILLED ONLY FROM clock.getDiagnostics() -- there is no bare accessor to use.
+	uint32_t skipCount              = 0u;
+	uint32_t lastSkipTick           = 0u;   // the tick the clock jumped TO
+	uint32_t stallCount             = 0u;
+	uint32_t lastStallTick          = 0u;   // the tick the frontier held at
+	uint32_t hardResyncCount        = 0u;
+	uint32_t lastHardResyncFromTick = 0u;   // the EXACT oldTick, never a bound on it
+	uint32_t lastHardResyncToTick   = 0u;
+
 	// STAMPED BY noteClockDriftReading from the poll's own tick, exactly as the three
 	// readings above are. ⛔ A CALLER-SUPPLIED VALUE HERE IS OVERWRITTEN, NOT TRUSTED.
 	uint32_t simTick = 0u;
 };
+
+// What one of the clock's counters moved by between two readings -- the only quantity
+// about them this display may state, because the totals began before it did.
+// ⛔ COUNTERS ONLY CLIMB: a reading that went backwards is torn, and answers zero.
+constexpr uint32_t clockEventDelta(uint32_t previousCount, uint32_t count)
+{
+	return (count > previousCount) ? count - previousCount : 0u;
+}
+
+// The clock events this display WATCHED happen, accumulated poll by poll. A poll with no
+// previous reading to difference against adds nothing, so a gap in the readings is never
+// counted as a quiet stretch and never as a busy one.
+struct ClockEventCounts
+{
+	uint32_t skips   = 0u;
+	uint32_t stalls  = 0u;
+	uint32_t resyncs = 0u;
+};
+
+// ---------------------------------------------------------------------------
+// THE RATE MARKS -- a boundary BETWEEN two ticks, and the display's own memory of them.
+//
+// A skip inserts a tick and a stall withholds one, so neither owns a cell: both ticks of
+// a skip are recorded and a stall only repeats a frame. What either leaves behind is a
+// boundary, which is why a mark sits on a column EDGE and consumes no lane tick.
+//
+// The clock keeps a count and the LAST tick of each kind and nothing before it, so a mark
+// the display did not file is gone for good: this ledger is the only place the history of
+// marks exists. It is client-local display state -- never replicated, never in a
+// correction payload, never in compute_checksum, never read back by a simulation peer --
+// and nothing outside the display may depend on it.
+// ⛔ THIS IS A DIAGNOSTIC READ AND MUST STAY ONE.
+// ---------------------------------------------------------------------------
+enum class RateMarkKind : uint8_t { Skip, Stall };
+inline constexpr uint8_t kRateMarkKindCount = 2u;
+
+// One clock correction at a boundary between two ticks. SIM ticks, and NO LANE TICK IS
+// CONSUMED. ⛔ count > 1 SAYS THE POLL SAW MORE THAN ONE AND CAN PLACE ONLY THE LAST.
+struct RateMark
+{
+	RateMarkKind kind    = RateMarkKind::Skip;
+	uint32_t     simTick = 0u;
+	uint32_t     count   = 1u;
+};
+
+// Sized like the axis events' own ledger, for the same reason: more entries than one
+// window of columns can ever show.
+inline constexpr std::size_t kRateMarkLedgerCapacity = kLaneElisionLedgerCapacity;
 
 // ---------------------------------------------------------------------------
 // All three lanes plus the ONE tick axis they are read on, so a vertical slice through
@@ -736,6 +802,18 @@ public:
 			m_authorityStaticSimTicks += atSimTick - m_clockReading->simTick;
 		}
 
+		// The counters are totals from before this display existed, so only a difference
+		// between two readings it actually took may be added to what it claims to have seen.
+		if (m_clockReading.has_value())
+		{
+			m_clockEvents.skips +=
+				clockEventDelta(m_clockReading->skipCount, reading->skipCount);
+			m_clockEvents.stalls +=
+				clockEventDelta(m_clockReading->stallCount, reading->stallCount);
+			m_clockEvents.resyncs +=
+				clockEventDelta(m_clockReading->hardResyncCount, reading->hardResyncCount);
+		}
+
 		m_clockReading = reading;
 	}
 
@@ -745,6 +823,28 @@ public:
 	// Sim ticks the client has simulated since the authority tick last moved. Meaningful
 	// only beside a reading. ⛔ IT IS NOT A COUNT OF POLLS AND NOT A TICK NUMBER.
 	uint32_t authorityStaticSimTicks() const { return m_authorityStaticSimTicks; }
+
+	// What the display watched the clock do, which is not what the clock's own totals say.
+	const ClockEventCounts& clockEventCounts() const { return m_clockEvents; }
+
+	// One boundary the display remembers, from a counter delta the poll saw for itself.
+	// ⛔ ONLY A POLL CAN FILE ONE -- the draw holds these lanes as const.
+	void noteRateMark(RateMark mark)
+	{
+		if (m_rateMarkCount == kRateMarkLedgerCapacity)
+			m_rateMarkFirst = (m_rateMarkFirst + 1u) % kRateMarkLedgerCapacity;
+		else
+			++m_rateMarkCount;
+
+		m_rateMarks[(m_rateMarkFirst + m_rateMarkCount - 1u) % kRateMarkLedgerCapacity] = mark;
+	}
+
+	std::size_t     rateMarkCount() const { return m_rateMarkCount; }
+	// Precondition: index < rateMarkCount(). Oldest first, as the ledger holds them.
+	const RateMark& rateMarkAt(std::size_t index) const
+	{
+		return m_rateMarks[(m_rateMarkFirst + index) % kRateMarkLedgerCapacity];
+	}
 
 	// The lineage of the capture at `tick`, or nullptr when no cell answers for it.
 	const RowProvenanceSummary* provenanceAt(uint32_t tick) const { return m_provenance.find(tick); }
@@ -772,6 +872,11 @@ private:
 	std::optional<ResidencyReading>        m_residencyReading;
 	std::optional<ClockDriftReading>       m_clockReading;
 	uint32_t                               m_authorityStaticSimTicks = 0u;
+	ClockEventCounts                       m_clockEvents;
+
+	std::array<RateMark, kRateMarkLedgerCapacity> m_rateMarks{};
+	std::size_t                                   m_rateMarkFirst = 0u;
+	std::size_t                                   m_rateMarkCount = 0u;
 };
 
 } // namespace brawlerInputHistoryVisualization

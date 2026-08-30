@@ -548,6 +548,7 @@ enum class FrameMeterMarkerShape : uint8_t
 {
 	PlainRule,      // a rule, with nothing attached to it
 	LabelledRule,   // a rule carrying a number of its own
+	SignedTickMark, // a short mark above the bars, crossing no cell, with a signed glyph
 };
 
 struct FrameMeterMarkerStyle
@@ -980,6 +981,97 @@ inline float authorityMarkerX(const FrameMeterGeometry& geometry, const FrameMet
 }
 
 // ---------------------------------------------------------------------------
+// THE RATE MARKS -- WHERE THE CLOCK INSERTED A TICK OR WITHHELD ONE.
+//
+// A skip and a stall correct the RATE time arrives at rather than the contents of a tick,
+// so what either leaves behind is a BOUNDARY between two columns and not a cell. The mark
+// sits on a column edge and consumes no lane tick.
+//
+// The two kinds sit on OPPOSITE EDGES of their column, and the reason is physical:
+//   * a skip at P arrived together with P-1, which is a backfilled copy, so the jump is on
+//     the LEFT edge of P-1's column -- between P-2 and P-1, where two ticks landed at once;
+//   * a stall at T is a step that passed with no tick at all, so it is on the RIGHT edge of
+//     T's column -- between T and the tick after it, which did not arrive.
+//
+// The glyph is the sign of the tick DISPLACEMENT -- inserted is plus, withheld is minus --
+// which is the resync marker's own convention, so one sign reads across every correction
+// this axis can take.
+// The gate's four answers map onto the bar as: a cell of its own takes that cell's edge; a
+// closed span takes the span's own cell, on its left edge, whichever kind landed there; and
+// the span still being collapsed, or a tick older than the ledger reaches, is not placed.
+// ⛔ THE COLUMN COMES OFF placeFrameMeterSimTick, NEVER OFF A LANE TICK MINUS ONE.
+// ⚠ A mark inside the span being collapsed now is dropped: only the readout counts it.
+// ---------------------------------------------------------------------------
+
+// A short mark in the label band above the backdrop, beside its glyph, crossing no cell --
+// which is why it needs no palette clearance of its own against the colours below it.
+// ⛔ THE COLOUR IS NAMED, NEVER COPIED: a rate mark and a resync are one clock's two grades.
+inline constexpr FrameMeterMarkerStyle kFrameMeterRateMarkStyle{
+	kLaneResyncColor, 0.80f, 4.f, FrameMeterMarkerShape::SignedTickMark };
+
+// One placed boundary: the column it borders, WHICH edge of that column, and how many
+// corrections of this kind the poll that filed it saw.
+struct FrameMeterRateMark
+{
+	RateMarkKind kind      = RateMarkKind::Skip;
+	uint32_t     offset    = 0u;
+	bool         rightEdge = false;
+	uint32_t     count     = 1u;
+};
+
+struct FrameMeterRateMarkList
+{
+	std::array<FrameMeterRateMark, kRateMarkLedgerCapacity> marks{};
+	uint32_t                                                count = 0u;
+};
+
+// The ledger's marks this window can place, as column edges. A mark whose tick has no
+// column here is left out entirely rather than moved onto one that is not its own.
+inline void collectFrameMeterRateMarks(const InputHistoryTickLanes& lanes,
+                                       const PollWindow&            window,
+                                       FrameMeterRateMarkList&      out)
+{
+	out.count = 0u;
+
+	for (std::size_t index = 0u; index < lanes.rateMarkCount(); ++index)
+	{
+		const RateMark& mark = lanes.rateMarkAt(index);
+
+		const bool stall = (mark.kind == RateMarkKind::Stall);
+
+		// ⛔ THE FIRST TICK OF ALL HAS NO PREDECESSOR to hang a skip's left edge on.
+		if (!stall && mark.simTick == 0u)
+			continue;
+
+		const uint32_t placedTick = stall ? mark.simTick : (mark.simTick - 1u);
+
+		const FrameMeterSimTickPlacement placement =
+			placeFrameMeterSimTick(lanes, window, placedTick);
+
+		// ⛔ ONLY A COLUMN IS PLACED: the span still open, a tick past the ledger and a
+		//   tick this window has scrolled past all anchor on an EDGE, and none is moved on.
+		if (placement.anchor != AuthorityMarkerAnchor::Column)
+			continue;
+
+		const bool onSpan = (placement.kind == AuthorityMarkerKind::OnElidedSpan);
+
+		// A closed span's one cell stands for the whole stretch that fell inside it, so a
+		// mark placed there takes that cell's left edge rather than a boundary of its own.
+		out.marks[out.count] = FrameMeterRateMark{ mark.kind, placement.barOffset,
+			stall && !onSpan, mark.count };
+		++out.count;
+	}
+}
+
+// Where the mark is drawn. The two edges of one column are exactly one stride apart, which
+// is what "opposite edges" means in x and the whole reason the kinds cannot be confused.
+inline float rateMarkX(const FrameMeterGeometry& geometry, const FrameMeterRateMark& mark)
+{
+	return frameMeterCellX(geometry, mark.offset)
+	       + (mark.rightEdge ? geometry.cellStride : 0.f);
+}
+
+// ---------------------------------------------------------------------------
 // THE DELAY READOUT -- FACTS ONLY. The pure header decides what is true; the string
 // that says so is built UE-side from these fields, the same split every other reading
 // on this bar keeps.
@@ -1102,11 +1194,12 @@ inline ProvenanceResidencyReadout buildProvenanceResidencyReadout(const InputHis
 // ---------------------------------------------------------------------------
 // THE CLOCK READOUT -- FACTS ONLY, the same split every other reading on this bar keeps.
 //
-// A skip and a stall are RATES on a continuous axis, not events: both ticks of a skip get
-// cells and a stall repeats a frame, so neither can be drawn as a marker. What CAN be
-// drawn is the drift state that decides them, plus the one fact a single reading cannot
-// carry -- how long the authority tick has stood still, which is what a resync storm
-// looks like from the client.
+// A skip and a stall own no cell: both ticks of a skip get one and a stall repeats a
+// frame, so what either leaves is a boundary between two columns rather than a column.
+// The line therefore carries the drift state that decides them, the one fact a single
+// reading cannot carry -- how long the authority tick has stood still, which is what a
+// resync storm looks like from the client -- and the counts of the boundaries themselves,
+// which outlive the marks that scroll off the bar.
 // ⛔ authorityStaticTicks IS IN SIM TICKS, NOT POLLS: polls are render frames.
 // ---------------------------------------------------------------------------
 struct ClockDriftReadout
@@ -1114,6 +1207,12 @@ struct ClockDriftReadout
 	bool              present = false;   // no reading -- draw nothing
 	ClockDriftReading reading{};
 	uint32_t          authorityStaticTicks = 0u;   // ticks SIMULATED since authority moved
+
+	// Clock events since this display's FIRST reading, never the clock's own totals: it
+	// was counting before the display existed. A mark that scrolled off survives here.
+	uint32_t skips   = 0u;
+	uint32_t stalls  = 0u;
+	uint32_t resyncs = 0u;
 };
 
 // The lanes' own clock reading, restated as what a reader needs to print. No reading at
@@ -1130,6 +1229,9 @@ inline ClockDriftReadout buildClockDriftReadout(const InputHistoryTickLanes& lan
 	readout.present              = true;
 	readout.reading              = *reading;
 	readout.authorityStaticTicks = lanes.authorityStaticSimTicks();
+	readout.skips                = lanes.clockEventCounts().skips;
+	readout.stalls               = lanes.clockEventCounts().stalls;
+	readout.resyncs              = lanes.clockEventCounts().resyncs;
 
 	return readout;
 }
