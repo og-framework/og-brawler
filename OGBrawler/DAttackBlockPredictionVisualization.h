@@ -18,8 +18,10 @@
 #include "OGSimulation/CompilerControl.h"
 OGSIM_OPTIMIZE_OFF
 
-// Attacker-side block-prediction visualization. Renders a fading orange "attack
-// area" pie slice (colorId 6) from the attacker's circle CENTER outward — always
+// Attacker-side block-prediction visualization. Renders a fading amber "attack
+// area" pie slice (colorId 14 = dAttackVisualizationUtils::kAttackDirectionColorId,
+// the same hue as the WindUp/WindDown swing segment) from the attacker's circle
+// CENTER outward — always
 // drawn, even with no defenders in range — plus a shorter blue slice (colorId 2)
 // over the wedge base, drawn iff the sim's shared wouldGuardBlock predicate says
 // ANY defender in range would block the pending attack (binary signal — no
@@ -201,7 +203,7 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 		for (const auto& seg : forwardSegments)
 			dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, attackerRoot,
 				wedgeCenterDirectionXY, areaNormal, areaAngularWidth,
-				seg.outerR, seg.innerR, 6 /*Orange*/, 1.f, seg.alpha);
+				seg.outerR, seg.innerR, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/, 1.f, seg.alpha);
 	}
 	else
 	{
@@ -215,10 +217,10 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 		for (const auto& seg : sideSegments)
 			dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, attackerRoot,
 				wedgeCenterDirectionXY, areaNormal, areaAngularWidth,
-				seg.outerR, seg.innerR, 6 /*Orange*/, 1.f, seg.alpha);
+				seg.outerR, seg.innerR, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/, 1.f, seg.alpha);
 	}
 
-	// (4b) Sweep-direction indicator — a thin orange arc line + 3 small chevrons
+	// (4b) Sweep-direction indicator — a thin amber arc line + 3 small chevrons
 	// distributed along it, running from the wedge's near edge to near the aim
 	// direction. Communicates that the swing MOVES from the wedge position toward
 	// the aim direction (research report: HUD direction communication, Rec 1+2 hybrid).
@@ -246,7 +248,7 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 		{
 			const glm::mat4 rot = glm::rotate(glm::mat4(1.f), arcMidAngle, glm::vec3(0.f, 0.f, 1.f));
 			const glm::vec3 arcMidDir = glm::vec3(rot * glm::vec4(aimDirectionXY, 0.f));
-			rendererFunctor.drawCircleArc(attackerRoot, arcMidDir, kSweepArcRadius, arcHalfAngle, 6 /*Orange*/, kSweepArcThickness);
+			rendererFunctor.drawCircleArc(attackerRoot, arcMidDir, kSweepArcRadius, arcHalfAngle, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/, kSweepArcThickness);
 		}
 
 		// 3 chevrons distributed evenly along the arc. Each chevron's apex points
@@ -273,12 +275,12 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 			const glm::vec3 baseLeft  = baseMid + (kSweepChevronSize * 0.5f) * radialDir;
 			const glm::vec3 baseRight = baseMid - (kSweepChevronSize * 0.5f) * radialDir;
 
-			rendererFunctor.drawTriangle(apex, baseLeft, baseRight, 6 /*Orange*/);
+			rendererFunctor.drawTriangle(apex, baseLeft, baseRight, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/);
 		}
 	}
 
 	// Blue block arc alpha (PIE-tuned): bumped from 80 to 130 so the block signal reads
-	// stronger than the orange swing band it overlays (orange segment 3 = 80). The blue
+	// stronger than the amber swing band it overlays (amber segment 3 = 80). The blue
 	// arc is drawn identically for forward and side attacks (same inner/outer radii and
 	// same angular position — the wedgeCenterDirectionXY is already correct for the
 	// pending sequence).
@@ -383,18 +385,18 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 	}
 
 	// (9) Block indicator — a shorter blue pie slice over the wedge base, drawn AFTER the
-	// area layers so it blends over the orange base (draw order = blend order for the
+	// area layers so it blends over the amber base (draw order = blend order for the
 	// translucent debug-mesh batcher). Same angular center/width, center-anchor, and
 	// alpha as the area; half the radial extent (blueFraction = fadeFraction * 0.5), so
 	// it reads as "the base of THIS wedge" changing state rather than a second wedge.
 	// Nothing drawn when the attack would land.
 	if (anyDefenderBlocks)
 	{
-		// Blue block arc (PIE-tuned): sits on the SAME radial range as the orange swing-band
+		// Blue block arc (PIE-tuned): sits on the SAME radial range as the amber swing-band
 		// segment 3 (innerRadius = 90 cm → swingBandMid = 120 cm). When the block condition
-		// fires, the blue arc overlays the orange segment 3 exactly, reading as "the primary
+		// fires, the blue arc overlays the amber segment 3 exactly, reading as "the primary
 		// swing band changing state" rather than a separate visual element. Same angular
-		// center/width as the orange wedge.
+		// center/width as the amber wedge.
 		dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, attackerRoot,
 			wedgeCenterDirectionXY, areaNormal, areaAngularWidth,
 			swingBandMid, innerRadius, 2 /*Blue*/, 1.f, blueArcAlpha);

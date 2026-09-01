@@ -20,6 +20,13 @@ class DAttackRadialSequence;
 namespace dAttackRadialVisualization
 {
 
+// Draw alpha for the WindUp/WindDown swing segment - hand-tuned by the user in PIE
+// (bracket 150 -> 80 -> 65 -> 45); below the wedge's brightest band (80). The hue is
+// dAttackVisualizationUtils::kAttackDirectionColorId, shared with the indicator wedge.
+inline constexpr unsigned int kWindUpWindDownAlpha = 45u;
+// Draw alpha for the Damaging swing segment - drawSegmentSolid's old default, kept so the red "your hit is live now" segment looks exactly as it does today.
+inline constexpr unsigned int kDamagingAlpha = 150u;
+
 class State
 {
 public:
@@ -87,10 +94,18 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 		const unsigned int colorId = [&segment]()
 			{
 				if (segment.state == DAttackRadialSequenceState::Damaging)
-					return 0;
+					return 0u;
 				else
-					return 3;
+					return dAttackVisualizationUtils::kAttackDirectionColorId;
 			}();
+
+		// The one drawSegmentSolid call below serves BOTH the Damaging and the
+		// WindUp/WindDown segment, so the alpha is state-selected exactly like the
+		// colour id above. Damaging keeps the old default 150 (unchanged on purpose).
+		const unsigned int segmentAlpha =
+			(segment.state == DAttackRadialSequenceState::Damaging)
+				? kDamagingAlpha
+				: kWindUpWindDownAlpha;
 
 		if (segment.state != DAttackRadialSequenceState::Idle)
 		{
@@ -101,7 +116,7 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 			const glm::mat4 segmentMiddleRotation = glm::rotate(glm::mat4(1.f), segment.startAngle + (segment.endAngle - segment.startAngle) * 0.5f, worldSequenceRotationAxis);
 			glm::vec3 segmentDirection = glm::vec3(segmentMiddleRotation * initialDirection);
 			//dAttackVisualizationUtils::drawSegmentOutline(rendererFunctor, rootTranslation, segmentDirection, worldSequenceRotationAxis, segment.endAngle - segment.startAngle, circle.getOuterRadius(), circle.getInnerRadius(), colorId, 3.f);
-			dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, rootTranslation, segmentDirection, worldSequenceRotationAxis, segment.endAngle - segment.startAngle, circle.getOuterRadius(), circle.getInnerRadius(), colorId, 3.f);
+			dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, rootTranslation, segmentDirection, worldSequenceRotationAxis, segment.endAngle - segment.startAngle, circle.getOuterRadius(), circle.getInnerRadius(), colorId, 3.f, segmentAlpha);
 		}
 	}
 
@@ -227,10 +242,18 @@ void visualize2(const Input<RendererFunctorType, LoggingFunctorType>& input,
 		const unsigned int colorId = [&segment]()
 			{
 				if (segment.state == DAttackRadialSequenceState::Damaging)
-					return 0;
+					return 0u;
 				else
-					return 3;
+					return dAttackVisualizationUtils::kAttackDirectionColorId;
 			}();
+
+		// The one drawSegmentSolid call below serves BOTH the Damaging and the
+		// WindUp/WindDown segment, so the alpha is state-selected exactly like the
+		// colour id above. Damaging keeps the old default 150 (unchanged on purpose).
+		const unsigned int segmentAlpha =
+			(segment.state == DAttackRadialSequenceState::Damaging)
+				? kDamagingAlpha
+				: kWindUpWindDownAlpha;
 
 			if (segment.state != DAttackRadialSequenceState::Idle)
 			{
@@ -241,7 +264,7 @@ void visualize2(const Input<RendererFunctorType, LoggingFunctorType>& input,
 				const glm::mat4 segmentMiddleRotation = glm::rotate(glm::mat4(1.f), segment.startAngle + (segment.endAngle - segment.startAngle) * 0.5f, worldSequenceRotationAxis);
 				glm::vec3 segmentDirection = glm::vec3(segmentMiddleRotation * initialDirection);
 				//dAttackVisualizationUtils::drawSegmentOutline(rendererFunctor, rootTranslation, segmentDirection, worldSequenceRotationAxis, segment.endAngle - segment.startAngle, circle.getOuterRadius(), circle.getInnerRadius(), colorId, 3.f);
-				dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, rootTranslation, segmentDirection, worldSequenceRotationAxis, segment.endAngle - segment.startAngle, circle.getOuterRadius(), circle.getInnerRadius(), colorId, 3.f);
+				dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, rootTranslation, segmentDirection, worldSequenceRotationAxis, segment.endAngle - segment.startAngle, circle.getOuterRadius(), circle.getInnerRadius(), colorId, 3.f, segmentAlpha);
 			}
 	}
 

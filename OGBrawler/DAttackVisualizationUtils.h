@@ -19,6 +19,14 @@ OGSIM_OPTIMIZE_OFF
 namespace dAttackVisualizationUtils
 {	
 
+// Shared amber palette id - the ONE hue for "an attack is going this way", used by
+// BOTH the attack-direction indicator wedge (DAttackBlockPredictionVisualization.h)
+// and the WindUp/WindDown swing segment (DAttackRadialVisualization.h). The RGB lives
+// in DAttackCircularVisualizationUImpl::idToColor, case 14 = FColor(249, 205, 9) - the
+// channel midpoint of the old Orange (243,156,18) and Yellow (255,255,0).
+// `inline` is required: a namespace-scope constexpr alone has internal linkage.
+inline constexpr unsigned int kAttackDirectionColorId = 14u;
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename RendererFunctorType>
