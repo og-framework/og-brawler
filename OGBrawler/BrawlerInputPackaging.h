@@ -44,12 +44,15 @@ namespace simulatableBrawler
 {
 
 // The subset of player input that varies continuously and is therefore safe to
-// re-sample at render-frame rate. Defaults match getZeroPlayerInput()'s neutral
-// pose (aim +Z, no movement) so a default-constructed instance packs to the same
-// neutral PlayerInput.
+// re-sample at render-frame rate. Defaults ARE getZeroPlayerInput()'s neutral pose
+// (aim +Z, no movement), taken from the sub-sims' own zero(), so a default-constructed
+// instance packs to the same neutral PlayerInput.
 struct ContinuousInputFields
 {
-    glm::vec3 aimDirection      = glm::vec3(0.f, 0.f, 1.f);
+    // [movement-sim task 22] The neutral aim is spelled ONCE, at the radial sub-sim's
+    // own zero(). Visible here transitively through SimulatableBrawlerTypes.h, which
+    // includes DAttackRadialSimulation.h — no new include was needed.
+    glm::vec3 aimDirection      = dAttackRadialSimulation::PlayerInput::zero().aimDirection;
     glm::vec2 moveStick         = glm::vec2(0.f, 0.f);
     glm::vec3 moveDirectionWorld = glm::vec3(0.f, 0.f, 0.f);
 };
@@ -90,7 +93,13 @@ inline PlayerInput makeSimPlayerInput(const ContinuousInputFields& fields,
                                               fields.moveStick, fields.moveDirectionWorld,
                                               triggeredActionId),
         dAttackGuardSimulation::PlayerInput(fields.aimDirection),
-        brawlerProjectileSimulation::PlayerInput{fields.aimDirection});
+        brawlerProjectileSimulation::PlayerInput{fields.aimDirection},
+        // [movement-sim T1] Empty at the skeleton — the movement sub-sim consumes no
+        // input yet. Named here anyway because the composite is POSITIONAL: this is
+        // the single place in the whole tree where a simulatableBrawler::PlayerInput
+        // is assembled from fields, so appending a slice costs exactly one line and
+        // NO UE edit (both UE builders route through this function).
+        brawlerMovementSimulation::PlayerInput{});
 }
 
 // Render-rate packer. Continuous fields only; discrete fields pinned neutral —

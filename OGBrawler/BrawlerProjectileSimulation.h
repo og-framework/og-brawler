@@ -16,6 +16,7 @@
 #include "OGSimulation/SimulationFieldDescriptors.h"
 #include "OGSimulation/PhysicsBodyState.h"
 #include "OGSimulation/PhysicsBodyAdapter.h"
+#include "OGSimulation/PhysicsDeclaration.h"
 #include "OGSimulation/SpatialQueryAdapter.h"
 #include "OGSimulation/QueryGeometry.h"
 #include "OGSimulation/SpatialQueryResult.h"
@@ -145,14 +146,12 @@ struct PhysicsSetup
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-struct RuntimeBindings
-{
-    BodyId ownBodyId;
-    BodyId parentBodyId;
-    glm::vec3 attachmentOffset;
-    std::vector<ShapeId> shapeIds;
-    std::vector<QueryVolumeId> queryVolumeIds;
-};
+// The one shared definition lives in OGSimulation/PhysicsDeclaration.h. The
+// PhysicsDeclaration concept requires `same_as<PhysicsRuntimeBindings&>`, so a
+// field-identical per-sim copy is a DISTINCT type and does not conform; this
+// alias keeps every existing `brawlerProjectileSimulation::RuntimeBindings`
+// spelling valid while making the type the shared one.
+using RuntimeBindings = PhysicsRuntimeBindings;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -273,6 +272,15 @@ class PlayerInput
 {
 public:
     glm::vec3 aimDirection{};
+
+    // THE NEUTRAL INPUT for this sub-simulation, folded into the composite by
+    // SimulationComposite::zero() — which is all getZeroPlayerInput() now is.
+    // [movement-sim task 22] The value is copied VERBATIM from what that function
+    // handed this type before the fold; it is a wire value, not something to re-derive.
+    // ⚠ Unlike radial/machine/guard, this one IS PlayerInput{} today — the pre-fold
+    // getZeroPlayerInput() passed a value-initialised projectile input, so a (0,0,0)
+    // aim is the shipped wire value. Do not "fix" it to (0,0,1): that is a wire change.
+    static PlayerInput zero() { return PlayerInput{}; }
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -323,6 +331,16 @@ struct PhysicsDeclaration
         else if constexpr (Slot == 1) return "Projectile1";
         else return "Projectile2";
     }();
+
+    // Maps the GAME's aggregate static data to this sub-simulation's own slice.
+    // This is what makes body creation generic: the engine-side fold asks each
+    // declaration for its slice instead of branching on the declaration type.
+    // A member TEMPLATE deliberately — this header cannot name
+    // simulatableBrawler::StaticData, because the aggregate includes this header
+    // (an include cycle). GameStaticDataType is deduced at the call site, where the aggregate is
+    // complete. All three pool slots share the one projectile slice.
+    template <typename GameStaticDataType>
+    static const StaticData& staticDataOf(const GameStaticDataType& gsd) { return gsd.m_projectileStaticData; }
 
     static std::vector<QueryVolumeDescriptor> queryVolumes(const StaticData& sd)
     {

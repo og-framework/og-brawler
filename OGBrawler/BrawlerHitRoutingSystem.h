@@ -115,7 +115,8 @@ namespace brawlerHitRouting
             //    tick's signal is fresh (the machine sim never sees a stale flag).
             for (const auto& [id, brawlerPtr] : ordered)
             {
-                auto& slice = brawlerPtr->editAllState().editDerivedState().m_inboundHitDerivedState;
+                auto& slice = brawlerPtr->editAllState().editDerivedState()
+                    .edit<brawlerInboundHit::DerivedState>();
                 slice.wasHitThisTick               = false;   // T3
                 slice.wasProjectileBlockedThisTick = false;   // T15
             }
@@ -126,7 +127,8 @@ namespace brawlerHitRouting
             for (const auto& [attackerId, attackerPtr] : ordered)
             {
                 const auto& radialDerived =
-                    attackerPtr->getAllState().getDerivedState().m_attackDerivedState;
+                    attackerPtr->getAllState().getDerivedState()
+                        .get<dAttackRadialSimulation::DerivedState>();
                 for (const auto& hit : radialDerived.getAttackHits())
                 {
                     auto found = this->m_byRootBodyId.find(hit.hitRootBodyId.value);
@@ -136,7 +138,7 @@ namespace brawlerHitRouting
                     if (target == attackerPtr)   // D5 self-hit filter (pointer identity, not rootBodyId)
                         continue;
                     target->editAllState().editDerivedState()
-                        .m_inboundHitDerivedState.wasHitThisTick = true;
+                        .edit<brawlerInboundHit::DerivedState>().wasHitThisTick = true;
                 }
             }
 
@@ -160,7 +162,7 @@ namespace brawlerHitRouting
                     if (target == attackerPtr)
                         continue;
                     target->editAllState().editDerivedState()
-                        .m_inboundHitDerivedState.wasHitThisTick = true;
+                        .edit<brawlerInboundHit::DerivedState>().wasHitThisTick = true;
                 }
             }
 
@@ -179,7 +181,7 @@ namespace brawlerHitRouting
                     if (slot.endTick != currentTick || slot.endReason != 4)
                         continue;
                     attackerPtr->editAllState().editDerivedState()
-                        .m_inboundHitDerivedState.wasProjectileBlockedThisTick = true;
+                        .edit<brawlerInboundHit::DerivedState>().wasProjectileBlockedThisTick = true;
                 }
             }
         }

@@ -7,6 +7,7 @@
 #include "OGBrawler/DAttackGuardSimulation.h"
 #include "OGBrawler/DAttackMachineSimulation.h"
 #include "OGBrawler/BrawlerProjectileSimulation.h"
+#include "OGBrawler/BrawlerMovementSimulation.h"
 #include "OGBrawler/DAttackMachineSimulationRuntimeTweakables.h"
 #include "OGSimulation/SimulationTimeContext.h"
 #include "OGSimulation/SimulationDependencies.h"
@@ -60,8 +61,26 @@ private:
         dAttackGuardSimulation::PhysicsDeclaration,
         brawlerProjectileSimulation::PhysicsDeclaration<0>,
         brawlerProjectileSimulation::PhysicsDeclaration<1>,
-        brawlerProjectileSimulation::PhysicsDeclaration<2>> m_physics;
+        brawlerProjectileSimulation::PhysicsDeclaration<2>,
+        brawlerMovementSimulation::PhysicsDeclaration> m_physics;
 };
+
+// One assertion per declaration in m_physics above. The concept is parameterised
+// on the GAME's aggregate StaticData, so this header — the one place that knows
+// both — is where it can be checked at all. A declaration that drops a member, or
+// whose bindings are not the shared PhysicsRuntimeBindings, fails HERE instead of
+// hundreds of lines deep inside a generic fold. The projectile's three pool slots
+// are asserted individually: PhysicsDeclaration<Slot> is a class template, so each
+// instantiation is a separate type and only the ones named are checked.
+//
+// ⚠ QUALIFIED ::PhysicsDeclaration — the sub-simulation namespaces each define a
+// STRUCT of that name, so the unqualified spelling is ambiguous here.
+static_assert(::PhysicsDeclaration<dAttackRadialSimulation::PhysicsDeclaration,       simulatableBrawler::StaticData>);
+static_assert(::PhysicsDeclaration<dAttackGuardSimulation::PhysicsDeclaration,        simulatableBrawler::StaticData>);
+static_assert(::PhysicsDeclaration<brawlerProjectileSimulation::PhysicsDeclaration<0>, simulatableBrawler::StaticData>);
+static_assert(::PhysicsDeclaration<brawlerProjectileSimulation::PhysicsDeclaration<1>, simulatableBrawler::StaticData>);
+static_assert(::PhysicsDeclaration<brawlerProjectileSimulation::PhysicsDeclaration<2>, simulatableBrawler::StaticData>);
+static_assert(::PhysicsDeclaration<brawlerMovementSimulation::PhysicsDeclaration,     simulatableBrawler::StaticData>);
 
 template <PhysicsBodyAdapter PhysAdapterT, SpatialQueryAdapter QueryAdapterT>
 void SimulatableBrawler::integrate(
@@ -77,11 +96,13 @@ void SimulatableBrawler::integrate(
     dAttackGuardSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT>      guardUtils     (dt, physAdapter, queryAdapter);
     brawlerProjectileSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT> projectileUtils(dt, currentTick, physAdapter, queryAdapter);
     dAttackMachineSimulation::IntegrationUtils<PhysAdapterT> machineUtils(dt, staticData.m_attackSequences, physAdapter, staticData.m_projectileStaticData);
+    brawlerMovementSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT>   movementUtils  (dt, physAdapter, queryAdapter);
 
     auto& state        = m_allState.editState();
     auto& derivedState = m_allState.editDerivedState();
     const auto& attackBindings = m_physics.get<dAttackRadialSimulation::PhysicsDeclaration>().bindings;
     const auto& guardBindings  = m_physics.get<dAttackGuardSimulation::PhysicsDeclaration>().bindings;
+    const auto& movementBindings = m_physics.get<brawlerMovementSimulation::PhysicsDeclaration>().bindings;
 
     {
         auto deps = makeDependencies<dAttackMachineSimulation::Dependencies>(state);
@@ -91,7 +112,7 @@ void SimulatableBrawler::integrate(
             deps, m_characterBindings,
             // [hit-resolution T2] Plain by-ref inbound-hit slice (mirrors CharacterBindings).
             // Populated by the manager routing pass (T3); read here to drive HitFlinch.
-            derivedState.m_inboundHitDerivedState);
+            derivedState.edit<brawlerInboundHit::DerivedState>());
     }
 
     {
@@ -100,7 +121,7 @@ void SimulatableBrawler::integrate(
             dAttackGuardSimulation::AllInput<PhysAdapterT, QueryAdapterT>(
                 input.get<dAttackGuardSimulation::PlayerInput>(), guardUtils),
             staticData.m_guardSimulationStaticData, deps,
-            guardBindings, derivedState.m_guardDerivedState);
+            guardBindings, derivedState.edit<dAttackGuardSimulation::DerivedState>());
     }
     
     {
@@ -114,7 +135,7 @@ void SimulatableBrawler::integrate(
             brawlerProjectileSimulation::AllInput<PhysAdapterT, QueryAdapterT>(
                 input.get<brawlerProjectileSimulation::PlayerInput>(), projectileUtils),
             staticData.m_projectileStaticData, deps,
-            projectileBindings, derivedState.m_projectileDerivedState);
+            projectileBindings, derivedState.edit<brawlerProjectileSimulation::DerivedState>());
     }
 
     {
@@ -123,7 +144,20 @@ void SimulatableBrawler::integrate(
             dAttackRadialSimulation::AllInput<PhysAdapterT, QueryAdapterT>(
                 input.get<dAttackRadialSimulation::PlayerInput>(), radialUtils),
             staticData.m_attackSimulationStaticData, deps,
-            attackBindings, derivedState.m_attackDerivedState);
+            attackBindings, derivedState.edit<dAttackRadialSimulation::DerivedState>());
+    }
+
+    // [movement-sim T1] SKELETON. Runs LAST, matching ExecutionOrder. The call is
+    // shaped exactly like guard's and does exactly one thing: re-snap the movement
+    // body onto its parent. Position in the order is free — the movement sub-sim
+    // reads no sibling state and writes none.
+    {
+        auto deps = makeDependencies<brawlerMovementSimulation::Dependencies>(state);
+        brawlerMovementSimulation::integrate(dt,
+            brawlerMovementSimulation::AllInput<PhysAdapterT, QueryAdapterT>(
+                input.get<brawlerMovementSimulation::PlayerInput>(), movementUtils),
+            staticData.m_movementStaticData, deps,
+            movementBindings, derivedState.edit<brawlerMovementSimulation::DerivedState>());
     }
 }
 

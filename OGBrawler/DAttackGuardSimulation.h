@@ -14,6 +14,7 @@
 #include "OGSimulation/SimulationComparisonGlm.h"
 #include "OGSimulation/SimulationFieldDescriptors.h"
 #include "OGSimulation/PhysicsBodyState.h"
+#include "OGSimulation/PhysicsDeclaration.h"
 #include "OGSimulation/QueryGeometry.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
 
@@ -73,15 +74,12 @@ struct PhysicsSetup
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Immutable bindings set once at init — body IDs, attachment offset, shape IDs, query volumes.
-struct RuntimeBindings
-{
-	BodyId ownBodyId;
-	BodyId parentBodyId;
-	glm::vec3 attachmentOffset;
-	std::vector<ShapeId> shapeIds;
-	std::vector<QueryVolumeId> queryVolumeIds;
-};
+// The one shared definition lives in OGSimulation/PhysicsDeclaration.h. The
+// PhysicsDeclaration concept requires `same_as<PhysicsRuntimeBindings&>`, so a
+// field-identical per-sim copy is a DISTINCT type and does not conform; this
+// alias keeps every existing `dAttackGuardSimulation::RuntimeBindings`
+// spelling valid while making the type the shared one.
+using RuntimeBindings = PhysicsRuntimeBindings;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -98,6 +96,15 @@ class PlayerInput
 public:
 	// [Task 43] Plain aggregate — const dropped so MemberFieldDesc::write() can assign.
 	glm::vec3 aimDirection{};
+
+	// THE NEUTRAL INPUT for this sub-simulation, folded into the composite by
+	// SimulationComposite::zero() — which is all getZeroPlayerInput() now is.
+	// [movement-sim task 22] The value is copied VERBATIM from what that function
+	// handed this type before the fold; it is a wire value, not something to re-derive.
+	// ⛔ (0,0,1) forwards, NOT PlayerInput{}: a value-initialised (0,0,0) aim would
+	// reach normalize(), and the difference is also the TAG the input-resolution and
+	// net-sync anti-vacuity tests discriminate on. Keep zero() != PlayerInput{}.
+	static PlayerInput zero() { return PlayerInput(glm::vec3(0.f, 0.f, 1.f)); }
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -158,6 +165,17 @@ struct PhysicsDeclaration
 {
 	static const PhysicalObjectDescriptor& descriptor() { return PhysicsSetup::body; }
 	static constexpr const char* name = "GuardAxis";
+
+	// Maps the GAME's aggregate static data to this sub-simulation's own slice.
+	// This is what makes body creation generic: the engine-side fold asks each
+	// declaration for its slice instead of branching on the declaration type.
+	// A member TEMPLATE deliberately — this header cannot name
+	// simulatableBrawler::StaticData, because the aggregate includes this header
+	// (an include cycle). GameStaticDataType is deduced at the call site, where the aggregate is
+	// complete.
+	template <typename GameStaticDataType>
+	static const StaticData& staticDataOf(const GameStaticDataType& gsd) { return gsd.m_guardSimulationStaticData; }
+
 	static std::vector<QueryVolumeDescriptor> queryVolumes(const StaticData& /*sd*/) {
 		return std::vector<QueryVolumeDescriptor>{};
 	}

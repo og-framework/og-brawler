@@ -18,6 +18,12 @@ namespace collisionCategory
 	// registered under `body`, so projectile-vs-projectile hits produced a routed
 	// HitFlinch on the opposing owner via the T3/T11 rootBodyId lookup.
 	constexpr uint32_t projectile = 3;   // in-flight projectile body
+	// [movement-sim T1] the character movement sub-sim's body; NOT the hurtbox.
+	// Deliberately UNMAPPED in the engine adapter until the movement sim goes live —
+	// attack/projectile queries search body/guard/projectile object types only, so an
+	// unmapped-category body is invisible to them.
+	// (4 is reserved for `world`, added with the sweep masks by the collision-category task.)
+	constexpr uint32_t character = 5;
 
 	// Pre-built masks for common query patterns
 	constexpr CollisionCategories bodyAndGuard =

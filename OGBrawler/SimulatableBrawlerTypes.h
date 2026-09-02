@@ -42,6 +42,7 @@ namespace simulatableBrawler
 
 // Serialization wire order: radialIC -> radialState -> guardState -> guardIC (0 bytes)
 //   -> machineState -> projectileIC -> projectileState
+//   -> movementIC (0 bytes) -> movementState
 // (projectile slices appended last per Task 15; machine writes projectileIC, projectile
 //  consumes it — see ExecutionOrder below.)
 using State = SimulationStateComposite<
@@ -51,22 +52,28 @@ using State = SimulationStateComposite<
     dAttackGuardSimulation::InitialConditions,
     dAttackMachineSimulation::State,
     brawlerProjectileSimulation::InitialConditions,
-    brawlerProjectileSimulation::State
+    brawlerProjectileSimulation::State,
+    brawlerMovementSimulation::InitialConditions,
+    brawlerMovementSimulation::State
 >;
 
-class DerivedState
-{
-public:
-    DerivedState() = default;
-
-    dAttackRadialSimulation::DerivedState m_attackDerivedState;
-    dAttackGuardSimulation::DerivedState m_guardDerivedState;
-    brawlerProjectileSimulation::DerivedState m_projectileDerivedState;
-    // [hit-resolution T2] Per-tick inbound-hit signal. Reset + populated by the manager's
-    // routing pass (T3); read the following tick by the machine sim's integrate3 to drive
-    // the HitFlinch transition. Off-wire (see D1) — no SerializableFields entry.
-    brawlerInboundHit::DerivedState m_inboundHitDerivedState;
-};
+// OFF-WIRE per-tick scratch, accessed by TYPE: derivedState.get<T>() / .edit<T>(), exactly
+// as State is.
+using DerivedState = SimulationDerivedComposite<
+    dAttackRadialSimulation::DerivedState,
+    dAttackGuardSimulation::DerivedState,
+    brawlerProjectileSimulation::DerivedState,
+    // [movement-sim T1] Empty at the skeleton; the slot exists so the integrate
+    // block in SimulatableBrawler.h can pass it, exactly as the other sub-sims do.
+    brawlerMovementSimulation::DerivedState,
+    // [hit-resolution T2] Per-tick inbound-hit signal, and the one element below that is
+    // NOT a sub-simulation's own scratch. Reset + populated by brawlerHitRouting::System::
+    // postIntegrate; read the FOLLOWING tick by the machine sim's integrate3 to drive the
+    // HitFlinch transition. That system-owned lifecycle is why it is passed to integrate3
+    // as a plain by-ref parameter and not as an ExternalDep — see D7, and follow-on F3.
+    // Off-wire (see D1) — no SerializableFields entry, and the alias above now enforces it.
+    brawlerInboundHit::DerivedState
+>;
 
 class AllState
 {
@@ -85,23 +92,17 @@ private:
 };
 
 // Serialization wire order: radialInput -> machineInput -> guardInput -> projectileInput
+//   -> movementInput (0 bytes)
 using PlayerInput = SimulationInputComposite<
     dAttackRadialSimulation::PlayerInput,
     dAttackMachineSimulation::PlayerInput,
     dAttackGuardSimulation::PlayerInput,
-    brawlerProjectileSimulation::PlayerInput
+    brawlerProjectileSimulation::PlayerInput,
+    brawlerMovementSimulation::PlayerInput
 >;
 
-inline PlayerInput getZeroPlayerInput()
-{
-    return PlayerInput(
-        dAttackRadialSimulation::PlayerInput(glm::vec3(0.f, 0.f, 1.f), false, false),
-        dAttackMachineSimulation::PlayerInput(glm::vec3(0.f, 0.f, 1.f), false, false,
-                                              glm::vec2(0.f), glm::vec3(0.f)),
-        dAttackGuardSimulation::PlayerInput(glm::vec3(0.f, 0.f, 1.f)),
-        brawlerProjectileSimulation::PlayerInput{}
-    );
-}
+// THE NEUTRAL INPUT.
+inline PlayerInput getZeroPlayerInput() { return PlayerInput::zero(); }
 
 class StaticData
 {
@@ -195,6 +196,7 @@ public:
     dAttackRadialSimulation::StaticData m_attackSimulationStaticData;
     dAttackGuardSimulation::StaticData m_guardSimulationStaticData;
     brawlerProjectileSimulation::StaticData m_projectileStaticData;
+    brawlerMovementSimulation::StaticData m_movementStaticData;
 };
 
 // [Task 55/60] Execution order validation — declared order must satisfy dependency edges.
@@ -204,7 +206,8 @@ using ExecutionOrder = std::tuple<
     dAttackMachineSimulation::Dependencies,
     dAttackGuardSimulation::Dependencies,
     dAttackRadialSimulation::Dependencies,
-    brawlerProjectileSimulation::Dependencies>;
+    brawlerProjectileSimulation::Dependencies,
+    brawlerMovementSimulation::Dependencies>;
 inline constexpr auto executionViolation_ =
     compositeDetail::findFirstViolation<ExecutionOrder>();
 using ExecutionOrderDiagnostic_ =

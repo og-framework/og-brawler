@@ -74,6 +74,20 @@ public:
 	// 5-arg aggregate-init call sites keep compiling (C++20 parenthesized aggregate init
 	// defaults this to 0). Travels through the PlayerInput RPC like any other input field.
 	uint32_t triggeredActionId = 0;
+
+	// THE NEUTRAL INPUT for this sub-simulation, folded into the composite by
+	// SimulationComposite::zero() — which is all getZeroPlayerInput() now is.
+	// [movement-sim task 22] The value is copied VERBATIM from what that function
+	// handed this type before the fold; it is a wire value, not something to re-derive.
+	// ⛔ (0,0,1) forwards, NOT PlayerInput{}: a value-initialised (0,0,0) aim would
+	// reach normalize(), and the difference is also the TAG the input-resolution and
+	// net-sync anti-vacuity tests discriminate on. Keep zero() != PlayerInput{}.
+	static PlayerInput zero()
+	{
+		// triggeredActionId is left to its default member initialiser (0) by C++20
+		// parenthesized aggregate init, exactly as the pre-fold call site did.
+		return PlayerInput(glm::vec3(0.f, 0.f, 1.f), false, false, glm::vec2(0.f), glm::vec3(0.f));
+	}
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
