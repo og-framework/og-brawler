@@ -214,6 +214,47 @@ using ExecutionOrderDiagnostic_ =
     compositeDetail::DecodeViolation<ExecutionOrder, executionViolation_>;
 static_assert(sizeof(ExecutionOrderDiagnostic_) >= 0);
 
+// ---------------------------------------------------------------------------
+// [movement-sim task 29, F-G6a] THE ORDERING EDGE THE VALIDATOR ABOVE CANNOT SEE.
+//
+// findFirstViolation walks `Dependencies`, and a dependency is only visible to it
+// when it is DECLARED there. The guard declares only
+// `External<const machine::State&>` — yet the projectile and radial sub-sims read
+// the guard's POSE THIS TICK, and they read it through the physics adapter
+// (`getBodyTransform(hit.bodyId)[0]` is the guard forward in the projectile block
+// test; DAttackRadialSimulation does the same for the radial block test). An edge
+// that flows through the adapter is invisible to a graph built from types, so
+// reordering the integrate blocks would silently make both of them read LAST
+// tick's guard facing, with nothing failing to compile and no test failing except
+// by luck.
+//
+// Hence this: the same edge, restated as an index comparison, in the one place
+// the declared order lives. It is deliberately a SEPARATE assertion from the
+// generic one above rather than an entry in `Dependencies` — declaring a
+// dependency the sub-sim does not actually take through the type system would be
+// a lie the ownership validator then has to be taught to tolerate.
+template <typename T, typename Tuple> struct ExecutionIndexOf_;
+template <typename T, typename... Ts>
+struct ExecutionIndexOf_<T, std::tuple<Ts...>>
+    : std::integral_constant<std::size_t, compositeDetail::indexOfBareType<T, Ts...>()> {};
+
+template <typename T>
+inline constexpr std::size_t executionIndexOf_ = ExecutionIndexOf_<T, ExecutionOrder>::value;
+
+static_assert(executionIndexOf_<dAttackGuardSimulation::Dependencies>
+            < executionIndexOf_<brawlerProjectileSimulation::Dependencies>,
+    "The guard sub-simulation must integrate BEFORE the projectile sub-simulation: the "
+    "projectile block test reads the guard's pose off the physics body in the same tick. "
+    "This edge flows through the physics adapter, not through Dependencies, so the "
+    "generic execution-order validator above cannot see it.");
+
+static_assert(executionIndexOf_<dAttackGuardSimulation::Dependencies>
+            < executionIndexOf_<dAttackRadialSimulation::Dependencies>,
+    "The guard sub-simulation must integrate BEFORE the radial sub-simulation: the radial "
+    "block test reads the guard's pose off the physics body in the same tick. This edge "
+    "flows through the physics adapter, not through Dependencies, so the generic "
+    "execution-order validator above cannot see it.");
+
 } // namespace simulatableBrawler
 
 OGSIM_OPTIMIZE_ON
