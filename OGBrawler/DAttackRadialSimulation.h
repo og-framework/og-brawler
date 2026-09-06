@@ -6,6 +6,7 @@
 #include <vector>
 #include <limits>
 #include "glm/vec3.hpp"
+#include "glm/common.hpp"	// glm::abs -- see the task-32 note at the abs site below
 #include <glm/gtc/quaternion.hpp>
 #include "DAttackRadialSequence.h"
 #include "OGBrawler/DAttackSequenceId.h"
@@ -128,9 +129,40 @@ class DerivedState
 {
 public:
 	DerivedState()
-		: attackHits(4)
-		, guardHits(4)
-	{}
+	{
+		// ⛔ [movement-sim task 34] RESERVE, NOT RESIZE — AND THE DIFFERENCE WAS A LIVE BUG.
+		// This was `: attackHits(4), guardHits(4)`, a member-init RESIZE that manufactured FOUR
+		// default-constructed DAttackHit entries in each container. collisionCheck's first line
+		// is `if (derivedState.editAttackHits().size() >= 4) return;` — a genuine "at most four
+		// distinct targets per swing" cap, since the container ACCUMULATES across the whole
+		// swing (deduped by rootBodyId) and is cleared only in deactivate(). So a freshly
+		// constructed DerivedState arrived at that cap ALREADY SATISFIED and collisionCheck
+		// became a silent no-op.
+		//
+		// It was reachable, and not rarely: DerivedState is a long-lived per-character member
+		// (SimulatableBrawler.h), and SimulatableBrawler::integrate runs the machine sub-sim
+		// BEFORE this one in the same tick. An attack held on a character's very first tick has
+		// the machine write a VALID activeAttackSequence, which makes integrate() skip the
+		// deactivate branch — the ONLY site that clears these containers. setInitialConditions
+		// does not clear them either. The swing then registered NO hits for its entire duration,
+		// with no assert and no log, and the four phantoms additionally reached the manager's
+		// hit routing (BrawlerHitRoutingSystem) and drew four guard-hit spheres at the origin.
+		// ⚠ Rollback/resim makes it MORE likely, not less: a resim replays from early states.
+		//
+		// ⭐ THE POINT OF RESERVING INSTEAD: size() now means exactly what the guard reads it
+		// as — "hits recorded during the CURRENT swing" — at every moment of the object's
+		// lifetime, including before the first deactivate. The coupling cannot fail silently
+		// because the failing STATE is no longer representable. An assert could not have done
+		// this job: DAttackHit carries no provenance, so four phantoms and four legitimately
+		// capped hits are indistinguishable at the guard.
+		//
+		// The 4 here is only a capacity hint (the guard's cap is what makes 4 the useful
+		// number). Pinned by DAttackRadialFirstTickCollisionTest.cpp — four cases
+		// walking the machine->radial tick-1 path end to end — and by SimulatableBrawlerTest's
+		// "the slice ctor really ran" case, which now anchors on capacity() rather than size().
+		attackHits.reserve(4);
+		guardHits.reserve(4);
+	}
 
 	DerivedState(const DerivedState& other)
 		: attackHits(other.attackHits)
@@ -457,8 +489,44 @@ void collisionCheck(float deltaSeconds,
 		}
 
 		const glm::vec3 hitDirection = hit.objectPosition - rootTranslation;
-		const float lengthAlongRotationAxis = abs(glm::dot(hitDirection, worldSequenceRotationAxis));
-		const glm::vec3 hitDirectionOnRotationPlane = hitDirection - lengthAlongRotationAxis * worldSequenceRotationAxis;
+
+		// [movement-sim task 33] SIGNED, AND IT MUST STAY SIGNED. This is hitDirection's
+		// component ALONG the swing axis; subtracting it below is what projects the hit onto
+		// the swing plane. This site used the ABSOLUTE value for that subtraction until task
+		// 33, which is correct only for a hit ABOVE the plane -- for one BELOW it the axial
+		// component is doubled AWAY from the plane instead of removed: (75, 0, -35) became
+		// (75, 0, -70), not (75, 0, 0). hitDistance was therefore inflated for below-plane
+		// hits only, and since it gates BOTH ends of the annulus the strike zone below the
+		// plane was displaced INWARD -- the swing lost outward reach below the plane and
+		// landed phantom hits inside the inner hole. A real behavioural fix, not hardening.
+		// Pinned by DAttackRadialSwingPlaneTest.cpp
+		// "DAttackRadial.MirroredHitsAreTheSameDistanceFromTheSwingAxis" (mirror-image hits
+		// measured 75.0 above vs 102.5914 below before the fix; 75.0 / 75.0 after).
+		const float signedDistanceAlongRotationAxis = glm::dot(hitDirection, worldSequenceRotationAxis);
+
+		// [movement-sim task 32] glm::abs, NOT unqualified abs. glm::dot returns a float
+		// here, and an unqualified `abs` in a non-dependent expression binds at this
+		// header's POINT OF DEFINITION -- so which overload wins is a property of the
+		// include set, i.e. of the toolchain. og-brawler targets a Godot port and a Jolt
+		// adapter where only C's `::abs(int)` may be in scope; under that overload this
+		// line becomes `(float)abs((int)dot(...))` and throws away the FRACTION.
+		// ⚠ This dot is a SIGNED DISTANCE in cm along the rotation axis, NOT a cosine:
+		// hitDirection is a raw world-space delta, not a unit vector. Truncation therefore
+		// bites at EVERY magnitude, not only inside (-1,1) -- 5.7 cm reads as 5 cm -- and the
+		// value gates `< getHalfThickness()` below, so bodies the swing passes cleanly under
+		// would start registering hits.
+		// Task 32 measured that this was ALREADY binding the float overload on this
+		// toolchain (MSVC 14.38), so the change is PORTABILITY HARDENING and not a
+		// behaviour fix. glm::abs cannot resolve to an integer overload for a float.
+		// Pinned by DAttackAbsQualificationTest.cpp
+		// "DAttackAbs.RadialAxisDistanceKeepsItsFraction" (0 hits vs 1 under an int overload).
+		// ⛔ [movement-sim task 33] The UNSIGNED magnitude, and it feeds the half-thickness
+		// gate below and NOTHING else. A distance FROM a plane has no sign, so glm::abs is
+		// correct there and was never the defect. Do not reuse this for the projection.
+		// (Task 32's note above still describes this call; only the dot product it wraps
+		// moved one declaration up, so the same operand reaches the same glm::abs.)
+		const float lengthAlongRotationAxis = glm::abs(signedDistanceAlongRotationAxis);
+		const glm::vec3 hitDirectionOnRotationPlane = hitDirection - signedDistanceAlongRotationAxis * worldSequenceRotationAxis;
 		const float hitDistance = glm::length(hitDirectionOnRotationPlane);
 
 		const bool hitIsInCircle = hitDistance > staticData.getAttackCircle().getInnerRadius() &&

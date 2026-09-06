@@ -3,6 +3,7 @@
 
 #include <vector>
 #include "glm/vec3.hpp"
+#include "glm/common.hpp"	// glm::abs -- see the task-32 note at the abs site below
 #include <glm/gtc/quaternion.hpp>
 #include "DAttackRadialSequence.h"
 #include "DAttackRadialSimulation.h"
@@ -164,7 +165,17 @@ void setRadialSimulationInitialConditions(float deltaTime,
 	const glm::vec3 defaultUp(0.f, 0.f, 1.f);
 	const float aimDot = glm::dot(aimDirection, defaultForward);
 	const float aimAngle = glm::acos(aimDot);
-	const bool aimEqualsForward = abs(abs(aimDot) - 1.f) < 0.0001f;
+	// [movement-sim task 32] glm::abs, NOT unqualified abs -- byte-identical to the
+	// guard site task 29 fixed in DAttackGuardSimulation.h, and fixed for the same
+	// reason. Under C's `::abs(int)`, which may be the only overload visible at this
+	// header's point of definition on the Godot/Jolt toolchains, the expression
+	// collapses to `|aimDot| == 1` EXACTLY: the near-pole epsilon band disappears and
+	// the normalize(cross(...)) below is handed a near-zero vector.
+	// Task 32 measured that this was ALREADY binding the float overload on this
+	// toolchain (MSVC 14.38): PORTABILITY HARDENING, not a behaviour fix. Pinned by
+	// DAttackAbsQualificationTest.cpp
+	// "DAttackAbs.MachineNearPoleAimTakesTheEpsilonBandBranch" (axis.z +1 vs -1).
+	const bool aimEqualsForward = glm::abs(glm::abs(aimDot) - 1.f) < 0.0001f;
 	const glm::vec3 aimRotationAxis = [&aimEqualsForward, &defaultUp, &defaultForward, &aimDirection]() {
 		if (aimEqualsForward)
 			return defaultUp;
