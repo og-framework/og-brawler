@@ -20,13 +20,30 @@ namespace collisionCategory
 	constexpr uint32_t projectile = 3;   // in-flight projectile body
 	// [movement-sim T6] Static level geometry. The movement sub-sim's ground/wall
 	// probe and its capsule sweeps search this category; no DAttack-authored shape
-	// belongs to it. The engine adapter maps it to the native WorldStatic object
-	// type (the mapping itself is a later task, not declared here).
+	// belongs to it.
+	// ⭐ [movement-sim task 17] THE MAPPING EXISTS. Task 39 mapped it to the native
+	// WorldStatic object type at BOTH ChaosCategoryMapping tables in
+	// SimulationManagerUImpl.cpp's BeginPlay (authority branch and client branch).
+	// ⚠ ECC_WorldStatic is ECollisionChannel(0), which is ALSO the unmapped fallback,
+	// so the return value cannot tell you the mapping is there — only the table's size
+	// can. That caveat is spelled out in full at the authority table.
 	constexpr uint32_t world = 4;   // static level geometry (engine: WorldStatic object type)
 	// [movement-sim T1] the character movement sub-sim's body; NOT the hurtbox.
-	// Deliberately UNMAPPED in the engine adapter until the movement sim goes live —
-	// attack/projectile queries search body/guard/projectile object types only, so an
-	// unmapped-category body is invisible to them.
+	//
+	// ⭐ [movement-sim task 17] THIS CATEGORY IS LIVE, AND THE THREE SENTENCES THAT SAID
+	// OTHERWISE ARE GONE. The old text said `character` was "deliberately UNMAPPED in the
+	// engine adapter until the movement sim goes live" and that the channel note below was
+	// "documentation only". All three halves of that have landed:
+	//   * task 43 MAPPED it — `character -> ECC_GameTraceChannel6` at both
+	//     ChaosCategoryMapping tables in SimulationManagerUImpl.cpp's BeginPlay;
+	//   * task 53 DECLARED the channel — one `+DefaultChannelResponses=(...)` row in
+	//     Config/DefaultEngine.ini: Channel=ECC_GameTraceChannel6, DefaultResponse=ECR_Block,
+	//     Name="BrawlerCharacter";
+	//   * task 11 took the movement sim LIVE — its PhysicsDeclaration ships in the
+	//     SimulatableBrawler composite and runs for every character in every session.
+	// What has NOT changed is the half that made the old sentence worth writing: no attack
+	// or projectile query searches this category, so a `character` shape is still invisible
+	// to every mask below. That is now a property of the MASKS, not of a missing mapping.
 	//
 	// [movement-sim T6] WHY THE CAPSULE IS NOT `body` (architecture §4.3):
 	// `body` is the radial sim's 30 cm hurtbox sphere, searched by the
@@ -42,8 +59,8 @@ namespace collisionCategory
 	//
 	// Engine channel — user ruling #6, closed 2026-09-04: `ECC_GameTraceChannel6`,
 	// verified free (ch1 is `Damageable` in DefaultEngine.ini; ch2-5 are
-	// body / guard / queryRouting / projectile). Recorded here as documentation
-	// only — the adapter-side channel MAPPING is a separate, later task.
+	// body / guard / queryRouting / projectile). Both halves are DONE: task 43 wrote the
+	// adapter-side mapping, task 53 declared the channel in DefaultEngine.ini.
 	constexpr uint32_t character = 5;
 
 	// Pre-built masks for common query patterns
@@ -61,8 +78,9 @@ namespace collisionCategory
 	constexpr CollisionCategories worldOnly = CollisionCategories::single(world);
 	// The movement capsule's blocking set (user ruling #5, closed 2026-09-03:
 	// brawler-vs-brawler is BLOCK — the solver separates, mass-ratio 50/50 and the
-	// ride-up risk accepted, authored pushbox parked). Defined here; the capsule
-	// descriptor that consumes it is built by a later task.
+	// ride-up risk accepted, authored pushbox parked). ⭐ [movement-sim task 17] THE
+	// CONSUMER EXISTS: task 11's `brawlerMovementSimulation::PhysicsSetup::body` shape
+	// descriptor carries this mask.
 	constexpr CollisionCategories worldAndCharacter =
 		worldOnly | CollisionCategories::single(character);
 }
