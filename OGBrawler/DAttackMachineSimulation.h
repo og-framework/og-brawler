@@ -10,7 +10,11 @@
 #include "OGBrawler/DAttackSequenceId.h"
 #include "OGBrawler/DAttackDirectionClassifier.h"
 #include "OGBrawler/BrawlerProjectileSimulation.h"
-#include "OGBrawler/BrawlerMovementSimulation.h"
+// [movement-sim task 62] The LEAF header, NOT `BrawlerMovementSimulation.h`. Everything this
+// header wants from the movement sub-sim is `CharacterBindings` (one field, one dependency),
+// and it must not reach the movement header — movement includes THIS one, so the dependency
+// points one way. See the note above `integrate3`.
+#include "OGBrawler/BrawlerCharacterBindings.h"
 // [hit-resolution T2] brawlerInboundHit::DerivedState — read by integrate3 as a plain
 // by-ref param (NOT an ExternalDep, see current_state.md §D7). Zero-dependency header,
 // no include cycle.
@@ -462,15 +466,21 @@ inline const char* dAttackStateName(DAttackState s)
 	return "?";
 }
 
-// [Task 35] CharacterBindings now lives in BrawlerMovementSimulation.h, included above with no
-// include cycle, so integrate3 takes a plain const reference (the T33 templated workaround is
-// gone). The Hadouken trigger resolves the parent capsule transform on-demand from the bindings
-// handle — matching the bindings-as-integrate-param pattern radial/guard/projectile already use.
+// [Task 35, re-pointed at movement-sim task 62] CharacterBindings lives in
+// `OGBrawler/BrawlerCharacterBindings.h` — the leaf header included above — so integrate3 takes
+// a plain const reference and the T33 templated workaround stays gone.
+// ⛔ It used to live in `BrawlerMovementSimulation.h`, and the "no include cycle" that made that
+// safe STOPPED BEING TRUE once the movement sub-sim began reading this header's `State` and
+// `PlayerInput` slices. Task 62 moved the struct to a leaf both sides can include. The
+// dependency now points one way — movement -> machine — and THIS HEADER MUST NEVER INCLUDE
+// `BrawlerMovementSimulation.h`, directly or through any of its other includes.
+// The Hadouken trigger resolves the parent capsule transform on-demand from the bindings handle
+// — matching the bindings-as-integrate-param pattern radial/guard/projectile already use.
 template <typename PhysicsAdapterType>
 void integrate3(float deltaTime,
 	const AllInput<PhysicsAdapterType>& input,
 	Dependencies deps,
-	const brawlerMovementSimulation::CharacterBindings& characterBindings,
+	const simulatableBrawler::CharacterBindings& characterBindings,
 	const brawlerInboundHit::DerivedState& inboundHit)
 {
 	const dAttackRadialSimulation::State& attackState = deps.external.get<dAttackRadialSimulation::State>();

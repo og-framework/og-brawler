@@ -34,9 +34,13 @@ public:
     // Per-character bindings (T33). Populated ONCE at registration time
     // (SimulationManagerUImpl::tryRegister) from the authoritative parentBodyId.
     // Consumed by the machine sub-sim's integrate3 (the Hadouken trigger reads the
-    // capsule transform on-demand from it). See BrawlerMovementSimulation.h.
-    void setCharacterBindings(const brawlerMovementSimulation::CharacterBindings& cb) { m_characterBindings = cb; }
-    const brawlerMovementSimulation::CharacterBindings& getCharacterBindings() const { return m_characterBindings; }
+    // capsule transform on-demand from it). [movement-sim task 62] Defined in
+    // BrawlerCharacterBindings.h, the leaf header — it is NOT in BrawlerMovementSimulation.h
+    // any more. [movement-sim task 64] And the namespace is `simulatableBrawler`, not
+    // `brawlerMovementSimulation`: the old name recorded a file the struct passed through, and
+    // movement is the one sub-sim that never uses the type. The leaf header says why.
+    void setCharacterBindings(const simulatableBrawler::CharacterBindings& cb) { m_characterBindings = cb; }
+    const simulatableBrawler::CharacterBindings& getCharacterBindings() const { return m_characterBindings; }
 
     template <PhysicsBodyAdapter PhysAdapterT, SpatialQueryAdapter QueryAdapterT>
     void integrate(
@@ -55,7 +59,7 @@ public:
 private:
     simulatableBrawler::AllState m_allState;
     simulatableBrawler::AllState m_vizState;
-    brawlerMovementSimulation::CharacterBindings m_characterBindings;
+    simulatableBrawler::CharacterBindings m_characterBindings;
     SimulationPhysicsComposite<
         dAttackRadialSimulation::PhysicsDeclaration,
         dAttackGuardSimulation::PhysicsDeclaration,
@@ -156,10 +160,14 @@ void SimulatableBrawler::integrate(
     // `findFirstViolation` above enforces it rather than this comment.
     //
     // ⚠ THE SECOND ARGUMENT IS THE MACHINE'S PlayerInput, and this is the ONE PLACE the
-    // movement sub-sim can get it: the stick (`moveDirectionWorld`) is packed onto the
-    // machine slice, and `BrawlerMovementSimulation.h` cannot name that type at all —
-    // `DAttackMachineSimulation.h` includes IT (for CharacterBindings), so the parameter is a
-    // deduced template there. This call site is where the real type is supplied.
+    // movement sub-sim can get it: the stick (`moveDirectionWorld`) is packed onto the machine
+    // slice, and the framework hands no sub-sim another sub-sim's input.
+    // [movement-sim task 62] `brawlerMovementSimulation::integrate` now SPELLS
+    // `const dAttackMachineSimulation::PlayerInput&`. It used to be a DEDUCED template
+    // parameter, because the movement header could not name that type while
+    // `DAttackMachineSimulation.h` included IT for `CharacterBindings` — an include cycle. The
+    // cycle is gone (the struct moved to `BrawlerCharacterBindings.h`), so this argument is
+    // type-checked at the call rather than deduced to whatever it is handed.
     {
         auto deps = makeDependencies<brawlerMovementSimulation::Dependencies>(state);
         brawlerMovementSimulation::integrate(dt,

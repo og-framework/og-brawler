@@ -22,37 +22,42 @@
 #include "OGSimulation/SpatialQueryResult.h"   // SweepHit -- the attachment probe's result
 #include "OGSimulation/OGAssert.h"             // OG_CHECK -- the model-dispatch default arm
 #include "OGBrawler/CollisionCategoryConstants.h"
+// [movement-sim task 62] `simulatableBrawler::CharacterBindings` is DEFINED IN THE LEAF HEADER
+// INCLUDED ON THE NEXT LINE, not in this file any more. It is the one type the machine sub-sim
+// wants from here, and keeping it in a header whose only dependency is `BodyId` is what lets the
+// machine header have it without dragging in this one. Consumers of THIS header still see the
+// type, transitively, so no call site changed.
+// ⚠ [movement-sim task 64] THE NAMESPACE IS `simulatableBrawler`, NOT this file's
+// `brawlerMovementSimulation`. It read the other way until task 64. THIS SUB-SIM NEVER USES THE
+// TYPE — every mention of it left in this file is a comment; movement's capsule id comes from
+// its own `RuntimeBindings` below.
+#include "OGBrawler/BrawlerCharacterBindings.h"
+// ⭐ [movement-sim task 62] THE MACHINE HEADER, INCLUDED OUTRIGHT — the dependency points ONE
+// WAY now: movement -> machine. Movement reads the machine's `State` (the flinch freeze, step 3)
+// and its `PlayerInput` (the move stick is packed onto the machine slice), so
+// `machineFreezesMovement` and `integrate` SPELL those types instead of deducing them.
+// Before task 62 this include was impossible: `DAttackMachineSimulation.h` included THIS header
+// for `CharacterBindings`, so including it back was a cycle — and `#pragma once` does not turn a
+// cycle into an error, it silently leaves one side incomplete depending on which header the
+// translation unit entered from, which is the worst available failure mode.
+// ⛔ KEEP THE GRAPH ACYCLIC: nothing reachable from `DAttackMachineSimulation.h` may include
+// `BrawlerMovementSimulation.h`. Re-verified at task 62 for all seven of its own includes
+// (radial sequence, radial sim, sequence id, direction classifier, projectile, inbound hit,
+// input sequence) — none of them reach this file.
+//
+// ⚠ THE INPUT EDGE IS STILL UNDECLARED, and this include does not fix that. `Dependencies`
+// below declares `External<const dAttackMachineSimulation::State&>`, so `findFirstViolation`
+// validates the STATE edge against `ExecutionOrder`. The `PlayerInput` edge is declared NOWHERE,
+// and `InputType = brawlerMovementSimulation::PlayerInput` positively asserts this sub-sim reads
+// only its own input slice — untrue since step 3 began reading `machineInput.moveDirectionWorld`.
+// What this include buys is that the edge is visible in the signature and CHECKED BY THE
+// COMPILER. Teaching the dependency graph about INPUT edges means changing
+// `OGSimulation/SimulationDependencies.h`, which every sub-sim shares: a separate framework task.
+#include "OGBrawler/DAttackMachineSimulation.h"
 #include "OGBrawlerLog.h"
 
 #include "OGSimulation/CompilerControl.h"
 OGSIM_OPTIMIZE_OFF
-
-// ⚠ FORWARD DECLARATIONS, NOT AN INCLUDE — AND THE INCLUDE IS IMPOSSIBLE, NOT MERELY
-// UNDESIRABLE. `DAttackMachineSimulation.h` includes THIS header (for CharacterBindings,
-// [Task 35]), so including it back here is a cycle: with `#pragma once` the cycle does not
-// error, it silently leaves one side incomplete depending on which header the translation
-// unit entered from — the worst possible failure mode.
-//
-// Consequence, and the reason `machineFreezesMovement` and `integrate`'s machine-input
-// parameter below are TEMPLATES: a non-dependent member access on an incomplete type
-// (`machineState.m_currentState`) is diagnosed by MSVC at FIRST-PHASE parse of a template
-// definition, in every TU that includes this header, even ones that never instantiate it.
-// Deducing the type makes both the member access AND the enumerator lookup dependent, so
-// they resolve at instantiation in `SimulatableBrawler.h`, where the machine header is
-// complete. This is the T33 workaround, re-applied in the opposite direction — see
-// `DAttackMachineSimulation.h:465`, where task 35 was able to RETIRE it because the
-// dependency then only pointed one way.
-//
-// ⛔ THE INCLUDE CYCLE IS THE REASON, and it is the thing to fix if these templates ever become
-// a nuisance: extract `CharacterBindings` to its own minimal header included by both, and the
-// dependency stops pointing both ways. That extraction belongs to TASK 17's sweep — it touches
-// two files this task does not declare — and was deliberately NOT taken here (lead ruling,
-// 2026-09-06).
-namespace dAttackMachineSimulation
-{
-class State;
-class PlayerInput;
-}
 
 // Home of the brawler character-movement sub-sim.
 //
@@ -176,29 +181,14 @@ enum class SupportState : uint8_t
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// [Task 35] The per-character handle consumed by dAttackMachineSimulation (T33).
-//
-// Populated ONCE at registration time, in `ASimulationManagerUImpl::tryRegister`, from THIS
-// sub-simulation's own `PhysicsDeclaration` bindings: `bindings.ownBodyId`, read after the
-// physics-creation fold has run (before it, that id is still zero).
-//
-// ⭐ [movement-sim task 13] THAT CUTOVER IS DONE. The source used to be the UE
-// `ACharacter::GetCapsuleComponent` lookup; it is not any more. The VALUE never moved, because
-// task 11's descriptor sets `isRoot` — the factory ADOPTS the character's capsule rather than
-// creating anything, so `bindings.ownBodyId == bindings.parentBodyId == capsuleBodyId` holds by
-// construction. It was a change of PROVENANCE only (architecture §4.2).
-//
-// ⭐ [movement-sim task 17] AND THE TWO-SOURCE TRIPWIRE THAT WATCHED THEM AGREE IS
-// GONE, together with `PendingRegistration::parentBodyId`, because there is no second source
-// left to disagree. The identity itself is still asserted one layer down, by
-// `ChaosPhysicsFactory`'s adopt-root `checkf`.
-//
-// FUTURE (still outstanding): the follow-on de-duplication initiative replaces every other
-// sub-sim's bare `parentBodyId` with a CharacterBindings field, eliminating the duplication.
-struct CharacterBindings
-{
-    BodyId capsuleBodyId;  // character's main physics capsule
-};
+// ⭐ [movement-sim task 62] `CharacterBindings` MOVED OUT of this header, to
+// `OGBrawler/BrawlerCharacterBindings.h` — included at the top, so every consumer of this
+// header still sees it and not one call site changed; its full provenance comment moved with
+// it. It left because the machine sub-sim needs the type and must NOT include this header.
+// ⭐ [movement-sim task 64] AND THEN THE NAMESPACE FOLLOWED THE TYPE: it is
+// `simulatableBrawler::CharacterBindings` now. `brawlerMovementSimulation` was collateral from
+// T35's file move, not a modelling call — this sub-sim never uses the type, and every real
+// consumer sits in or under `simulatableBrawler`, where the struct started.
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1003,18 +993,19 @@ inline VelocityChannels decomposeVelocity(const glm::vec3& velocity,
     return VelocityChannels{ glm::vec2(a, b), c };
 }
 
-// ⚠ TEMPLATE FOR A REASON — see the forward-declaration note at the top of this file. The
-// machine State type is incomplete here, so BOTH `.m_currentState` and the enumerator have
-// to become dependent names; `decltype` on the member does that for the enum too.
-//
 // The genre's hitstop: a flinch freezes locomotion EXACTLY on the tick it is in effect. It
 // does not decay the velocity, it zeroes the model's contribution for that tick.
-template <typename MachineStateT>
-bool machineFreezesMovement(const MachineStateT& machineState)
+//
+// [movement-sim task 62] This was a template purely to keep `.m_currentState` and the
+// enumerator DEPENDENT names while the machine State type was incomplete here. The machine
+// header is included now, so both are spelled out and the compiler checks them.
+// ⚠ `DAttackState` is at FILE SCOPE in `DAttackMachineSimulation.h`, outside
+// `namespace dAttackMachineSimulation` — that is why the enum is unqualified while the State is
+// not. Behaviour is identical: the same two enumerators, in the same order.
+inline bool machineFreezesMovement(const dAttackMachineSimulation::State& machineState)
 {
-    using MachineStateEnum = std::remove_cvref_t<decltype(machineState.m_currentState)>;
-    return machineState.m_currentState == MachineStateEnum::HitFlinch
-        || machineState.m_currentState == MachineStateEnum::GuardFlinch;
+    return machineState.m_currentState == DAttackState::HitFlinch
+        || machineState.m_currentState == DAttackState::GuardFlinch;
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1111,15 +1102,18 @@ inline bool detachesFromSupport(const State& state, const glm::vec3& up)
 // (it closes LAST tick's loop) and runs FIRST here, which is the only order that works: the
 // engine's answer to last tick's command is not available until the capture has landed.
 //
-// ⚠ `machineInput` is a deduced template parameter rather than a
-// `const dAttackMachineSimulation::PlayerInput&` for the include-cycle reason documented at
-// the top of this file. The single call site in SimulatableBrawler.h deduces the real type;
-// the observable contract is the spelled-out one.
-template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType,
-          typename MachineInputT = dAttackMachineSimulation::PlayerInput>
+// ⚠ `machineInput` IS THE MACHINE'S INPUT SLICE, not this sub-sim's: the move stick is packed
+// onto `dAttackMachineSimulation::PlayerInput`, and the single call site in
+// `SimulatableBrawler.h` is the one place it can be supplied. See the undeclared-input-edge
+// note at the machine include, at the top of this file.
+// [movement-sim task 62] It is SPELLED here now rather than deduced through a `MachineInputT`
+// template parameter; that indirection existed only to survive the include cycle. The default
+// template argument it carried was documentation — the parameter was always deduced from the
+// argument at that one call site, so the default never participated.
+template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
 void integrate(float deltaSeconds,
     const AllInput<PhysicsBodyAdapterType, SpatialQueryAdapterType>& input,
-    const MachineInputT& machineInput,
+    const dAttackMachineSimulation::PlayerInput& machineInput,
     const StaticData& sd,
     Dependencies deps,
     const RuntimeBindings& bindings,

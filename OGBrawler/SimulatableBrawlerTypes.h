@@ -26,11 +26,21 @@
 // (no SerializableFields specialization), so including it here adds no bytes to the State
 // composite — see current_state.md §D1.
 #include "OGBrawler/BrawlerInboundHit.h"
-// [Task 35] CharacterBindings relocated to its own minimal header (the eventual home of the
-// planned character-movement sub-sim). Eagerly include it here so the composite — and any
-// downstream consumer that includes SimulatableBrawlerTypes.h — keeps transitive visibility
-// on the type (relevant for the parked T34 migration that folds it into every sub-sim's
-// RuntimeBindings).
+// [Task 35, re-pointed at movement-sim task 62] THE MOVEMENT SUB-SIM HEADER. Task 35 added this
+// include for `CharacterBindings`; since movement-sim task 11 it has been LOAD-BEARING for a
+// different reason — the composite owns `m_movementStaticData` and the movement
+// State/InitialConditions slices below. It is NOT a visibility convenience; do not drop it.
+// ⚠ [movement-sim task 62] Two things task 35's wording said about this include are no longer
+// true. It is not a "minimal header" (that described the skeleton; it is 1600+ lines now), and
+// it is no longer where `CharacterBindings` is DEFINED — that type moved to the leaf
+// `OGBrawler/BrawlerCharacterBindings.h` so the machine sub-sim could have it without an include
+// cycle. Downstream consumers of SimulatableBrawlerTypes.h still see
+// `simulatableBrawler::CharacterBindings` transitively, because the movement header includes
+// that leaf — which is what the UNFILED, PARKED T34 migration (a bindings field on every
+// sub-sim's RuntimeBindings) would want; see the FUTURE note in the leaf header for where that
+// task actually lives.
+// ⚠ [movement-sim task 64] The namespace read `brawlerMovementSimulation` until task 64 put it
+// back to `simulatableBrawler`. Neither the include nor the transitive visibility changed.
 #include "OGBrawler/BrawlerMovementSimulation.h"
 #include "OGSimulation/SimulationDependencies.h"
 
