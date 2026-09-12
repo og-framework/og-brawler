@@ -1,36 +1,44 @@
 #pragma once
 // SPDX-License-Identifier: BUSL-1.1
+// docs/CollisionCategoryConstants-rationale.md · docs/CollisionCategoryConstants-guards.md
 
 #include "OGSimulation/QueryGeometry.h"
 
-// Collision category assignments — DAttack-local sequential IDs.
-// These are NOT engine channel numbers. Each adapter holds an explicit
-// mapping from these IDs to the engine's native channel/layer type.
+// ⛔G-01  docs/CollisionCategoryConstants-guards.md
 namespace collisionCategory
 {
-	constexpr uint32_t body  = 0;   // character hurtbox (only)
-	constexpr uint32_t guard = 1;   // guard shield
-	constexpr uint32_t queryRouting = 2;   // trace-channel routing for query volumes
-	// [hit-resolution T13] In-flight projectile body. Own category so a projectile
-	// overlap query can distinguish "hit another projectile" (should cancel both,
-	// no HitFlinch on either owning character) from "hit a character body/guard"
-	// (existing hit / guard-block behavior). Before this category, projectiles were
-	// registered under `body`, so projectile-vs-projectile hits produced a routed
-	// HitFlinch on the opposing owner via the T3/T11 rootBodyId lookup.
-	constexpr uint32_t projectile = 3;   // in-flight projectile body
-	// [movement-sim T1] the character movement sub-sim's body; NOT the hurtbox.
-	// Deliberately UNMAPPED in the engine adapter until the movement sim goes live —
-	// attack/projectile queries search body/guard/projectile object types only, so an
-	// unmapped-category body is invisible to them.
-	// (4 is reserved for `world`, added with the sweep masks by the collision-category task.)
+	constexpr uint32_t body  = 0;
+	constexpr uint32_t guard = 1;
+	constexpr uint32_t queryRouting = 2;
+	constexpr uint32_t projectile = 3;
+	// ⛔G-02  docs/CollisionCategoryConstants-guards.md
+	// ⛔G-03  docs/CollisionCategoryConstants-guards.md
+	constexpr uint32_t world = 4;
+	// ⛔G-05  docs/CollisionCategoryConstants-guards.md
+	// ⛔G-06  docs/CollisionCategoryConstants-guards.md
 	constexpr uint32_t character = 5;
 
-	// Pre-built masks for common query patterns
 	constexpr CollisionCategories bodyAndGuard =
 		CollisionCategories::single(body) | CollisionCategories::single(guard);
-	// Projectile-sim query mask: character hurtbox + guard shield + other projectiles
-	// (so projectiles detect each other and both cancel — see T13 branch in the
-	// projectile sim's hit loop).
 	constexpr CollisionCategories bodyGuardProjectile =
 		bodyAndGuard | CollisionCategories::single(projectile);
+
+	static_assert(!bodyAndGuard.contains(character) && !bodyGuardProjectile.contains(character),
+		"collisionCategory: `character` must stay OUT of the attack masks. Folding it in puts "
+		"the movement capsule in every radial swing and projectile query, emitting a SECOND hit "
+		"per swing with the same rootBodyId - which changes attackHits[] and the block-vs-hit "
+		"classification in the projectile sim. Was fence T2a-2, guard G-04, now retired.");
+
+	constexpr CollisionCategories worldOnly = CollisionCategories::single(world);
+	constexpr CollisionCategories worldAndCharacter =
+		worldOnly | CollisionCategories::single(character);
+
+	static_assert((bodyGuardProjectile.bits & worldAndCharacter.bits) == 0u
+		&& (bodyAndGuard.bits & ~bodyGuardProjectile.bits) == 0u
+		&& (worldOnly.bits & ~worldAndCharacter.bits) == 0u,
+		"collisionCategory: the movement sweep masks are deliberately NOT folded into "
+		"bodyAndGuard / bodyGuardProjectile and must share no bit with them. Consolidating the "
+		"four constants into two puts the hurtbox, guard shield or projectile body in the "
+		"ground probe, or static level geometry in an attack query. Was fence T2a-4, guard "
+		"G-07, now retired.");
 }

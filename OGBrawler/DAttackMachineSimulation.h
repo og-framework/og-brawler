@@ -3,13 +3,18 @@
 
 #include <vector>
 #include "glm/vec3.hpp"
+#include "glm/common.hpp"	// glm::abs -- see the task-32 note at the abs site below
 #include <glm/gtc/quaternion.hpp>
 #include "DAttackRadialSequence.h"
 #include "DAttackRadialSimulation.h"
 #include "OGBrawler/DAttackSequenceId.h"
 #include "OGBrawler/DAttackDirectionClassifier.h"
 #include "OGBrawler/BrawlerProjectileSimulation.h"
-#include "OGBrawler/BrawlerMovementSimulation.h"
+// [movement-sim task 62] The LEAF header, NOT `BrawlerMovementSimulation.h`. Everything this
+// header wants from the movement sub-sim is `CharacterBindings` (one field, one dependency),
+// and it must not reach the movement header — movement includes THIS one, so the dependency
+// points one way. See the note above `integrate3`.
+#include "OGBrawler/BrawlerCharacterBindings.h"
 // [hit-resolution T2] brawlerInboundHit::DerivedState — read by integrate3 as a plain
 // by-ref param (NOT an ExternalDep, see current_state.md §D7). Zero-dependency header,
 // no include cycle.
@@ -164,7 +169,17 @@ void setRadialSimulationInitialConditions(float deltaTime,
 	const glm::vec3 defaultUp(0.f, 0.f, 1.f);
 	const float aimDot = glm::dot(aimDirection, defaultForward);
 	const float aimAngle = glm::acos(aimDot);
-	const bool aimEqualsForward = abs(abs(aimDot) - 1.f) < 0.0001f;
+	// [movement-sim task 32] glm::abs, NOT unqualified abs -- byte-identical to the
+	// guard site task 29 fixed in DAttackGuardSimulation.h, and fixed for the same
+	// reason. Under C's `::abs(int)`, which may be the only overload visible at this
+	// header's point of definition on the Godot/Jolt toolchains, the expression
+	// collapses to `|aimDot| == 1` EXACTLY: the near-pole epsilon band disappears and
+	// the normalize(cross(...)) below is handed a near-zero vector.
+	// Task 32 measured that this was ALREADY binding the float overload on this
+	// toolchain (MSVC 14.38): PORTABILITY HARDENING, not a behaviour fix. Pinned by
+	// DAttackAbsQualificationTest.cpp
+	// "DAttackAbs.MachineNearPoleAimTakesTheEpsilonBandBranch" (axis.z +1 vs -1).
+	const bool aimEqualsForward = glm::abs(glm::abs(aimDot) - 1.f) < 0.0001f;
 	const glm::vec3 aimRotationAxis = [&aimEqualsForward, &defaultUp, &defaultForward, &aimDirection]() {
 		if (aimEqualsForward)
 			return defaultUp;
@@ -451,15 +466,21 @@ inline const char* dAttackStateName(DAttackState s)
 	return "?";
 }
 
-// [Task 35] CharacterBindings now lives in BrawlerMovementSimulation.h, included above with no
-// include cycle, so integrate3 takes a plain const reference (the T33 templated workaround is
-// gone). The Hadouken trigger resolves the parent capsule transform on-demand from the bindings
-// handle — matching the bindings-as-integrate-param pattern radial/guard/projectile already use.
+// [Task 35, re-pointed at movement-sim task 62] CharacterBindings lives in
+// `OGBrawler/BrawlerCharacterBindings.h` — the leaf header included above — so integrate3 takes
+// a plain const reference and the T33 templated workaround stays gone.
+// ⛔ It used to live in `BrawlerMovementSimulation.h`, and the "no include cycle" that made that
+// safe STOPPED BEING TRUE once the movement sub-sim began reading this header's `State` and
+// `PlayerInput` slices. Task 62 moved the struct to a leaf both sides can include. The
+// dependency now points one way — movement -> machine — and THIS HEADER MUST NEVER INCLUDE
+// `BrawlerMovementSimulation.h`, directly or through any of its other includes.
+// The Hadouken trigger resolves the parent capsule transform on-demand from the bindings handle
+// — matching the bindings-as-integrate-param pattern radial/guard/projectile already use.
 template <typename PhysicsAdapterType>
 void integrate3(float deltaTime,
 	const AllInput<PhysicsAdapterType>& input,
 	Dependencies deps,
-	const brawlerMovementSimulation::CharacterBindings& characterBindings,
+	const simulatableBrawler::CharacterBindings& characterBindings,
 	const brawlerInboundHit::DerivedState& inboundHit)
 {
 	const dAttackRadialSimulation::State& attackState = deps.external.get<dAttackRadialSimulation::State>();

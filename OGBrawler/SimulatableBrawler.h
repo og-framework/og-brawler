@@ -34,9 +34,13 @@ public:
     // Per-character bindings (T33). Populated ONCE at registration time
     // (SimulationManagerUImpl::tryRegister) from the authoritative parentBodyId.
     // Consumed by the machine sub-sim's integrate3 (the Hadouken trigger reads the
-    // capsule transform on-demand from it). See BrawlerMovementSimulation.h.
-    void setCharacterBindings(const brawlerMovementSimulation::CharacterBindings& cb) { m_characterBindings = cb; }
-    const brawlerMovementSimulation::CharacterBindings& getCharacterBindings() const { return m_characterBindings; }
+    // capsule transform on-demand from it). [movement-sim task 62] Defined in
+    // BrawlerCharacterBindings.h, the leaf header — it is NOT in BrawlerMovementSimulation.h
+    // any more. [movement-sim task 64] And the namespace is `simulatableBrawler`, not
+    // `brawlerMovementSimulation`: the old name recorded a file the struct passed through, and
+    // movement is the one sub-sim that never uses the type. The leaf header says why.
+    void setCharacterBindings(const simulatableBrawler::CharacterBindings& cb) { m_characterBindings = cb; }
+    const simulatableBrawler::CharacterBindings& getCharacterBindings() const { return m_characterBindings; }
 
     template <PhysicsBodyAdapter PhysAdapterT, SpatialQueryAdapter QueryAdapterT>
     void integrate(
@@ -55,7 +59,7 @@ public:
 private:
     simulatableBrawler::AllState m_allState;
     simulatableBrawler::AllState m_vizState;
-    brawlerMovementSimulation::CharacterBindings m_characterBindings;
+    simulatableBrawler::CharacterBindings m_characterBindings;
     SimulationPhysicsComposite<
         dAttackRadialSimulation::PhysicsDeclaration,
         dAttackGuardSimulation::PhysicsDeclaration,
@@ -96,7 +100,9 @@ void SimulatableBrawler::integrate(
     dAttackGuardSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT>      guardUtils     (dt, physAdapter, queryAdapter);
     brawlerProjectileSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT> projectileUtils(dt, currentTick, physAdapter, queryAdapter);
     dAttackMachineSimulation::IntegrationUtils<PhysAdapterT> machineUtils(dt, staticData.m_attackSequences, physAdapter, staticData.m_projectileStaticData);
-    brawlerMovementSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT>   movementUtils  (dt, physAdapter, queryAdapter);
+    // [movement-sim task 11] The tick joins dt here (the projectile's shape): the Cadence
+    // model commits a direction on a period boundary and the teleport seed stamps it.
+    brawlerMovementSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT>   movementUtils  (dt, currentTick, physAdapter, queryAdapter);
 
     auto& state        = m_allState.editState();
     auto& derivedState = m_allState.editDerivedState();
@@ -147,15 +153,27 @@ void SimulatableBrawler::integrate(
             attackBindings, derivedState.edit<dAttackRadialSimulation::DerivedState>());
     }
 
-    // [movement-sim T1] SKELETON. Runs LAST, matching ExecutionOrder. The call is
-    // shaped exactly like guard's and does exactly one thing: re-snap the movement
-    // body onto its parent. Position in the order is free — the movement sub-sim
-    // reads no sibling state and writes none.
+    // [movement-sim task 11] THE MOVEMENT SUB-SIM. Runs LAST, matching ExecutionOrder — and
+    // its position is no longer free: it takes `ExternalDeps<const dAttackMachineSimulation::
+    // State&>` to read the flinch (and, from tasks 27/31, the committed Dashing/Launched
+    // states), so the machine sub-sim MUST integrate first. That edge is declared, so
+    // `findFirstViolation` above enforces it rather than this comment.
+    //
+    // ⚠ THE SECOND ARGUMENT IS THE MACHINE'S PlayerInput, and this is the ONE PLACE the
+    // movement sub-sim can get it: the stick (`moveDirectionWorld`) is packed onto the machine
+    // slice, and the framework hands no sub-sim another sub-sim's input.
+    // [movement-sim task 62] `brawlerMovementSimulation::integrate` now SPELLS
+    // `const dAttackMachineSimulation::PlayerInput&`. It used to be a DEDUCED template
+    // parameter, because the movement header could not name that type while
+    // `DAttackMachineSimulation.h` included IT for `CharacterBindings` — an include cycle. The
+    // cycle is gone (the struct moved to `BrawlerCharacterBindings.h`), so this argument is
+    // type-checked at the call rather than deduced to whatever it is handed.
     {
         auto deps = makeDependencies<brawlerMovementSimulation::Dependencies>(state);
         brawlerMovementSimulation::integrate(dt,
             brawlerMovementSimulation::AllInput<PhysAdapterT, QueryAdapterT>(
                 input.get<brawlerMovementSimulation::PlayerInput>(), movementUtils),
+            input.get<dAttackMachineSimulation::PlayerInput>(),
             staticData.m_movementStaticData, deps,
             movementBindings, derivedState.edit<brawlerMovementSimulation::DerivedState>());
     }
@@ -170,4 +188,22 @@ void SimulatableBrawler::firstResimStep(PhysAdapterT& adapter, int32_t physicsSt
     // Chaos's rewind timeline and break ResimAsFollower bodies.
     (void)adapter;
     (void)physicsStep;
+
+    // ⭐ [movement-sim task 50] THIS IS A NO-OP AGAIN, which is what architecture §3.5 always
+    // claimed it was. Task 11 cleared the movement sub-sim's off-wire command marker here,
+    // because step 6' depended on scratch a correction could not restore. Ruling #27 (A) put
+    // `State::positionCmd` ON THE WIRE and made `kFlagHasCommand` step 6's gate, so the data
+    // the replay needs now arrives with the correction and there is nothing left to
+    // invalidate.
+    //
+    // ⛔ THE CLEAR WAS NEVER THE FIX, on either path, and re-adding one would REGRESS both:
+    //   * an ADOPTED correction had already zeroed the scratch by whole-struct assignment
+    //     (`SimulationReconciliation.h`, `editState() = cache.getState(idx)`, over a state
+    //     `injectCorrectionState` DEFAULT-CONSTRUCTED before `readInto`), so the clear was
+    //     redundant there;
+    //   * an AGREEING anchor keeps the client's own prediction —
+    //     `tryInsertingCorrectState` only overwrites the slot `if (!predictionWasCorrect)` —
+    //     so the restored data was VALID and the clear DISCARDED a good push-out for a tick.
+    // Both rows are pinned in `SimulatableBrawlerTest.cpp`
+    // (`ReplayAfterAdoptionReproducesContactClamp`, `AgreeingAnchorKeepsPushOut`).
 }

@@ -114,8 +114,11 @@ MappingContext buildDefaultContext()
 
 	// HoldGuard: Left Shift + Gamepad Left Bumper.
 	// Distinct physical inputs from BlockLook so the two semantics don't overlap on the
-	// same key — HoldGuard gates combat-stance behavior (freezes CMC movement so the
+	// same key — HoldGuard gates combat-stance behavior (freezes locomotion, so the
 	// character roots), while BlockLook owns cursor/mouse-aim suppression.
+	// ⚠ [movement-sim task 17] It said "freezes CMC movement" until here. The CMC was retired
+	// by task 15; the freeze is now step 1 of `brawlerMovementSimulation::integrate`, reached
+	// through the `kInputFlagHoldGuard` bit of the movement sub-sim's input flags byte.
 	{
 		ActionMapping mapping;
 		mapping.action = &HoldGuard;

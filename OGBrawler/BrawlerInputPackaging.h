@@ -1,36 +1,6 @@
 #pragma once
 // SPDX-License-Identifier: BUSL-1.1
-
-// Pure, engine-agnostic assembly of a simulatableBrawler::PlayerInput from the
-// CONTINUOUS input fields. No UE types, no live input sampling, no tick or cache
-// state — this header holds only the field -> PlayerInput packing, so both the
-// per-tick sim path and the render-rate visualization path can share one
-// definition of "how continuous input becomes a PlayerInput".
-//
-// Seam (og-netcode-v2 T12 / D5.4):
-//   * The LIVE READ stays UE-side, on UOGBrawlerInputCollectionComponent — it
-//     reads Enhanced Input state, camera caches and mouse-aim line-plane
-//     intersections, none of which belong in the engine-agnostic core.
-//   * The PURE ASSEMBLY lives here. readContinuousInputFields is templated on
-//     its source so the component satisfies it structurally, and a lightweight
-//     test double can stand in for it in og-brawler-tests (a tree that cannot
-//     link UE).
-//
-// Two packers, one continuous read:
-//   makeSimPlayerInput           — the per-tick path. Discrete/edge-derived
-//                                  fields (attack buttons, triggeredActionId
-//                                  from the tick-stateful motion matcher) are
-//                                  passed in explicitly by the caller.
-//   makeVisualizationPlayerInput — the render-rate path. Continuous fields only;
-//                                  every discrete field is left neutral, so a
-//                                  discrete input edge structurally CANNOT
-//                                  render-echo (proposal §2.3 continuous-vs-
-//                                  discrete split, enforced at the data level
-//                                  rather than by per-caller judgment).
-//
-// makeVisualizationPlayerInput is defined in terms of makeSimPlayerInput on
-// purpose: the continuous packing has exactly one implementation, and the two
-// paths can only ever differ in the discrete arguments.
+// docs/BrawlerInputPackaging-rationale.md · docs/BrawlerInputPackaging-guards.md
 
 #include <cstdint>
 
@@ -42,32 +12,23 @@
 
 namespace simulatableBrawler
 {
-
-// The subset of player input that varies continuously and is therefore safe to
-// re-sample at render-frame rate. Defaults ARE getZeroPlayerInput()'s neutral pose
-// (aim +Z, no movement), taken from the sub-sims' own zero(), so a default-constructed
-// instance packs to the same neutral PlayerInput.
+// ⛔G-01  docs/BrawlerInputPackaging-guards.md
 struct ContinuousInputFields
 {
-    // [movement-sim task 22] The neutral aim is spelled ONCE, at the radial sub-sim's
-    // own zero(). Visible here transitively through SimulatableBrawlerTypes.h, which
-    // includes DAttackRadialSimulation.h — no new include was needed.
+    // ⛔G-03  docs/BrawlerInputPackaging-guards.md
     glm::vec3 aimDirection      = dAttackRadialSimulation::PlayerInput::zero().aimDirection;
     glm::vec2 moveStick         = glm::vec2(0.f, 0.f);
     glm::vec3 moveDirectionWorld = glm::vec3(0.f, 0.f, 0.f);
 };
 
-// Reads the continuous fields from any source exposing the input-collection
-// accessor shape:
-//     glm::vec3 buildAimDirection() const;
-//     glm::vec2 getMoveStick() const;
-//     glm::vec3 buildMoveDirectionWorld() const;
-//
-// Templated (not an interface) so it binds to UOGBrawlerInputCollectionComponent
-// without dragging UObject into this header, and to a plain test double without
-// dragging UE into the test tree. This function is the SINGLE source of truth for
-// the continuous read: both buildPlayerInput and buildLatestVisualizationInput
-// route through it, so the two cannot drift.
+static_assert(inputSequence::kNoMatch == 0u,
+    "simulatableBrawler: inputSequence::kNoMatch must stay 0. A default-constructed "
+    "ContinuousInputFields packs to getZeroPlayerInput() in four slices of five, and the MACHINE "
+    "slice matches ONLY because kNoMatch happens to equal that slice's own defaulted "
+    "triggeredActionId. Make kNoMatch non-zero and the machine slice diverges too, with no other "
+    "diagnostic anywhere in the tree. Was guard G-02, now retired; rationale section 2.");
+
+// ⛔G-04  docs/BrawlerInputPackaging-guards.md
 template <typename Src>
 ContinuousInputFields readContinuousInputFields(const Src& s)
 {
@@ -78,15 +39,28 @@ ContinuousInputFields readContinuousInputFields(const Src& s)
     return fields;
 }
 
-// Per-tick packer. Discrete fields are supplied by the caller because they are
-// derived from state this header deliberately does not have: the attack booleans
-// come from live button state, and triggeredActionId comes from the tick-stateful
-// motion-sequence matcher, which needs the input cache and the current tick.
+struct InputFlagFields
+{
+    bool holdGuard = false;
+};
+
+// ⛔G-08  docs/BrawlerInputPackaging-guards.md
 inline PlayerInput makeSimPlayerInput(const ContinuousInputFields& fields,
                                       bool leftAttack,
                                       bool rightAttack,
-                                      uint32_t triggeredActionId)
+                                      uint32_t triggeredActionId,
+                                      const InputFlagFields& flagFields)
 {
+    // ⛔G-09  docs/BrawlerInputPackaging-guards.md
+    uint8_t flags = 0u;
+    // ⛔G-10  docs/BrawlerInputPackaging-guards.md
+    // ⛔G-12  docs/BrawlerInputPackaging-guards.md
+    if (flagFields.holdGuard)
+        flags = static_cast<uint8_t>(flags | brawlerMovementSimulation::kInputFlagHoldGuard);
+
+    brawlerMovementSimulation::PlayerInput movementInput;
+    movementInput.flags = flags;
+
     return PlayerInput(
         dAttackRadialSimulation::PlayerInput(fields.aimDirection, leftAttack, rightAttack),
         dAttackMachineSimulation::PlayerInput(fields.aimDirection, leftAttack, rightAttack,
@@ -94,24 +68,61 @@ inline PlayerInput makeSimPlayerInput(const ContinuousInputFields& fields,
                                               triggeredActionId),
         dAttackGuardSimulation::PlayerInput(fields.aimDirection),
         brawlerProjectileSimulation::PlayerInput{fields.aimDirection},
-        // [movement-sim T1] Empty at the skeleton — the movement sub-sim consumes no
-        // input yet. Named here anyway because the composite is POSITIONAL: this is
-        // the single place in the whole tree where a simulatableBrawler::PlayerInput
-        // is assembled from fields, so appending a slice costs exactly one line and
-        // NO UE edit (both UE builders route through this function).
-        brawlerMovementSimulation::PlayerInput{});
+        // ⛔G-13  docs/BrawlerInputPackaging-guards.md
+        movementInput);
 }
 
-// Render-rate packer. Continuous fields only; discrete fields pinned neutral —
-// no attack buttons, and triggeredActionId at inputSequence::kNoMatch (the motion
-// matcher is never invoked on this path). The result is COSMETIC ONLY and must
-// never be fed to the simulation or the input RPC.
+namespace detail
+{
+template <typename F>
+inline constexpr bool kOmittedFlagsArgumentCompiles =
+    requires(const F& f) { makeSimPlayerInput(f, false, false, 0u); };
+template <typename F>
+inline constexpr bool kBareBoolInFlagsSlotCompiles =
+    requires(const F& f) { makeSimPlayerInput(f, false, false, 0u, true); };
+template <typename F>
+inline constexpr bool kTrailingBoolCompiles =
+    requires(const F& f) { makeSimPlayerInput(f, false, false, 0u, InputFlagFields{}, false); };
+template <typename F>
+inline constexpr bool kShippedCallShapeCompiles =
+    requires(const F& f) { makeSimPlayerInput(f, false, false, 0u, InputFlagFields{}); };
+} // namespace detail
+
+static_assert(detail::kShippedCallShapeCompiles<ContinuousInputFields>,
+    "simulatableBrawler: VACUITY CONTROL for the three call-shape assertions below. All three are "
+    "negative, so if makeSimPlayerInput were renamed or its first four parameters changed, all "
+    "three would go vacuously true and stop guarding anything. This line fails first instead.");
+
+static_assert(!detail::kOmittedFlagsArgumentCompiles<ContinuousInputFields>,
+    "simulatableBrawler: the flags parameter of makeSimPlayerInput must have NO DEFAULT. Give it "
+    "one and a caller can omit it, compile, run, and send a released guard forever - the "
+    "silent-omission trap task 52 removed. The absence of a default is also why every call site "
+    "spells the neutral explicitly as {}, so \"no flags\" stays a decision somebody wrote down. "
+    "Was fences T1-5 and T1-4, guards G-06 and G-07, now retired. "
+    "MakeSimPlayerInputFlagsTest.cpp pins the same call as ill-formed.");
+
+static_assert(!detail::kBareBoolInFlagsSlotCompiles<ContinuousInputFields>,
+    "simulatableBrawler: a bare bool must NOT be accepted in the flags slot. InputFlagFields is an "
+    "aggregate with no converting constructor precisely so that a flag is set BY NAME "
+    "({.holdGuard = true}) and transposing two flags is a compile error rather than a wrong bit. "
+    "Was guard G-05, now retired.");
+
+static_assert(!detail::kTrailingBoolCompiles<ContinuousInputFields>,
+    "simulatableBrawler: NEVER append another trailing bool to makeSimPlayerInput. That was task "
+    "14's shape, correct for exactly one flag; four more would have been four more "
+    "silent-omission traps plus a five-bool positional call in which transposing two arguments "
+    "type-checks. A new per-tick signal is a NAMED FIELD on InputFlagFields and a BIT in the "
+    "flags byte. Was fence T1-2, guard G-11, now retired.");
+
+// ⛔G-14  docs/BrawlerInputPackaging-guards.md
+// ⛔G-15  docs/BrawlerInputPackaging-guards.md
 inline PlayerInput makeVisualizationPlayerInput(const ContinuousInputFields& fields)
 {
     return makeSimPlayerInput(fields,
                               /*leftAttack*/ false,
                               /*rightAttack*/ false,
-                              inputSequence::kNoMatch);
+                              inputSequence::kNoMatch,
+                              InputFlagFields{});
 }
 
 } // namespace simulatableBrawler

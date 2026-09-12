@@ -26,11 +26,21 @@
 // (no SerializableFields specialization), so including it here adds no bytes to the State
 // composite — see current_state.md §D1.
 #include "OGBrawler/BrawlerInboundHit.h"
-// [Task 35] CharacterBindings relocated to its own minimal header (the eventual home of the
-// planned character-movement sub-sim). Eagerly include it here so the composite — and any
-// downstream consumer that includes SimulatableBrawlerTypes.h — keeps transitive visibility
-// on the type (relevant for the parked T34 migration that folds it into every sub-sim's
-// RuntimeBindings).
+// [Task 35, re-pointed at movement-sim task 62] THE MOVEMENT SUB-SIM HEADER. Task 35 added this
+// include for `CharacterBindings`; since movement-sim task 11 it has been LOAD-BEARING for a
+// different reason — the composite owns `m_movementStaticData` and the movement
+// State/InitialConditions slices below. It is NOT a visibility convenience; do not drop it.
+// ⚠ [movement-sim task 62] Two things task 35's wording said about this include are no longer
+// true. It is not a "minimal header" (that described the skeleton; it is 1600+ lines now), and
+// it is no longer where `CharacterBindings` is DEFINED — that type moved to the leaf
+// `OGBrawler/BrawlerCharacterBindings.h` so the machine sub-sim could have it without an include
+// cycle. Downstream consumers of SimulatableBrawlerTypes.h still see
+// `simulatableBrawler::CharacterBindings` transitively, because the movement header includes
+// that leaf — which is what the UNFILED, PARKED T34 migration (a bindings field on every
+// sub-sim's RuntimeBindings) would want; see the FUTURE note in the leaf header for where that
+// task actually lives.
+// ⚠ [movement-sim task 64] The namespace read `brawlerMovementSimulation` until task 64 put it
+// back to `simulatableBrawler`. Neither the include nor the transitive visibility changed.
 #include "OGBrawler/BrawlerMovementSimulation.h"
 #include "OGSimulation/SimulationDependencies.h"
 
@@ -39,10 +49,15 @@ OGSIM_OPTIMIZE_OFF
 
 namespace simulatableBrawler
 {
-
-// Serialization wire order: radialIC -> radialState -> guardState -> guardIC (0 bytes)
+// Serialization wire order. Sizes are the ones the fence PINS
+// (`SimulatableBrawlerTest.cpp`, `DAttack.SimulatableBrawler.WireFootprint`); the composite
+// total is 321 B. Slices with no figure are not individually pinned there — do not invent one.
+//   radialIC -> radialState -> guardState (0 B) -> guardIC (0 B)
 //   -> machineState -> projectileIC -> projectileState
-//   -> movementIC (0 bytes) -> movementState
+//   -> movementIC (16 B) -> movementState (61 B)
+// ⚠ [movement-sim task 17] `movementIC` read "(0 bytes)" until here. Stale since task 11 put
+// the teleport seed on the wire — the SAME defect as the input-order comment further down,
+// found by this task's widened sweep rather than by the routed list, which named only that one.
 // (projectile slices appended last per Task 15; machine writes projectileIC, projectile
 //  consumes it — see ExecutionOrder below.)
 using State = SimulationStateComposite<
@@ -91,8 +106,13 @@ private:
     DerivedState m_derivedState;
 };
 
-// Serialization wire order: radialInput -> machineInput -> guardInput -> projectileInput
-//   -> movementInput (0 bytes)
+// Serialization wire order, with each slice's SHIPPED byte count — re-derived from the fence
+// (`SimulatableBrawlerTest.cpp`, `kZeroInputWireBytes == 77`) by [movement-sim task 17], which
+// found the movement entry still reading `(0 bytes)`, stale since task 11 put a byte there:
+//   radialInput (14) -> machineInput (38) -> guardInput (12) -> projectileInput (12)
+//     -> movementInput (1) = 77 B
+// ⛔ The movement byte is the `PlayerInput::flags` byte, and it is the SCARCE wire: read the
+// packing rule at that type before adding a signal to it.
 using PlayerInput = SimulationInputComposite<
     dAttackRadialSimulation::PlayerInput,
     dAttackMachineSimulation::PlayerInput,
@@ -107,7 +127,30 @@ inline PlayerInput getZeroPlayerInput() { return PlayerInput::zero(); }
 class StaticData
 {
 public:
-    StaticData()
+    // ⭐⭐ THE FIVE MOVEMENT PARAMETERS ARE PARAMETERS, AND THEY ARE DEFAULTED —
+    // [movement-sim task 16, 2026-09-08]. Every other constant below is still authored here.
+    //
+    // ⛔ THE DEFAULTS ARE THE AUTHORED LITERALS, NOT A SECOND SET OF NUMBERS. Each one is the
+    // exact value this constructor passed before task 16, so a default-constructed
+    // `StaticData` — which is what every LLT rig and every test peer builds — is BYTE-FOR-BYTE
+    // the object it was, and the whole test tree stays a measurement of the shipped constants
+    // rather than of a parameter list. The ONE caller that passes anything is
+    // `ASimulationManagerUImpl::m_staticData`, fed by `readMovementStaticDataCVars()`.
+    //
+    // ⚠ WHY THESE FIVE AND NOT THE OTHERS. Four are the cvars ruling #3 made a ONE-TIME read
+    // (`OGBrawler.MovementModel`, `.MoveSpeed`, `.StepPeriodTicks`, `.StepSpeed`); the fifth is
+    // gravity, which is not a taste knob but a value that MUST AGREE WITH THE ENGINE'S — see
+    // the `checkf` in `ASimulationManagerUImpl::BeginPlay`. The hover gains are deliberately
+    // NOT here: their valid region is two-dimensional and is checked, coupled, in
+    // `brawlerMovementSimulation::StaticData`'s constructor. Read the `HoverFrequency` entry in
+    // `DAttackMachineSimulationRuntimeTweakables.cpp`'s refused-name table before adding them.
+    explicit StaticData(
+        brawlerMovementSimulation::MovementModel movementModel
+            = brawlerMovementSimulation::MovementModel::ContinuousAccelBrake,
+        float    movementMaxWalkSpeed    = 100.f,
+        uint32_t movementStepPeriodTicks = 20u,
+        float    movementStepSpeed       = 100.f,
+        float    movementGravity         = -980.f)
         : m_attackCircle(6.f, 90.f, 300.f, 70.f, true, 1.f)
         , m_attackSequences(
             {
@@ -177,6 +220,73 @@ public:
         // 8th arg (T30) = indicatorPersistTicks 20 ≈ 0.333 s at 60 Hz (radial guard-hit feel).
         , m_projectileStaticData(800.f, 0.875f, 40.f, 60.f, 50.f, 0.25f,
                                  m_attackCircle.getInnerRadius(), 20)
+        // [movement-sim task 11] THE MOVEMENT SUB-SIM'S AUTHORED CONSTANTS, and the ONLY
+        // place any of them is spelled. In particular this is the ONE walk-speed literal in
+        // the tree (R-P1): 100 cm/s, now the DEFAULT of `movementMaxWalkSpeed` above.
+        // ⭐ [movement-sim task 16, 2026-09-08] FIVE OF THEM ARE NOW FORWARDED PARAMETERS —
+        // model, walk speed, step period, step speed, gravity. The sim-side walk-speed global
+        // and its named-pipe `MoveSpeed` case are DELETED; `OGBrawler.MoveSpeed` survives as a
+        // console variable that is read ONCE, at this object's construction (ruling #3), and
+        // the named-pipe spelling is now refused loudly rather than ignored.
+        //
+        // Argument order is architecture §3.2's, grouped by concern:
+        //   model
+        //   ContinuousAccelBrake  maxWalkSpeed 100, acceleration 2048, braking 2000
+        //   Cadence               stepPeriodTicks 20 (= 1/3 s at 60 Hz), stepSpeed 100
+        //   attachment            maxSlopeAngleDeg 45 (cosMaxSlope is derived in the ctor)
+        //   gravity law           gravity -980 cm/s^2 AUTHORED (the body's own enableGravity
+        //                         is FALSE — ruling #16 a), terminalFallSpeed 2000 cm/s
+        //   hover geometry        rideHeight 10, snapDistance 40
+        //     ⭐ RULING #13, closed 2026-09-06 ON MEASUREMENT (task 9 q3: a 40 cm drop at the
+        //     exact edge of probe range — clearance hit 50.000000 == rideHeight + snapDistance —
+        //     was still detected and caught in 6 ticks). These SUPERSEDE the revision-6 text's
+        //     20 / 150, and BOTH STAND under ruling #28.
+        //   hover servo           hoverFrequency 46 rad/s, hoverDampingRatio 0.62,
+        //                         hoverMaxAccel 30000 cm/s^2,
+        //                         hoverPullDownAccel 0 cm/s^2
+        //     ⭐⭐ RULING #29, 2026-09-07 (movement-sim task 57). The servo is ONE-SIDED: at or
+        //     below ride height it is task 56's full spring-damper; ABOVE ride height it is a
+        //     bounded spring pull and nothing else, capped at hoverPullDownAccel. At the shipped
+        //     0 that means gravity and nothing else -- SUPPORTED MEANS HELD UP, NEVER PULLED
+        //     DOWN, which is what the user asked for after walking off a ledge under task 56.
+        //     ⚠ 0 IS PROVISIONAL, LIKE omega AND zeta: it is a FEEL knob, and the user decides in
+        //     PIE whether a step-down at gravity speed (40 cm in ~17 ticks) is right or whether
+        //     it wants the 980 that makes it ~12. Read hoverPullDownAccel's comment in
+        //     BrawlerMovementSimulation.h before moving it.
+        //     ⚠ terminalFallSpeed 2000 IS ALSO STILL OPEN under #29: with the launch gone, a fall
+        //     now needs ~1.75 s to reach it instead of ~0.5 s, and the user is considering
+        //     3000-4000 (games commonly cap at 30-40 m/s). Not this task's to change.
+        //     ⭐⭐ RULING #28, 2026-09-07 (movement-sim task 56). ONE vertical law: gravity on
+        //     every tick, a spring-damper servo added while `Supported`. `k = omega^2` and
+        //     `c = 2*zeta*omega` are DERIVED in the movement StaticData's constructor.
+        //     ⛔ `maxSnapSpeed 400` — ruling #13's dead-beat VELOCITY clamp — IS THE ARGUMENT
+        //     THAT WAS REMOVED HERE. Its measured value was 400 (task 54 read the clamp at
+        //     399.94 cm/s); the rev-6 text's 150 was superseded by #13 and is not a second
+        //     number. There is no dead-beat assignment left for a velocity clamp to bound.
+        //     ⚠ omega AND zeta ARE PROVISIONAL FEEL DEFAULTS, NOT MEASURED ONES. The LAW is
+        //     ruled; the numbers are the user's to set in PIE, and step 0's
+        //     `[Warning][Movement.hover]` line prints them with the discrete critical zeta
+        //     beside them so a tuning session can see which side of the ringing threshold it
+        //     is on. zeta 0.62 is the DISCRETE critical damping ratio at omega 46
+        //     (`1 - omega*dt/2` = 0.6167), chosen by the user 2026-09-07 after the shipped
+        //     zeta 1 was MEASURED to ring; read `hoverDampingRatio`'s comment in
+        //     BrawlerMovementSimulation.h before changing either value.
+        //   knockback             launchDecel 4000, knockbackSpeed 2000 — travel distance is
+        //                         the closed form v²/(2a) = 2000²/8000 = 500 cm = 5 m
+        //   dash                  dashSpeed 800, dashTicks 12 (0.2 s), dashCancelTick 8
+        //   capsule               42 / 96 — MUST equal OGBrawlerUECharacter.cpp:69's
+        //                         InitCapsuleSize; the adopt-root factory checkf's agreement
+        //                         rather than resizing the authored capsule.
+        , m_movementStaticData(movementModel,
+                               movementMaxWalkSpeed, 2048.f, 2000.f,
+                               movementStepPeriodTicks, movementStepSpeed,
+                               45.f, movementGravity, 2000.f,
+                               10.f, 40.f,
+                               46.f, 0.62f, 30000.f,
+                               0.f,
+                               4000.f, 2000.f,
+                               800.f, 12u, 8u,
+                               42.f, 96.f)
     {}
 
     // Non-copyable / non-movable, compiler-enforced. The sub-StaticData members
@@ -213,6 +323,47 @@ inline constexpr auto executionViolation_ =
 using ExecutionOrderDiagnostic_ =
     compositeDetail::DecodeViolation<ExecutionOrder, executionViolation_>;
 static_assert(sizeof(ExecutionOrderDiagnostic_) >= 0);
+
+// ---------------------------------------------------------------------------
+// [movement-sim task 29, F-G6a] THE ORDERING EDGE THE VALIDATOR ABOVE CANNOT SEE.
+//
+// findFirstViolation walks `Dependencies`, and a dependency is only visible to it
+// when it is DECLARED there. The guard declares only
+// `External<const machine::State&>` — yet the projectile and radial sub-sims read
+// the guard's POSE THIS TICK, and they read it through the physics adapter
+// (`getBodyTransform(hit.bodyId)[0]` is the guard forward in the projectile block
+// test; DAttackRadialSimulation does the same for the radial block test). An edge
+// that flows through the adapter is invisible to a graph built from types, so
+// reordering the integrate blocks would silently make both of them read LAST
+// tick's guard facing, with nothing failing to compile and no test failing except
+// by luck.
+//
+// Hence this: the same edge, restated as an index comparison, in the one place
+// the declared order lives. It is deliberately a SEPARATE assertion from the
+// generic one above rather than an entry in `Dependencies` — declaring a
+// dependency the sub-sim does not actually take through the type system would be
+// a lie the ownership validator then has to be taught to tolerate.
+template <typename T, typename Tuple> struct ExecutionIndexOf_;
+template <typename T, typename... Ts>
+struct ExecutionIndexOf_<T, std::tuple<Ts...>>
+    : std::integral_constant<std::size_t, compositeDetail::indexOfBareType<T, Ts...>()> {};
+
+template <typename T>
+inline constexpr std::size_t executionIndexOf_ = ExecutionIndexOf_<T, ExecutionOrder>::value;
+
+static_assert(executionIndexOf_<dAttackGuardSimulation::Dependencies>
+            < executionIndexOf_<brawlerProjectileSimulation::Dependencies>,
+    "The guard sub-simulation must integrate BEFORE the projectile sub-simulation: the "
+    "projectile block test reads the guard's pose off the physics body in the same tick. "
+    "This edge flows through the physics adapter, not through Dependencies, so the "
+    "generic execution-order validator above cannot see it.");
+
+static_assert(executionIndexOf_<dAttackGuardSimulation::Dependencies>
+            < executionIndexOf_<dAttackRadialSimulation::Dependencies>,
+    "The guard sub-simulation must integrate BEFORE the radial sub-simulation: the radial "
+    "block test reads the guard's pose off the physics body in the same tick. This edge "
+    "flows through the physics adapter, not through Dependencies, so the generic "
+    "execution-order validator above cannot see it.");
 
 } // namespace simulatableBrawler
 
