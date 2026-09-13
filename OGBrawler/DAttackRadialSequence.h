@@ -36,6 +36,12 @@ public:
  	OGBRAWLER_API DAttackRadialSequence(const std::vector<DAttackRadialSequencePoint>& attackPoints, float timeToReachZeroVelocity, glm::vec3 rotationAxis);
 	OGBRAWLER_API float getAngularAcceleration(float time) const;
 	OGBRAWLER_API float getAngle(float time) const;
+	// [movement-sim task 83] The AUTHORED angular velocity at `time`, i.e. the exact derivative
+	// of getAngle within a segment. Its SIGN is what turns the swing plane's tangent into the
+	// weapon's direction of TRAVEL, which is the direction a hit throws its target.
+	// The captured body angularVelocity would answer the same question from the engine's
+	// integration and therefore differ between peers; this one is table data and does not.
+	OGBRAWLER_API float getAngularVelocity(float time) const;
 	
 	OGBRAWLER_API float getInitialAngle() const;
 	OGBRAWLER_API float getInitialVelocity() const;

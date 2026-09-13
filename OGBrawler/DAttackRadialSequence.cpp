@@ -107,6 +107,32 @@ float DAttackRadialSequence::getAngle(float time) const
 	return m_attackPoints.back().angle;
 }
 
+// [movement-sim task 83] The SAME SEGMENT WALK as getAngle above, differentiated: inside the
+// segment containing `time` the angle is o0 + w0*dt + a*dt*dt/2, so the velocity is w0 + a*dt.
+// Outside the authored span it is the front / back table velocity, matching getAngle's clamp to
+// the front / back angle. Keeping the two walks textually parallel is deliberate: an edit to one
+// that is not mirrored in the other is visible here rather than only in a hit direction.
+float DAttackRadialSequence::getAngularVelocity(float time) const
+{
+	if (time <= m_attackPoints.front().time)
+		return m_velocityAtPoint.front();
+
+	for (size_t i = 0; i + 1 < m_attackPoints.size(); ++i)
+	{
+		const float t0 = m_attackPoints[i].time;
+		const float t1 = m_attackPoints[i + 1].time;
+		if (time >= t0 && time < t1)
+		{
+			const float dt = time - t0;
+			const float w0 = m_velocityAtPoint[i];
+			const float a  = m_accelerations[i];
+			return w0 + a * dt;
+		}
+	}
+
+	return m_velocityAtPoint.back();
+}
+
 float DAttackRadialSequence::getInitialAngle() const
 {
 	return m_attackPoints.front().angle;

@@ -8,6 +8,7 @@
 #include "DAttackRadialSequence.h"
 #include "DAttackRadialSimulation.h"
 #include "OGBrawler/DAttackSequenceId.h"
+#include "OGBrawler/HitReaction.h"
 #include "OGBrawler/DAttackDirectionClassifier.h"
 #include "OGBrawler/BrawlerProjectileSimulation.h"
 // [movement-sim task 62] The LEAF header, NOT `BrawlerMovementSimulation.h`. Everything this
@@ -139,6 +140,8 @@ public:
 	float m_timeInCurrentState = 0.f;
 	unsigned int m_activeAttackSequence = InvalidAttackSequenceId;
 	unsigned int m_queuedAttackSequence = InvalidAttackSequenceId;
+	HitReactionKind m_hitReaction = HitReactionKind::Stun;
+	float m_flinchDuration = kHitFlinchDuration;
 };
 
 // [Task 62] Dependencies — OwnedDeps/ExternalDeps layout.
@@ -311,7 +314,7 @@ void integrate(float deltaTime,
 		// [hit-resolution T1] Mirrors GuardFlinch: dwell for kHitFlinchDuration, no attack-input
 		// reads (gating is automatic — the switch never reaches Idle/Attacking while flinching),
 		// then return to Idle.
-		if (state.m_timeInCurrentState > kHitFlinchDuration)
+		if (state.m_timeInCurrentState > state.m_flinchDuration)
 		{
 			state.m_currentState = DAttackState::Idle; state.m_timeInCurrentState = 0.f;
 		}
@@ -443,7 +446,7 @@ void integrate2(float deltaTime,
 		// [hit-resolution T1] Mirrors GuardFlinch: dwell for kHitFlinchDuration, no attack-input
 		// reads (gating is automatic — the switch never reaches Idle/Attacking while flinching),
 		// then return to Idle.
-		if (state.m_timeInCurrentState > kHitFlinchDuration)
+		if (state.m_timeInCurrentState > state.m_flinchDuration)
 		{
 			state.m_currentState = DAttackState::Idle; state.m_timeInCurrentState = 0.f;
 		}
@@ -507,10 +510,14 @@ void integrate3(float deltaTime,
 	// active/queued sequences (mirroring the Attacking -> GuardFlinch cancellation) and drop into
 	// HitFlinch; the switch below then lands in the HitFlinch case with m_timeInCurrentState
 	// freshly reset.
-	if (inboundHit.wasHitThisTick && state.m_currentState != DAttackState::HitFlinch)
+	if (inboundHit.wasHitThisTick)
 	{
-		OGBLOG_G("[Machine.transition] %s -> HitFlinch (inbound hit)", dAttackStateName(state.m_currentState));
+		OGBLOG_G("[Machine.transition] %s -> HitFlinch (inbound hit, reaction=%u dwell=%.4f)",
+			dAttackStateName(state.m_currentState),
+			static_cast<unsigned int>(inboundHit.reactionKind), inboundHit.flinchDuration);
 		state.m_currentState = DAttackState::HitFlinch; state.m_timeInCurrentState = 0.f;
+		state.m_hitReaction = inboundHit.reactionKind;
+		state.m_flinchDuration = inboundHit.flinchDuration;
 		state.m_activeAttackSequence = InvalidAttackSequenceId;
 		state.m_queuedAttackSequence = InvalidAttackSequenceId;
 		attackIntialConditions.activeAttackSequence = InvalidAttackSequenceId;
@@ -694,7 +701,7 @@ void integrate3(float deltaTime,
 		// [hit-resolution T1] Mirrors GuardFlinch: dwell for kHitFlinchDuration, no attack-input
 		// reads (gating is automatic — the switch never reaches Idle/Attacking while flinching),
 		// then return to Idle.
-		if (state.m_timeInCurrentState > kHitFlinchDuration)
+		if (state.m_timeInCurrentState > state.m_flinchDuration)
 		{
 			OGBLOG_G("[Machine.transition] HitFlinch -> Idle");
 			state.m_currentState = DAttackState::Idle; state.m_timeInCurrentState = 0.f;
@@ -720,7 +727,9 @@ struct SerializableFields<dAttackMachineSimulation::State>
 			SIM_MEMBER(S, m_currentState),
 			SIM_MEMBER(S, m_timeInCurrentState),
 			SIM_MEMBER(S, m_activeAttackSequence),
-			SIM_MEMBER(S, m_queuedAttackSequence));
+			SIM_MEMBER(S, m_queuedAttackSequence),
+			SIM_MEMBER(S, m_hitReaction),
+			SIM_MEMBER(S, m_flinchDuration));
 	}
 };
 

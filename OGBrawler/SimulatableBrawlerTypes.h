@@ -26,6 +26,7 @@
 // (no SerializableFields specialization), so including it here adds no bytes to the State
 // composite — see current_state.md §D1.
 #include "OGBrawler/BrawlerInboundHit.h"
+#include "OGBrawler/HitReaction.h"
 // [Task 35, re-pointed at movement-sim task 62] THE MOVEMENT SUB-SIM HEADER. Task 35 added this
 // include for `CharacterBindings`; since movement-sim task 11 it has been LOAD-BEARING for a
 // different reason — the composite owns `m_movementStaticData` and the movement
@@ -42,6 +43,12 @@
 // ⚠ [movement-sim task 64] The namespace read `brawlerMovementSimulation` until task 64 put it
 // back to `simulatableBrawler`. Neither the include nor the transitive visibility changed.
 #include "OGBrawler/BrawlerMovementSimulation.h"
+// [ringout task 2, 2026-09-13] THE RING-OUT SUB-SIM. Load-bearing for the same reason the
+// movement include is: the composite owns the ring-out State/InitialConditions/DerivedState
+// slices below and its `Dependencies` entry in `ExecutionOrder`. Ring-out itself includes the
+// movement header (it reads that State and writes that InitialConditions), so this include
+// adds no new external dependency to this file beyond the one already above it.
+#include "OGBrawler/BrawlerRingoutSimulation.h"
 #include "OGSimulation/SimulationDependencies.h"
 
 #include "OGSimulation/CompilerControl.h"
@@ -55,11 +62,39 @@ namespace simulatableBrawler
 //   radialIC -> radialState -> guardState (0 B) -> guardIC (0 B)
 //   -> machineState -> projectileIC -> projectileState
 //   -> movementIC (16 B) -> movementState (61 B)
+//   -> ringoutIC (4 B) -> ringoutState (5 B)
 // ⚠ [movement-sim task 17] `movementIC` read "(0 bytes)" until here. Stale since task 11 put
 // the teleport seed on the wire — the SAME defect as the input-order comment further down,
 // found by this task's widened sweep rather than by the routed list, which named only that one.
 // (projectile slices appended last per Task 15; machine writes projectileIC, projectile
 //  consumes it — see ExecutionOrder below.)
+//
+// ⚠ [ringout task 2, 2026-09-13] THE "321 B" FOUR LINES ABOVE IS STALE AND WAS ALREADY STALE
+// BEFORE THIS TASK. The fence measures **335 B** now. 321 -> 326 was `[movement-sim task 27]`
+// appending `m_hitReaction` + `m_flinchDuration` to the machine slice (uncommitted in this
+// tree when ring-out arrived, which is why the number above never moved with it);
+// 326 -> 335 is this task's two ring-out slices. The fence in `SimulatableBrawlerTest.cpp` is
+// the authority for the total — this comment is a map of the ORDER, and that is what it
+// should be read for.
+//
+// ⛔⛔ [ringout task 2] THE RING-OUT SLICES ARE APPENDED **LAST**, AND THAT IS A WIRE DECISION,
+// NOT A TIDINESS ONE. Serialization order is this declaration order, and it is INDEPENDENT of
+// `ExecutionOrder` below (where ring-out sits BEFORE movement). Appending leaves every
+// preceding field at the byte offset it already had — the condition movement-sim tasks 11, 27
+// and 50 each cited when they declined to bump `correctionStateBuffer::kWireFormatVersion`.
+// Inserting the ring-out slices next to the movement ones to "match the execution order" would
+// shift the movement slices' offsets and turn an append into a format break for no gain
+// whatsoever, so the append is still the right shape.
+//
+// ⛔ [ringout task 2, rework] THE BUMP HAPPENED ANYWAY — 2 -> 3. Appending bought a stable
+// layout; it did not buy compatibility. Tasks 11/27/50 grew slices of sub-simulations BOTH
+// builds compiled in, so a stale peer read every offset it knew about and ignored the rest.
+// Ring-out appends a sub-simulation an older archived build does not have at all, and no byte
+// on the wire says so: the reverse pairing (new client, old server) reads 335 bytes out of a
+// 326-byte payload and restores the dead bit and the respawn tick from buffer residue. Mixed
+// archives are routine here (three independently-cooked targets), so the version byte is what
+// makes that a loud refusal. The full statement is at the constant in
+// `CorrectionStateBufferCodec.h` — read it before declining the bump at the next append.
 using State = SimulationStateComposite<
     dAttackRadialSimulation::InitialConditions,
     dAttackRadialSimulation::State,
@@ -69,7 +104,16 @@ using State = SimulationStateComposite<
     brawlerProjectileSimulation::InitialConditions,
     brawlerProjectileSimulation::State,
     brawlerMovementSimulation::InitialConditions,
-    brawlerMovementSimulation::State
+    brawlerMovementSimulation::State,
+    // [ringout task 2, 2026-09-13] +9 B, composite 326 -> 335. Both slices ride the wire so a
+    // death and its respawn REPLAY IDENTICALLY under resim: `spawnSlot` (4 B) is the
+    // authority's assignment, restored by a correction rather than recomputed per peer;
+    // `flags` + `respawnAtTick` (5 B) are the dead bit and the absolute respawn tick, which a
+    // correction must restore or a client resumes a countdown it no longer knows the end of.
+    // `brawlerRingout::DerivedState` (`diedThisTick`) is deliberately NOT here — an edge that
+    // arrives on a correction is an edge that can be scored twice.
+    brawlerRingout::InitialConditions,
+    brawlerRingout::State
 >;
 
 // OFF-WIRE per-tick scratch, accessed by TYPE: derivedState.get<T>() / .edit<T>(), exactly
@@ -87,7 +131,13 @@ using DerivedState = SimulationDerivedComposite<
     // HitFlinch transition. That system-owned lifecycle is why it is passed to integrate3
     // as a plain by-ref parameter and not as an ExternalDep — see D7, and follow-on F3.
     // Off-wire (see D1) — no SerializableFields entry, and the alias above now enforces it.
-    brawlerInboundHit::DerivedState
+    brawlerInboundHit::DerivedState,
+    // [ringout task 2, 2026-09-13] `diedThisTick` — the single-tick death EDGE the
+    // authority-side score system consumes (task 4). Off-wire by construction: ring-out's
+    // `integrate` clears it unconditionally at the top of every step, including every
+    // REPLAYED step of a resim, so it can neither arrive on a correction nor survive a tick
+    // it was not recomputed on. That is what makes it safe to score from.
+    brawlerRingout::DerivedState
 >;
 
 class AllState
@@ -110,15 +160,28 @@ private:
 // (`SimulatableBrawlerTest.cpp`, `kZeroInputWireBytes == 77`) by [movement-sim task 17], which
 // found the movement entry still reading `(0 bytes)`, stale since task 11 put a byte there:
 //   radialInput (14) -> machineInput (38) -> guardInput (12) -> projectileInput (12)
-//     -> movementInput (1) = 77 B
+//     -> movementInput (1) -> ringoutInput (0) = 77 B
 // ⛔ The movement byte is the `PlayerInput::flags` byte, and it is the SCARCE wire: read the
 // packing rule at that type before adding a signal to it.
+//
+// ⭐ [ringout task 2, 2026-09-13] `ringoutInput` IS ZERO BYTES AND THE TOTAL IS STILL 77 B.
+// `brawlerRingout::PlayerInput` has no fields and an EMPTY `SerializableFields` tuple; it is
+// here only because `ValidDependencies` requires `Dependencies::InputType` and the ownership
+// validator treats that type as OWNED — naming a neighbour's input there reports an
+// `OwnershipOverlap`. Ring-out needs no per-tick player signal: death is positional and
+// respawn is a tick countdown.
+// ⛔ THIS IS NOT A FREE SLOT TO GROW LATER. One INPUT-composite byte costs ~10.264 B of packet
+// margin against ~27.352 B of slack (`RoundVsPacketBudgetTest.cpp`'s pre-diet table), roughly
+// ten times what a STATE byte costs, because it is multiplied across every entry of every
+// relayed ring. `REQUIRE(ringWireBytes(1u) == 86u)` is the fence that says so, and this task
+// re-quoted it UNCHANGED.
 using PlayerInput = SimulationInputComposite<
     dAttackRadialSimulation::PlayerInput,
     dAttackMachineSimulation::PlayerInput,
     dAttackGuardSimulation::PlayerInput,
     brawlerProjectileSimulation::PlayerInput,
-    brawlerMovementSimulation::PlayerInput
+    brawlerMovementSimulation::PlayerInput,
+    brawlerRingout::PlayerInput
 >;
 
 // THE NEUTRAL INPUT.
@@ -209,6 +272,16 @@ public:
                 }
             }
         )
+        , m_hitReactions(
+            {
+                /*0 right           */ { HitReactionKind::Knockback, 2000.f, 0.f  },
+                /*1 left            */ { HitReactionKind::Knockback, 2000.f, 0.f  },
+                /*2 left -> left    */ { HitReactionKind::Knockback, 2000.f, 0.f  },
+                /*3 right -> right  */ { HitReactionKind::Knockback, 2000.f, 0.f  },
+                /*4 forward/overhead*/ { HitReactionKind::Stun,         0.f, 0.3f }
+            }
+        )
+        , m_projectileHitReaction{ HitReactionKind::Stun, 0.f, 0.3f }
         , m_attackSimulationStaticData(m_attackSequences, m_attackCircle)
         , m_guardSimulationStaticData(m_attackCircle)
         // 0.875 s × 800 cm/s = 700 cm = 7 m travel distance (T26).
@@ -271,23 +344,56 @@ public:
         //     (`1 - omega*dt/2` = 0.6167), chosen by the user 2026-09-07 after the shipped
         //     zeta 1 was MEASURED to ring; read `hoverDampingRatio`'s comment in
         //     BrawlerMovementSimulation.h before changing either value.
-        //   knockback             launchDecel 4000, knockbackSpeed 2000 — travel distance is
-        //                         the closed form v²/(2a) = 2000²/8000 = 500 cm = 5 m
+        //   knockback             launchDecel 4000 — the LAW, and the only knockback constant
+        //                         left here. ⚠ [movement-sim task 27] `knockbackSpeed` MOVED OUT
+        //                         of this call into `m_hitReactions` above: it is per attack now.
+        //                         Travel distance is the closed form spec.knockbackSpeed²/(2·a),
+        //                         which at the authored 2000 is 2000²/8000 = 500 cm = 5 m.
         //   dash                  dashSpeed 800, dashTicks 12 (0.2 s), dashCancelTick 8
         //   capsule               42 / 96 — MUST equal OGBrawlerUECharacter.cpp:69's
         //                         InitCapsuleSize; the adopt-root factory checkf's agreement
         //                         rather than resizing the authored capsule.
-        , m_movementStaticData(movementModel,
-                               movementMaxWalkSpeed, 2048.f, 2000.f,
-                               movementStepPeriodTicks, movementStepSpeed,
-                               45.f, movementGravity, 2000.f,
-                               10.f, 40.f,
-                               46.f, 0.62f, 30000.f,
-                               0.f,
-                               4000.f, 2000.f,
-                               800.f, 12u, 8u,
-                               42.f, 96.f)
-    {}
+        , m_movementStaticData(/*model=*/               movementModel,
+                               /*maxWalkSpeed=*/        movementMaxWalkSpeed,
+                               /*acceleration=*/        2048.f,
+                               /*brakingDeceleration=*/ 2000.f,
+                               /*stepPeriodTicks=*/     movementStepPeriodTicks,
+                               /*stepSpeed=*/           movementStepSpeed,
+                               /*maxSlopeAngleDeg=*/    45.f,
+                               /*gravity=*/             movementGravity,
+                               /*terminalFallSpeed=*/   2000.f,
+                               /*rideHeight=*/          10.f,
+                               /*snapDistance=*/        40.f,
+                               /*hoverFrequency=*/      46.f,
+                               /*hoverDampingRatio=*/   0.62f,
+                               /*hoverMaxAccel=*/       30000.f,
+                               /*hoverPullDownAccel=*/  0.f,
+                               /*launchDecel=*/         4000.f,
+                               /*dashSpeed=*/           800.f,
+                               /*dashTicks=*/           12u,
+                               /*dashCancelTick=*/      8u,
+                               /*capsuleRadius=*/       42.f,
+                               /*capsuleHalfHeight=*/   96.f)
+        // ⛔⛔ [ringout task 2, 2026-09-13] A MEMBER OF ITS OWN, DELIBERATELY — the ring-out
+        // constants are NOT appended to the 22-argument `m_movementStaticData(...)` call
+        // above, and that is the whole point of this member's shape. That list is POSITIONAL:
+        // every further argument added to it is one more place a future tuning edit can
+        // silently shift a neighbour, and a mis-slotted float there is a physics change that
+        // compiles clean. Ring-out's three constants (`killPlaneZ`, `respawnDelayTicks`,
+        // `spawnPoints`) are each DEFAULTED at their own declaration in
+        // `brawlerRingout::StaticData`, so a default-constructed member IS the shipped object
+        // and each literal stays spelled in exactly one place — the same rule the five
+        // forwarded movement parameters above follow. Nothing forwards into it yet; task 3
+        // seeds `InitialConditions::spawnSlot`, which is per-character state, not authoring.
+        , m_ringoutStaticData()
+    {
+        OG_CHECK(m_hitReactions.size() == m_attackSequences.size(),
+            "simulatableBrawler::StaticData - m_hitReactions is INDEXED BY ATTACK SEQUENCE ID and "
+            "must carry exactly one row per entry of m_attackSequences. A sequence with no row is "
+            "an out-of-range read in brawlerHitRouting::System::postIntegrate; a row with no "
+            "sequence is a reaction nothing can ever deliver. The two lists are authored ADJACENT "
+            "above for this reason - add the swing and its reaction in the same edit.");
+    }
 
     // Non-copyable / non-movable, compiler-enforced. The sub-StaticData members
     // (m_attackSimulationStaticData / m_guardSimulationStaticData) hold references
@@ -303,20 +409,53 @@ public:
 
     DAttackCircle m_attackCircle;
     std::vector<DAttackRadialSequence> m_attackSequences;
+    std::vector<HitReactionSpec> m_hitReactions;
+    HitReactionSpec m_projectileHitReaction;
     dAttackRadialSimulation::StaticData m_attackSimulationStaticData;
     dAttackGuardSimulation::StaticData m_guardSimulationStaticData;
     brawlerProjectileSimulation::StaticData m_projectileStaticData;
     brawlerMovementSimulation::StaticData m_movementStaticData;
+    // [ringout task 2, 2026-09-13] See the constructor note above for why this is a member
+    // rather than five more positional arguments into `m_movementStaticData`.
+    brawlerRingout::StaticData m_ringoutStaticData;
 };
 
 // [Task 55/60] Execution order validation — declared order must satisfy dependency edges.
 // The actual sub-sim integrate calls live in SimulatableBrawler::integrate; this
 // assertion is a structural check on the composite's dependency graph.
+//
+// ⛔⛔ [ringout task 2, 2026-09-13] RING-OUT IS PLACED **BEFORE** MOVEMENT, AND THAT ORDER IS
+// CORRECTNESS, NOT TASTE. It was DERIVED AND MACHINE-CHECKED BY TASK 1 — do not re-derive it
+// and do not reverse it. `brawlerRingout::Dependencies` declares two edges to the same
+// neighbour: a const READ of `brawlerMovementSimulation::State` (soft edge, would want
+// movement first) and a non-const WRITE of `brawlerMovementSimulation::InitialConditions`
+// (hard edge, wants ring-out first). `validateOneExternalRef` DROPS the soft edge when a hard
+// edge exists between the same pair, so ringout -> movement is the only order the validator
+// below accepts.
+//
+// WHAT IT BUYS. On the respawn tick T ring-out clears the dead bit and writes the movement
+// teleport seed; movement consumes that seed LATER IN THE SAME TICK T and puts the body on
+// the spawn point. Reversed, the seed sits unconsumed until T+1, ring-out reads a
+// still-below-plane position at T+1 with the dead bit already clear, and the character
+// RE-DIES FOREVER — compiling cleanly and breaking no existing test. That silence is why the
+// reversal is pinned by a POISON ARM rather than by this comment:
+// `Ringout.ExecutionOrder.RingoutIntegratesBeforeMovement` (BrawlerRingoutSimulationTest.cpp)
+// asserts both arms — the good order yields `ViolationKind::None`, the reversed one
+// `ViolationKind::ExecutionOrderViolation`.
+//
+// WHAT IT COSTS, accepted at task 1: ring-out reads the body position as movement left it at
+// the END of tick T-1, so a death is detected one tick after the crossing. Fixed,
+// deterministic, identical on every peer and through every replay.
+//
+// ⚠ THIS IS NOT THE SERIALIZATION ORDER. The ring-out slices are appended LAST in `State`
+// above (an append, so no offsets moved); the two orders are independent and always have been
+// — the machine writes `projectileIC` while the projectile slices serialize last.
 using ExecutionOrder = std::tuple<
     dAttackMachineSimulation::Dependencies,
     dAttackGuardSimulation::Dependencies,
     dAttackRadialSimulation::Dependencies,
     brawlerProjectileSimulation::Dependencies,
+    brawlerRingout::Dependencies,
     brawlerMovementSimulation::Dependencies>;
 inline constexpr auto executionViolation_ =
     compositeDetail::findFirstViolation<ExecutionOrder>();
@@ -364,6 +503,15 @@ static_assert(executionIndexOf_<dAttackGuardSimulation::Dependencies>
     "block test reads the guard's pose off the physics body in the same tick. This edge "
     "flows through the physics adapter, not through Dependencies, so the generic "
     "execution-order validator above cannot see it.");
+
+// ⚠ [ringout task 2, 2026-09-13] AND RING-OUT DELIBERATELY GETS NO `executionIndexOf_`
+// ASSERTION OF ITS OWN. The two above exist for exactly one reason — their edge flows through
+// the physics adapter and is therefore INVISIBLE to `findFirstViolation`. Ring-out's
+// ringout-before-movement edge is the opposite case: it is DECLARED, as
+// `External<brawlerMovementSimulation::InitialConditions&>`, so the generic validator already
+// rejects the reversal at compile time. Restating it here would blur the one distinction this
+// block exists to draw, and would leave a future reader unable to tell which of the three
+// edges the type system actually knows about.
 
 } // namespace simulatableBrawler
 

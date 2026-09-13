@@ -72,6 +72,13 @@ struct DAttackHit
 {
 	glm::vec3 position;
 	BodyId hitRootBodyId;   // actor-level id of the struck character (SpatialQueryHit::rootBodyId)
+	// [movement-sim task 83] The direction the WEAPON was travelling through this hit point:
+	// the swing plane's tangent at the hit radius, signed by the sequence's AUTHORED angular
+	// velocity. Hit routing throws the target along it. Unit length, or exactly (0,0,0) when
+	// the hit projects onto the rotation axis and no tangent exists -- routing treats that as
+	// degenerate and falls back to its away-from-attacker rule, so this must never be a NaN.
+	// DERIVED SCRATCH: DAttackHit is not serialized, so this field costs ZERO wire bytes.
+	glm::vec3 swingTangent{ 0.f };
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -162,15 +169,37 @@ public:
 		// "the slice ctor really ran" case, which now anchors on capacity() rather than size().
 		attackHits.reserve(4);
 		guardHits.reserve(4);
+		hitsThisTick.reserve(4);
 	}
 
 	DerivedState(const DerivedState& other)
 		: attackHits(other.attackHits)
 		, guardHits(other.guardHits)
+		, hitsThisTick(other.hitsThisTick)
 	{}
 
 	const std::vector<DAttackHit>& getAttackHits() const { return attackHits; }
 	std::vector<DAttackHit>& editAttackHits() { return attackHits; }
+
+	// [movement-sim task 83] THE PER-TICK HIT SIGNAL, and it is a DIFFERENT THING from
+	// attackHits above -- conflating the two is the defect this member exists to close.
+	// attackHits is the per-SWING DEDUP LEDGER: it accumulates for the whole swing and is
+	// cleared only in deactivate(), which is exactly what makes "have I already hit this
+	// character?" answerable and what the <= 4 distinct targets cap counts. Hit routing used
+	// to iterate it every post-integrate, so ONE hit re-fired on EVERY remaining tick of the
+	// swing: the knockback velocity was re-assigned with no decay for ~0.4 s (13 m instead of
+	// 5 m, the user's PIE report), the lockout timer restarted every tick, a stun re-entered
+	// every tick, and the direction was re-resolved from positions that had MOVED, so the
+	// throw curved.
+	// This container holds only the hits registered on the CURRENT tick. It is cleared at the
+	// TOP of integrate(), unconditionally and before every early return.
+	// ⛔ Do NOT move that clear into collisionCheck(): collisionCheck early-returns when the
+	// swing is not Damaging and is not called at all outside a swing, so a clear there would
+	// leave the last Damaging tick's entries live for the rest of the swing -- the same bug in
+	// a smaller window.
+	// DERIVED SCRATCH, like attackHits: ZERO wire bytes.
+	const std::vector<DAttackHit>& getHitsThisTick() const { return hitsThisTick; }
+	std::vector<DAttackHit>& editHitsThisTick() { return hitsThisTick; }
 
 	// Positions where the weapon intersected another character's guard during this
 	// attack. Recorded alongside hasHitGuard in integrate() and cleared at the same
@@ -182,6 +211,7 @@ public:
 private:
 	std::vector<DAttackHit> attackHits;
 	std::vector<DAttackHit> guardHits;
+	std::vector<DAttackHit> hitsThisTick;
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -569,6 +599,51 @@ void collisionCheck(float deltaSeconds,
 		}
 	}
 
+	// [movement-sim task 83] THE SWING TANGENT AT A HIT -- the direction the weapon is travelling
+	// through the hit point, which is the direction the hit throws its target.
+	//
+	// cross(axis, r) is the direction of INCREASING angle: glm::rotate is right-handed and this
+	// sim drives the weapon with setBodyAngularVelocity(axis * w) / addBodyTorque(axis * a * I),
+	// so +w carries a radial vector r toward cross(axis, r). Signing that by the sequence's
+	// angular velocity turns "the tangent" into "the direction of travel" -- the opposite sign
+	// would throw the target INTO the weapon. Sequence 0 runs -pi/2 -> +3pi/8 (w > 0) and
+	// sequence 1 mirrors it (w < 0), so left and right throws mirror without a second rule.
+	//
+	// AUTHORED w, NEVER the captured body angularVelocity. The captured value is produced by the
+	// engine's own integration, so it differs between peers and between a live tick and its
+	// replay; the table value is identical everywhere. A gameplay decision must not read an
+	// engine number.
+	//
+	// Recomputed here from whichever query hit is actually pushed, rather than carried down from
+	// the loop above: the body-only branch and the guard branch below push DIFFERENT hits, and a
+	// tangent belonging to a different shape than the recorded position would be a silent lie.
+	// The projection is the same one the annulus test uses, so the tangent is taken at the
+	// target's own hit radius -- the direction the swing actually touched it.
+	const float authoredAngularVelocity =
+		activeAttackSequence.getAngularVelocity(state.attackTimer);
+	auto swingTangentAt = [&](const glm::vec3& objectPosition) -> glm::vec3
+	{
+		const glm::vec3 direction = objectPosition - rootTranslation;
+		const glm::vec3 onPlane = direction
+			- glm::dot(direction, worldSequenceRotationAxis) * worldSequenceRotationAxis;
+		// A hit sitting exactly on the rotation axis has no tangent. Return the zero vector
+		// rather than normalize()'s NaN; hit routing reads that as degenerate and falls back to
+		// the away-from-attacker direction.
+		if (glm::dot(onPlane, onPlane) <= 0.f)
+			return glm::vec3(0.f);
+		const glm::vec3 tangent = glm::cross(worldSequenceRotationAxis, glm::normalize(onPlane));
+		return authoredAngularVelocity < 0.f ? -tangent : tangent;
+	};
+
+	// [movement-sim task 83] Every accepted hit is recorded TWICE, and the two containers mean
+	// different things: attackHits is the per-swing dedup ledger the loop above reads back,
+	// hitsThisTick is the one-tick signal hit routing consumes. See DerivedState.
+	auto registerAttackHit = [&derivedState](const DAttackHit& registered)
+	{
+		derivedState.editAttackHits().push_back(registered);
+		derivedState.editHitsThisTick().push_back(registered);
+	};
+
 	for (const auto& actorHit : actorHits)
 	{
 		if (actorHit.bodyHitIndex == 1337)
@@ -577,7 +652,8 @@ void collisionCheck(float deltaSeconds,
 		if(actorHit.guardHitIndex == 1337)
 		{
 			const auto& hit = queryReport[actorHit.bodyHitIndex];
-			derivedState.editAttackHits().push_back({ hit.objectPosition, hit.rootBodyId });
+			registerAttackHit({ hit.objectPosition, hit.rootBodyId,
+				swingTangentAt(hit.objectPosition) });
 		}
 		else
 		{
@@ -627,7 +703,8 @@ void collisionCheck(float deltaSeconds,
 				break;
 			}
 
-			derivedState.editAttackHits().push_back({ hit.objectPosition, hit.rootBodyId });
+			registerAttackHit({ hit.objectPosition, hit.rootBodyId,
+				swingTangentAt(hit.objectPosition) });
 		}
 	}
 
@@ -673,6 +750,19 @@ void integrate(float deltaSeconds,
 {
 	const InitialConditions& initialConditions = deps.owned.get<InitialConditions>();
 	State& state = deps.owned.edit<State>();
+
+	// [movement-sim task 83] THE PER-TICK HIT SIGNAL IS CLEARED HERE, FIRST AND
+	// UNCONDITIONALLY -- ahead of the Hadouken sentinel return, the deactivate branch, the
+	// idle branch and collisionCheck itself. Every one of those is a path out of this
+	// function, and a tick that leaves by any of them registered no hits, so it must publish
+	// none. This is the ONLY clear site, which is what makes "hitsThisTick is what happened
+	// on THIS tick" true for every tick rather than for the Damaging ones only.
+	// ⛔ Not in collisionCheck: it early-returns when the swing is not Damaging and is not
+	// called outside a swing at all, so a clear there would leave the last Damaging tick's
+	// entries live and hit routing would keep re-firing them.
+	// attackHits is deliberately NOT cleared here -- it is the per-SWING dedup ledger and
+	// deactivate() stays its only clear site.
+	derivedState.editHitsThisTick().clear();
 
 	// [NP-6] Explicit attachment math — replaces updateLinearAttachmentToOwner()
 	{

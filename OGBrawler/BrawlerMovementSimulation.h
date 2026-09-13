@@ -25,6 +25,7 @@
 #include "OGBrawler/CollisionCategoryConstants.h"
 #include "OGBrawler/BrawlerCharacterBindings.h"
 #include "OGBrawler/DAttackMachineSimulation.h"
+#include "OGBrawler/BrawlerInboundHit.h"
 #include "OGBrawlerLog.h"
 
 #include "OGSimulation/CompilerControl.h"
@@ -82,7 +83,7 @@ public:
         float rideHeight, float snapDistance,
         float hoverFrequency, float hoverDampingRatio, float hoverMaxAccel,
         float hoverPullDownAccel,
-        float launchDecel, float knockbackSpeed,
+        float launchDecel,
         float dashSpeed, uint32_t dashTicks, uint32_t dashCancelTick,
         float capsuleRadius, float capsuleHalfHeight)
         : model(model)
@@ -104,7 +105,6 @@ public:
         , hoverStiffness(hoverFrequency * hoverFrequency)
         , hoverDamping(2.f * hoverDampingRatio * hoverFrequency)
         , launchDecel(launchDecel)
-        , knockbackSpeed(knockbackSpeed)
         , dashSpeed(dashSpeed)
         , dashTicks(dashTicks)
         , dashCancelTick(dashCancelTick)
@@ -152,7 +152,7 @@ public:
     float hoverPullDownAccel;
     float hoverStiffness, hoverDamping;
 
-    float launchDecel, knockbackSpeed;
+    float launchDecel;
 
     float dashSpeed;
     uint32_t dashTicks, dashCancelTick;
@@ -423,10 +423,18 @@ inline VelocityChannels decomposeVelocity(const glm::vec3& velocity,
     return VelocityChannels{ glm::vec2(a, b), c };
 }
 
+// ⛔G-22  docs/BrawlerMovementSimulation-guards.md
 inline bool machineFreezesMovement(const dAttackMachineSimulation::State& machineState)
 {
-    return machineState.m_currentState == DAttackState::HitFlinch
+    return (machineState.m_currentState == DAttackState::HitFlinch
+                && machineState.m_hitReaction == HitReactionKind::Stun)
         || machineState.m_currentState == DAttackState::GuardFlinch;
+}
+
+inline bool machineLaunchesMovement(const dAttackMachineSimulation::State& machineState)
+{
+    return machineState.m_currentState == DAttackState::HitFlinch
+        && machineState.m_hitReaction == HitReactionKind::Knockback;
 }
 
 inline glm::vec2 computeDesiredVelocityUV_ContinuousAccelBrake(
@@ -467,21 +475,24 @@ template <typename E> inline constexpr bool kHasHitFlinch = requires { E::HitFli
 }
 
 static_assert(!detail::kHasLaunched<DAttackState>,
-    "brawlerMovementSimulation::detachesFromSupport - `DAttackState::Launched` NOW EXISTS, so "
-    "the `return false` below has stopped being a statement about the tree. Fill the upward-"
-    "Launched arm (task 27) or restate the fence; do not leave the predicate vacuous by "
-    "accident. Was fence T3-17 (the Launched half).");
+    "brawlerMovementSimulation::detachesFromSupport - `DAttackState::Launched` NOW EXISTS, and "
+    "THERE IS NO `Launched` BY DESIGN (task 27, user ruling 2026-09-12): `HitFlinch` PLUS "
+    "`dAttackMachineSimulation::State::m_hitReaction` IS the hit-reaction state, and the arm "
+    "below is keyed on VELOCITY - `committed && dot(velocity, up) > 0` - not on an enumerator, so "
+    "it is false for every XY knockback and true the day a lift is authored, with no enumerator "
+    "knowledge at all. A fifth DAttackState bumps `kDAttackStateCount`, moves the visualizer's "
+    "`kMachineStateCellCount` fence and four switch sites in another initiative's files, and "
+    "leaves `HitFlinch` with no writer. Re-read that decision before deleting this line. "
+    "Was fence T3-17 (the Launched half).");
 static_assert(detail::kHasHitFlinch<DAttackState>,
     "VACUITY CONTROL for the assertion above - if DAttackState is renamed, moved or gutted, "
     "`!kHasLaunched` goes SILENTLY TRUE and the tripwire is gone with no diagnostic anywhere. "
     "Was fence T3-17.");
 
 // ⛔G-07  docs/BrawlerMovementSimulation-guards.md
-inline bool detachesFromSupport(const State& state, const glm::vec3& up)
+inline bool detachesFromSupport(const State& state, const glm::vec3& up, bool committed)
 {
-    (void)state;
-    (void)up;
-    return false;
+    return committed && glm::dot(state.velocity, up) > 0.f;
 }
 
 template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
@@ -491,7 +502,8 @@ void integrate(float deltaSeconds,
     const StaticData& sd,
     Dependencies deps,
     const RuntimeBindings& bindings,
-    DerivedState& derivedState)
+    DerivedState& derivedState,
+    const brawlerInboundHit::DerivedState& inboundHit)
 {
     auto& utils   = input.getIntegrationUtils();
     auto& physics = utils.getPhysicsAdapter();
@@ -547,10 +559,13 @@ void integrate(float deltaSeconds,
             sd.rideHeight, sd.snapDistance);
     }
 
-    const bool frozen = (input.getPlayerInput().flags & kInputFlagHoldGuard) != 0u
-        || machineFreezesMovement(deps.external.get<dAttackMachineSimulation::State>());
+    const dAttackMachineSimulation::State& machineState =
+        deps.external.get<dAttackMachineSimulation::State>();
 
-    const bool committed = false;
+    const bool frozen = (input.getPlayerInput().flags & kInputFlagHoldGuard) != 0u
+        || machineFreezesMovement(machineState);
+
+    const bool committed = machineLaunchesMovement(machineState);
 
     const glm::vec3 up = kWorldUp;
 
@@ -567,7 +582,7 @@ void integrate(float deltaSeconds,
     const float clearance = probe.blocked ? probe.fraction * probeLength : probeLength;
     const bool walkable   = probe.blocked && glm::dot(probe.normal, up) >= sd.cosMaxSlope;
 
-    const SupportState support = (walkable && !detachesFromSupport(state, up))
+    const SupportState support = (walkable && !detachesFromSupport(state, up, committed))
         ? SupportState::Supported
         : SupportState::Unsupported;
 
@@ -621,9 +636,14 @@ void integrate(float deltaSeconds,
     const glm::vec2 currentUV = channels.uv;
 
     glm::vec2 velocityUV(0.f);
+    // ⛔G-23  docs/BrawlerMovementSimulation-guards.md
     if (committed)
     {
-        velocityUV = currentUV;
+        if (inboundHit.wasHitThisTick)
+            // ∴D-06  docs/BrawlerMovementSimulation-rationale.md
+            velocityUV = inboundHit.hitDirectionXY * inboundHit.knockbackSpeed;
+        else
+            velocityUV = moveTowards(currentUV, glm::vec2(0.f), sd.launchDecel * dt);
     }
     else if (frozen)
     {

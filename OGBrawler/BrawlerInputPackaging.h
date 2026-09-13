@@ -69,7 +69,18 @@ inline PlayerInput makeSimPlayerInput(const ContinuousInputFields& fields,
         dAttackGuardSimulation::PlayerInput(fields.aimDirection),
         brawlerProjectileSimulation::PlayerInput{fields.aimDirection},
         // ⛔G-13  docs/BrawlerInputPackaging-guards.md
-        movementInput);
+        movementInput,
+        // [ringout task 2, 2026-09-13] The ring-out slice, and it is the ONLY slice here that
+        // can never be anything but default-constructed: `brawlerRingout::PlayerInput` has no
+        // fields and serializes to ZERO bytes, so the input composite stays 77 B and
+        // `ringWireBytes(1u)` stays 86 B. It is in `simulatableBrawler::PlayerInput` because
+        // `ValidDependencies` requires each sub-sim to name an `InputType` it OWNS, not
+        // because ring-out reads a button — death is positional, respawn is a tick countdown.
+        // ⛔ If a field ever appears in that type, this argument stops being free: one INPUT
+        // byte costs ~10.264 B of packet margin against ~27.352 B of slack, ten times what a
+        // STATE byte costs. The signature above is untouched, so the four call-shape
+        // assertions below still guard exactly what they guarded.
+        brawlerRingout::PlayerInput{});
 }
 
 namespace detail
