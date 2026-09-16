@@ -335,15 +335,53 @@ in the signature stops a caller feeding a cosmetic `PlayerInput` to the wire.
 
 ## 7. The composite is positional
 
-The `return` statement assembles a `simulatableBrawler::PlayerInput` from five sub-simulation
+The `return` statement assembles a `simulatableBrawler::PlayerInput` from its sub-simulation
 slices, **by position**. There is exactly one site in the tree that does this, which is why guard
-**G-13** is tagged on the last argument of the `return`: appending a sixth sub-simulation costs one line
+**G-13** is tagged on the `movementInput` argument of the `return`: appending a sub-simulation costs one line
 here and **no UE edit at all**, because both UE builders route through this function.
 ⚠ The sentence this replaces said the header *"names each slice in a comment at the call"*.
 It named ONE — the movement slice, the one the fence was about; the other four carried no
 comment. Corrected rather than moved.
 
-The movement slice is the newest of the five. At T1 it was empty — the movement sub-simulation
+⚠ **Three sentences in this section were true of a five-slice composite and had gone stale.**
+The sixth slice (§ 7.1) landed after this document was written: the composite is no longer five
+slices, the movement slice is no longer the newest, and `G-13` no longer sits on the LAST
+argument of the `return` — it sits, as it always did, on `movementInput`, which stopped being
+last. The guard entry itself always named the right site; only these sentences drifted.
+
+The movement slice was the newest of the five. At T1 it was empty — the movement sub-simulation
 consumed no input then, and the header said so. That ended when task 14 landed the writer above it:
 the slice now carries the input flags byte, and `SerializableFields<brawlerMovementSimulation::PlayerInput>`
 carries `flags` on the wire.
+
+### 7.1 The sixth slice, and why nothing explains it at the call
+
+`brawlerRingout::PlayerInput{}` sits after `movementInput` in the `return`, and it is the only
+slice here that can never be anything but default-constructed: the type has no fields at all. The
+others are each handed something — the radial, machine, guard and projectile slices take
+`fields.aimDirection` (the machine slice takes five further values beside it), and the movement
+slice takes the flags byte assembled above.
+
+It is on the composite because `ValidDependencies` requires every sub-simulation to name a
+`Dependencies::InputType`, and the composite's ownership validator treats that type as OWNED by
+the sub-simulation that names it — pointing it at a neighbour's input type is an
+`OwnershipOverlap` translation failure, not a style choice. It is **not** there because ring-out
+reads a button: a death is positional (the body's Z against an authored kill plane) and a respawn
+is a tick countdown, so there is nothing for a player to press.
+
+⛔ **The prohibition that used to stand here as a comment is a `static_assert`, and this document
+deliberately does not restate it.** `BrawlerRingoutSimulation.h` asserts
+`syncSize<brawlerRingout::PlayerInput>() == 0u` — in the same file as the type, below its
+`SerializableFields` specialization, which is the other half of the edit it forbids. ⚠ It does
+**not** sit at the class declaration; it stands far below it, past that specialization, so it
+is caught at BUILD time rather than at the keyboard. An input byte is multiplied
+across every entry of every relayed input ring, so one of them costs roughly **ten times** what a
+state byte costs; the exact arithmetic is in that assertion's message and is derived in
+`RoundVsPacketBudgetTest.cpp`'s pre-diet table. Ring-out task 11 deleted a ten-line block from the
+header that said all of this in prose, because the assertion already forbade the edit the prose
+described and cannot be skimmed past.
+
+⚠ Note the boundary of what the assertion covers, because it is exactly the right one: a member
+added to that class but left out of `SerializableFields<brawlerRingout::PlayerInput>` does not
+fire it — and does not ride the wire either, so it costs no margin. The assertion fences the
+wire cost, which is the whole of the prohibition.
