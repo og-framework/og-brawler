@@ -153,6 +153,46 @@ void SimulatableBrawler::integrate(
             attackBindings, derivedState.edit<dAttackRadialSimulation::DerivedState>());
     }
 
+    // ⛔⛔ [ringout task 2, 2026-09-13] THE RING-OUT SUB-SIM, AND IT RUNS **IMMEDIATELY BEFORE
+    // MOVEMENT** BECAUSE `simulatableBrawler::ExecutionOrder` SAYS SO. THE TWO MUST AGREE.
+    // This block's position and ring-out's slot in that tuple are ONE decision written in two
+    // places, and moving either alone is the bug: the tuple is what `findFirstViolation`
+    // checks at compile time, and THIS ORDER is what actually runs. Reordering the tuple
+    // fails the build; reordering only this block compiles silently.
+    //
+    // WHY BEFORE MOVEMENT, derived and machine-checked by task 1, not re-derived here.
+    // `brawlerRingout::Dependencies` declares two edges to the same neighbour — a const READ
+    // of `brawlerMovementSimulation::State` (soft) and a non-const WRITE of its
+    // `InitialConditions` (hard). `validateOneExternalRef` drops the soft edge when a hard
+    // edge exists between the same pair, so ringout -> movement is the only order the
+    // validator accepts. Concretely: on the respawn tick T ring-out clears the dead bit and
+    // writes the movement teleport seed, and the movement block below consumes that seed
+    // LATER IN THE SAME TICK. Reversed, the seed waits until T+1, ring-out reads a
+    // still-below-plane position with the dead bit already clear, and the character RE-DIES
+    // FOREVER. `Ringout.ExecutionOrder.RingoutIntegratesBeforeMovement` pins both arms.
+    //
+    // ⚠ THIS CALL IS SHAPED UNLIKE EVERY OTHER BLOCK IN THIS FUNCTION, deliberately. There is
+    // no `dt` first argument and no `IntegrationUtils` built beside the others at the top,
+    // because `brawlerRingout::IntegrationUtils` carries the TICK AND NOTHING ELSE — no
+    // `getDeltaTime()` exists on it. That is the enforcement of "ticks, never float seconds"
+    // for the respawn countdown: a seconds accumulator would land on a different tick after a
+    // resim replayed the same interval with a different number of steps. The absence is the
+    // guard; do not "restore the symmetry" by handing it a delta.
+    //
+    // ⚠ And no bindings argument: ring-out owns no physics body and is handed no adapter, so
+    // `integrate` is not a template. It reads the body position through the movement sub-sim's
+    // State and writes position through the movement sub-sim's teleport seed — never through
+    // the adapter.
+    {
+        auto deps = makeDependencies<brawlerRingout::Dependencies>(state);
+        brawlerRingout::integrate(
+            brawlerRingout::AllInput(
+                input.get<brawlerRingout::PlayerInput>(),
+                brawlerRingout::IntegrationUtils(currentTick)),
+            staticData.m_ringoutStaticData, deps,
+            derivedState.edit<brawlerRingout::DerivedState>());
+    }
+
     // [movement-sim task 11] THE MOVEMENT SUB-SIM. Runs LAST, matching ExecutionOrder — and
     // its position is no longer free: it takes `ExternalDeps<const dAttackMachineSimulation::
     // State&>` to read the flinch (and, from tasks 27/31, the committed Dashing/Launched
@@ -175,7 +215,8 @@ void SimulatableBrawler::integrate(
                 input.get<brawlerMovementSimulation::PlayerInput>(), movementUtils),
             input.get<dAttackMachineSimulation::PlayerInput>(),
             staticData.m_movementStaticData, deps,
-            movementBindings, derivedState.edit<brawlerMovementSimulation::DerivedState>());
+            movementBindings, derivedState.edit<brawlerMovementSimulation::DerivedState>(),
+            derivedState.get<brawlerInboundHit::DerivedState>());
     }
 }
 

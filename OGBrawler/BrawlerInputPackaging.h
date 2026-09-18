@@ -69,7 +69,8 @@ inline PlayerInput makeSimPlayerInput(const ContinuousInputFields& fields,
         dAttackGuardSimulation::PlayerInput(fields.aimDirection),
         brawlerProjectileSimulation::PlayerInput{fields.aimDirection},
         // ⛔G-13  docs/BrawlerInputPackaging-guards.md
-        movementInput);
+        movementInput,
+        brawlerRingout::PlayerInput{});
 }
 
 namespace detail

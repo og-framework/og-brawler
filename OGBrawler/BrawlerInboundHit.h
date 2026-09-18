@@ -1,6 +1,9 @@
 #pragma once
 // SPDX-License-Identifier: BUSL-1.1
 
+#include "glm/vec2.hpp"
+#include "OGBrawler/HitReaction.h"
+
 namespace brawlerInboundHit
 {
     // Per-character inbound-signal slice for cross-character combat events.
@@ -39,5 +42,10 @@ namespace brawlerInboundHit
     public:
         bool wasHitThisTick               = false;   // T3
         bool wasProjectileBlockedThisTick = false;   // T15
+
+        HitReactionKind reactionKind   = HitReactionKind::Stun;
+        float           knockbackSpeed = 0.f;
+        float           flinchDuration = 0.f;
+        glm::vec2       hitDirectionXY{0.f};
     };
 }

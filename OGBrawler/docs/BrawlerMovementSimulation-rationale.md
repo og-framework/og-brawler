@@ -10,6 +10,10 @@
 <!-- because an escape nobody reads is a way to silence a real hit -- and-->
 <!-- an escape that matches NOTHING is itself a lint violation.          -->
 <!-- ------------------------------------------------------------------ -->
+<!-- lint-external-ref: impl/impl_notes_seam_27.md -- brawler-movement-simulation initiative archive; private working material, not distributed with this submodule -->
+<!-- lint-external-ref: DetachGateIsVacuousUntilJumpLands -- a RETIRED token -- task 27 DELETED this Catch2 case and replaced it with XYKnockbackDoesNotDetach; the prose exists in order to say the name is gone, so a resolving name would falsify it -->
+<!-- lint-external-ref: paramName -- not an identifier at all: it is the PLACEHOLDER inside the `/*paramName=*/` call-site annotation convention (CommentExtractionRule v2 section 1.4), and the real names are the constructor parameters it stands in for -->
+<!-- lint-external-ref: dWorld -- an identifier from a REJECTED alternative spelling, never in shipped code -- section 26 names `glm::vec2(dot(dWorld, u), dot(dWorld, v))` as the wrong edit the derivation tag exists to stop; a resolving name would mean the wrong edit had landed -->
 <!-- lint-external-ref: UCharacterMovementComponent -- UE 5.6 engine symbol -- C:/dev/UnrealEngine is outside every scan root by initiative rule, so this can never resolve here -->
 <!-- lint-external-ref: UCharacterMovementComponent::ComputeFloorDist -- UE 5.6 engine symbol -- C:/dev/UnrealEngine is outside every scan root by initiative rule, so this can never resolve here -->
 <!-- lint-external-ref: UCapsuleComponent::InitCapsuleSize -- UE 5.6 engine symbol -- C:/dev/UnrealEngine is outside every scan root by initiative rule, so this can never resolve here -->
@@ -660,6 +664,23 @@ and_landing.md §1 "Why no chatter at e = 0") and PIE decides whether it is visi
 > knockbackSpeed² / (2·launchDecel) = 2000² / 8000 = 500 cm = 5 m — the user's
 > "thrown 5 metres and then quickly come to a stop".
 
+⛔ **`knockbackSpeed` IS NO LONGER A MEMBER OF THIS TYPE — task 27, 2026-09-12**, and the
+sentence above is kept because it is the provenance of the 5 m, not because the field is here.
+The speed became **per attack**: `HitReactionSpec::knockbackSpeed`, authored in
+`simulatableBrawler::StaticData::m_hitReactions` beside the sequence table it is indexed by. Only
+`launchDecel` remains here, and that is the split the design argues for — **the decel is the LAW
+and the speed is the HIT**. The closed form therefore reads
+`spec.knockbackSpeed² / (2·sd.launchDecel)` and is per attack; at the shipped right/left rows it
+is still exactly 500 cm.
+
+⚠ **THE CONSTRUCTOR CALL SHIFTED, AND IT IS NEARLY ALL `float`.** Removing one argument from a
+21-argument positional call reassigns every constant after it and **compiles cleanly**. The call in
+`SimulatableBrawlerTypes.h` now carries a `/*paramName=*/` annotation on EVERY argument — an
+explicit exemption under the comment rule, and the only thing that makes this class of error
+visible at the site forever. It was also checked by measurement: every remaining member was printed
+with its value before and after the edit and the two lists diffed byte-identical
+(`impl/task27/sd_before.txt`, `sd_after.txt`).
+
 
 <!-- header lines 481-481 -->
 > Dash / dodge (task 31). `dashSpeed` is ASSIGNED on the entry tick, never added.
@@ -1179,6 +1200,9 @@ of the ordinary-join margin — a quarter of everything that was left. ~2.5 byte
 
 <!-- header lines 1038-1040 -->
 > The FLINCH read (step 1) and, from tasks 27/31, the committed states. A SOFT edge:
+> ⚠ [task 27, 2026-09-12] The task-27 half of that sentence has LANDED: step 1 reads
+> `m_hitReaction` through this same dependency and `committed` is now
+> `machineLaunchesMovement(machineState)`. Task 31’s `Dashing` is the half still outstanding.
 > the machine sub-sim is declared FIRST in simulatableBrawler::ExecutionOrder and this
 > one LAST, so `findFirstViolation` is satisfied without moving anything.
 
@@ -1211,11 +1235,20 @@ of the ordinary-join margin — a quarter of everything that was left. ~2.5 byte
 
 ## 19. The dual-basis decomposition — task 57 / ruling #29 ∴D-01
 
-The third of the four named blocks (35 lines, 1082-1116). ⚠ **Nothing in it was a fence**,
-so it carries **no tag and no guard id**, and `decomposeVelocity` now has no marker at all.
-⛔ That is the sharpest single case in this file's reader test:
-`a = (dot(planar, u) - dot(planar, up) * s) / (1 - s * s)` now stands with no marker of any
-kind above it.
+The third of the four named blocks (35 lines, 1082-1116). ⚠ **Nothing in it was a fence**, so
+it carries **no guard id**: `⛔G-nn` marks a prohibition and this block states none.
+⛔ **As task 68 shipped it, `decomposeVelocity` had no marker of any kind, and that was the
+sharpest single case in this file's reader test** —
+`a = (dot(planar, u) - dot(planar, up) * s) / (1 - s * s)` stood with nothing above it to say
+the shape was deliberate rather than clumsy, and the reflex edit — *"simplify this back to three
+dot products"* — leaves every flat-ground case in the suite green, by the `s == 0` identity
+below.
+⭐ **Task 82 closed that case.** This heading ends in `∴D-01`, and that tag is the line
+immediately above the expression in `BrawlerMovementSimulation.h`. It is a DERIVATION tag, not a
+fence: it prohibits nothing and says only *the reasoning for this expression is here*.
+`tools/lint/guard_tag_lint.ps1` gates the join in both directions — delete the expression and
+the tag goes with it, leaving this section an ORPHAN under CHECK 2; strip `∴D-01` from this
+heading and CHECK 1 rejects the tag that still names it.
 
 
 <!-- header lines 1082-1116 -->
@@ -1277,6 +1310,16 @@ surfaces, not in a silent division by zero.
 <!-- header lines 1142-1150 -->
 > The genre's hitstop: a flinch freezes locomotion EXACTLY on the tick it is in effect. It
 > does not decay the velocity, it zeroes the model's contribution for that tick.
+>
+> ⭐⭐ [task 27, 2026-09-12] **`HitFlinch` ALONE NO LONGER FREEZES.** The unconditional
+> "`HitFlinch` ⇒ frozen" became "`HitFlinch` AND `m_hitReaction == Stun` ⇒ frozen", and a
+> SIBLING predicate, `machineLaunchesMovement`, answers the other half: `HitFlinch` AND
+> `Knockback` ⇒ **committed**, which step 3 tests FIRST. A stun is therefore exactly what a
+> `HitFlinch` was before this task — the hitstop above, unchanged — and a knockback is the
+> other branch of the same state. `HitReactionKind::Stun` is 0, so a default-constructed machine
+> `State` in `HitFlinch` still freezes, which is what keeps every pre-task-27 rig honest.
+> ⛔ The prohibition that rides both predicates is `G-22` in the guards doc: the reaction byte is
+> meaningless outside `HitFlinch` and must never be tested without it.
 >
 > [movement-sim task 62] This was a template purely to keep `.m_currentState` and the
 > enumerator DEPENDENT names while the machine State type was incomplete here. The machine
@@ -1356,6 +1399,28 @@ surfaces, not in a silent division by zero.
 > Parameters are the shape the filled version needs, so task 21 changes a body and not a
 > signature: the state carrying the future `Jumping` bit, and the axis an upward `Launched`
 > would be measured along.
+
+⭐⭐ **THE TWO PARAGRAPHS ABOVE ARE NOW FALSE, AND THEY ARE KEPT BECAUSE THEY RECORD WHY —
+task 27, 2026-09-12.** The gate is filled and BOTH arms are reachable:
+`return committed && glm::dot(state.velocity, up) > 0.f;`.
+* "No LLT can reach the `true` arm" — **superseded**. `BrawlerMovement.XYKnockbackDoesNotDetach`
+  drives three arms: uncommitted at any vertical speed (false), committed and horizontal or
+  settling (false), committed and rising (**true**), plus a discriminator that repeats the rising
+  velocity UNCOMMITTED so the case is a statement about `committed` and not about the sign of
+  `vz`. It replaced `DetachGateIsVacuousUntilJumpLands`, whose own header instructed exactly that:
+  *"a vacuity pin that outlives its vacuity is a false comfort."*
+* "Task 21 changes a body and not a signature" — **wrong about which task, and about the
+  signature.** Task 27 changed both: the predicate gained a third parameter, `bool committed`,
+  because the decision is no longer derivable from `State` alone. It is well-defined at the call
+  site: `committed` is computed in step 1 and the surface normal `n` is keyed on `walkable`, NOT on
+  `support`, so the detach decision sits strictly between them and feeds nothing the frame depends
+  on.
+* ⚠ **AND IT IS NOT A CLEAN WIN ON A SLOPE.** `dot(state.velocity, up)` is world z, and on a
+  slope the TANGENTIAL channel contributes `knockbackSpeed · sin θ` to it — exactly the
+  world-z-is-not-the-vertical-channel trap section 19 and task 57 both paid for. An up-slope
+  knockback therefore reaches the true arm on the tick after the shove. The arm is the
+  architect’s and is built as ruled; the measurement, and the recommendation to key it on the
+  vertical CHANNEL instead, are in `impl/impl_notes_seam_27.md` and in guard `G-07`.
 
 ---
 
@@ -1516,6 +1581,23 @@ one place in the file that needs it early.
 > dependency that will carry them is already declared and already resolved above, so
 > those tasks add their enumerator, their branch in step 3 and nothing else here.
 
+⭐⭐ **TASK 27 LANDED, AND IT DID NOT ADD AN ENUMERATOR — 2026-09-12.** The paragraph above
+predicted the shape and got it half right. `committed` is now
+`machineLaunchesMovement(machineState)`, which is `HitFlinch` **plus** `m_hitReaction ==
+Knockback`: the reaction is DATA on the hit, not a fifth machine state. That is a user ruling, and
+the cost it avoids is concrete — a fifth `DAttackState` bumps `kDAttackStateCount`, moves the
+visualizer initiative’s `kMachineStateCellCount` fence and four `case` sites **in that
+initiative’s files**, and leaves `HitFlinch` with no writer at all, since after task 27 every
+inbound hit would have entered the new state.
+⛔ `DAttackState` is therefore still {Attacking, Idle, GuardFlinch, HitFlinch} and
+`kDAttackStateCount` is still `4u`. **Task 31’s `Dashing` is the only enumerator this line is
+still waiting for**, and when it arrives `committed` becomes
+`machineLaunchesMovement(...) || machine == Dashing`, with its own branch inside step 3’s committed
+arm beside the knockback’s assign-or-decay pair. ⛔ There is deliberately NO dead `Dashing` arm
+standing there today: `committed` is exactly `machineLaunchesMovement` and the code says so, because
+an unreachable branch carrying no comment (the rule forbids one) reads as a bug rather than as a
+reservation.
+
 
 <!-- header lines 1429-1436 -->
 > ---- step 2: ATTACH + CLEARANCE -----------------------------------------------------
@@ -1604,6 +1686,15 @@ one place in the file that needs it early.
 <!-- header lines 1537-1538 -->
 > Tasks 31 (Dashing: ASSIGN `dashDir · dashSpeed`, replacing momentum) and 27
 > (Launched: `moveTowards(currentUV, 0, launchDecel·dt)`) land their branches here.
+>
+> ⭐ [task 27, 2026-09-12] **TASK 27’S BRANCH IS IN, AND IT IS TWO LINES, NOT ONE.** The decay
+> the sentence above names is the `else`; the `if` is the **ASSIGNMENT** on the hit tick,
+> `velocityUV = inboundHit.hitDirectionXY * inboundHit.knockbackSpeed`. Revision 6 / ruling #14(c):
+> the sim OWNS the velocity and a hit REPLACES it — there is no impulse and nothing sums. The
+> assignment is keyed on `inboundHit.wasHitThisTick`, **not** on the machine’s
+> `m_timeInCurrentState == 0`: both consume the same derived signal on the same tick, and keying on
+> the hit keeps this sub-simulation independent of how the machine represents its timer. Section 26
+> derives the mapping. Task 31’s `Dashing` becomes a third arm of the same inner dispatch.
 
 
 <!-- header lines 1543-1543 -->
@@ -1928,6 +2019,61 @@ as `BrawlerMovementSimulation.h:4` — **routed, not fixed**.
 and `syncSize<InitialConditions>() == 16u` are pinned in `SimulatableBrawlerTest.cpp`, and task
 76's three `SerializableFields` assertions pin the ORDER by name. What is lost is the reading of
 them *at the field*, which is where a person adding a field looks.
+
+---
+
+## 26. The knockback assignment’s tangent-frame mapping — task 27 ∴D-06
+
+`velocityUV = inboundHit.hitDirectionXY * inboundHit.knockbackSpeed;`
+
+**Where the formula comes from, and why the obvious alternative is wrong.**
+
+`hitDirectionXY` is a **world XY unit vector**, resolved once by `brawlerHitRouting::System` as
+`normalise(XY(target position − attacker position))`. `velocityUV` is a pair of **tangent-frame
+channels**, `(a, b)` such that step 5 composes `a·u + b·v + c·up`. Writing `d.x` into `a` and
+`d.y` into `b` therefore looks like a type error, and it is not — it is exact, and it is exact
+because of what `buildTangentFrame` produces.
+
+For any normal `n` this step can reach, `|n.x| < 0.9`: a walkable hit satisfies
+`dot(n, up) >= cosMaxSlope` = cos 45°, so `|n.x| <= 0.707`, and a non-walkable tick uses
+`n = kWorldUp`, where `n.x = 0`. So the reference vector is always `(1, 0, 0)` and
+
+```
+u = normalise( (1,0,0) − n·dot((1,0,0), n) )      ⇒  u = (cos θ, 0, sin θ)  for n = (−sin θ, 0, cos θ)
+v = cross(n, u)                                    ⇒  v = (0, 1, 0)
+```
+
+**`u`’s horizontal projection is X-aligned by construction and `v` is horizontal.** The map from
+world XY to `(a, b)` is therefore the identity on components, and because `u` and `v` are
+orthonormal the MAGNITUDE is preserved exactly: a 2000 cm/s shove is 2000 cm/s along the face.
+
+⛔ **THE REFLEX EDIT THIS TAG EXISTS TO STOP** is the projection,
+`glm::vec2(dot(dWorld, u), dot(dWorld, v))`. It is the spelling every other world→frame
+conversion in this file uses, it is dimensionally innocent, and it is WRONG here: `dot(dWorld, u)`
+is `d.x·cos θ`, so on a 30° face the character launches at 1732 cm/s instead of 2000 and
+covers 3.75 m instead of the user’s 5. ⭐ **It is also invisible on flat ground**, where
+`θ = 0` and the two spellings agree exactly — which is why the case that discriminates them is
+`BrawlerMovement.SlopeKnockbackStaysOnSlope` and not any of the seven flat-ground knockback cases.
+
+**What it buys, stated as the user’s requirement:** a shove on a slope stays on the slope. The
+launched velocity is perpendicular to `n`, its horizontal speed is `knockbackSpeed · cos θ`, and
+the character covers five metres **along the face** rather than five metres of ground.
+
+⚠ **THE STICK IS PROJECTED, AND THAT IS NOT AN INCONSISTENCY.** Step 3’s stick handling a few
+lines above genuinely does `glm::vec2(dot(stickWorld, u), dot(stickWorld, v))` and then rescales to
+the stick deflection. The two are different questions: the stick asks *which way along the surface
+is the player pointing*, which is a projection followed by a renormalisation; the hit asks *which
+way was the character shoved*, which is already a direction in the surface’s own horizontal
+plane. Reading one as a precedent for the other is the mistake.
+
+**Decay, the other half of the arm:** `moveTowards(currentUV, glm::vec2(0.f), sd.launchDecel * dt)`
+— the Smash law, constant deceleration to rest, and `moveTowards` returns the TARGET once the
+remaining distance is inside one step, so the slide lands on exactly 0.000000 instead of
+overshooting into a backwards crawl. `v² / (2a)` = 500 cm at the shipped pair. ⭐ The step
+count is a FLOAT fact, not an arithmetic one: `4000·(1/60)` is 66.666664, so thirty steps leave
+8e-5 cm/s behind and the thirty-FIRST takes it to zero.
+`BrawlerMovement.LaunchedDecelsAtLaunchDecel` pins that, and asserts the closed form against the
+shipped constants rather than restating 500.
 
 ---
 

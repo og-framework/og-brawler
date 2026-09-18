@@ -177,7 +177,9 @@ leaves the file, so all five go to `hits 0`. Their successors:
         // one from fields — appending a slice costs one line here and NO UE edit (§7).
 ```
 
-**What breaks if it moves.** **Written for this entry (task 66 guard, not on the must-never-move list).** The `return` builds a five-slice composite by position. The useful half of the claim is the cost estimate it hands the next person: because both UE builders route through this function, a sixth sub-simulation costs one line HERE and no UE edit at all. Someone who does not know that budgets the change as a UE-side job and looks for the assembly sites that do not exist.
+**What breaks if it moves.** **Written for this entry (task 66 guard, not on the must-never-move list).** The `return` builds the composite by position. The useful half of the claim is the cost estimate it hands the next person: because both UE builders route through this function, another sub-simulation costs one line HERE and no UE edit at all. Someone who does not know that budgets the change as a UE-side job and looks for the assembly sites that do not exist.
+
+⚠ **This paragraph said "a five-slice composite" and "a sixth sub-simulation", and both had gone stale.** The sixth slice landed with `brawlerRingout::PlayerInput` and the estimate was paid exactly as written — one line here, no UE edit. The prediction was CORRECT and only its tense was wrong, so the counts are generalised rather than re-pinned; a number that has to be incremented on every append is a number that will be wrong again. ⚠ The tag site is unaffected: `⛔G-13` sits on `movementInput`, which is what this entry has always said, and which stopped being the LAST argument when the sixth slice was appended after it. Corrected by ringout task 11.
 
 ---
 
@@ -385,3 +387,27 @@ it is at the top of the file, where no forbidden edit is typed. Under v1 it cost
 looked like diligence. Under v2 there is nowhere to put it — a tag has to point at a
 declaration — and the duplication became visible the moment the fences were given ids. Rule
 2's content is now a `static_assert` message; rule 1's is G-14.
+
+---
+
+## I. The ring-out prohibition that never got an id
+
+⚠ A `⛔` prohibition stood in the header between the conversion and ringout task 11 — ten lines
+at the `brawlerRingout::PlayerInput{}` argument of `makeSimPlayerInput`'s `return`, added by
+ringout task 2 and therefore never part of the conversion census above. It is recorded here so
+that its absence reads as a disposition rather than a deletion.
+
+**It has no id, and deliberately so.** Its load-bearing sentence — *"if a field ever appears in
+that type, this argument stops being free"* — was ALREADY a `static_assert` when it was written:
+`BrawlerRingoutSimulation.h` asserts `syncSize<brawlerRingout::PlayerInput>() == 0u` in the same
+file as the type, below its `SerializableFields` specialization — so the edit is refused by the
+compiler wherever in that file it is typed. The comment rule's first question is
+unconditional — a prohibition the compiler enforces gets **no comment and no doc entry at all**
+— so no id was spent, and `G-17` is still unused.
+
+⛔ **The wrong edit is not typed in this file.** Nobody adds a field to `brawlerRingout::PlayerInput`
+by editing `makeSimPlayerInput`; they edit the type. A guard here would have been a tag at a site
+where the forbidden edit cannot be made — the same failure as a tag hoisted to the top of a file,
+wearing a different costume, and the reason every entry above opens with a **Tag site** line. The
+narrative half of the block — why a fieldless input slice exists at all — is
+`BrawlerInputPackaging-rationale.md` § 7.1.

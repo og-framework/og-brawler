@@ -14,6 +14,8 @@
 <!-- lint-external-ref: kFlagJumping -- an UNBUILT name -- the fence that quotes it exists precisely BECAUSE it does not exist yet (tasks 21 / 27 / 31); a resolving name would falsify the fence -->
 <!-- lint-external-ref: commandIssued -- an identifier from an archived spike probe or a poison arm, never in shipped code -- it is the member poison arm P6 ADDS, to prove sizeof is blind -->
 <!-- lint-external-ref: kProbeOffset -- an identifier from an archived spike probe or a poison arm, never in shipped code -- the hoist task 76 probed and REJECTED on narrowness -->
+<!-- lint-external-ref: impl/impl_notes_seam_27.md -- brawler-movement-simulation initiative archive; private working material, not distributed with this submodule -->
+<!-- lint-external-ref: DetachGateIsVacuousUntilJumpLands -- a RETIRED token -- task 27 DELETED this Catch2 case and replaced it with XYKnockbackDoesNotDetach; the prose exists in order to say the name is gone, so a resolving name would falsify it -->
 <!-- lint-external-ref: impl/impl_notes_seam_56.md -- brawler-movement-simulation initiative archive; private working material, not distributed with this submodule -->
 <!-- lint-external-ref: impl/design_ledge_fall_and_landing.md -- brawler-movement-simulation initiative archive; private working material, not distributed with this submodule -->
 <!-- lint-external-ref: design_ledge_fall_and_landing.md -- brawler-movement-simulation initiative archive; private working material, not distributed with this submodule -->
@@ -58,6 +60,19 @@ placement, with no prohibition in them at all. Those five carry no id.
 | retired — deleted, working copy elsewhere | T3-1, T3-2, T3-4, T3-11 | 4 |
 | re-triaged as rationale, no id | T3-8, T3-9, T3-19, T3-20, T3-21 | 5 |
 | | | **26** |
+
+⚠ **THE TABLE ABOVE IS THE CONVERSION’S CENSUS AND IT IS CLOSED.** It accounts for the
+twenty-six fences task 68 converted, and it must not be edited to absorb later work — a census
+that keeps growing stops being a record of what was converted.
+⭐ **Guards added AFTER the conversion are listed here instead**, each with the task that added
+it, so the live count is `11 + this list`:
+
+| id | added by | site |
+|---|---|---|
+| `G-22` | task 27 | the two machine predicates that read `State::m_hitReaction` |
+| `G-23` | task 27 | step 3’s dispatch — `committed` is tested before `frozen` |
+
+**Live guards today: 13.**
 
 ---
 
@@ -277,23 +292,56 @@ pre-conversion file):**
 //     is recorded as such in `impl/impl_notes_seam_56.md` rather than faked.
 ```
 
-**What breaks if it moves.** `detachesFromSupport` returns `false` unconditionally — the exact shape of an unfinished stub, and coverage tooling reports the body dead. This line is the only thing saying the constant `false` is a **statement about the tree** (neither condition it would test exists yet) rather than a `TODO`.
+**What breaks if it moves.** `detachesFromSupport` returned `false` unconditionally — the exact shape of an unfinished stub, and coverage tooling reported the body dead. This line was the only thing saying the constant `false` was a **statement about the tree** (neither condition it would test existed yet) rather than a `TODO`.
 
-⚠ **PARTIALLY CONVERTED — this entry is the `Jumping` half.** Task 76 landed
+⭐⭐ **REVISED BY TASK 27, 2026-09-12 — THE PREDICATE IS NO LONGER VACUOUS, AND THE
+PROHIBITION IT CARRIES HAS CHANGED WITH IT.** The id is unchanged because the SITE is unchanged;
+what the guard forbids is now this:
+
+> ⛔ **THE ARM IS KEYED ON VELOCITY, NEVER ON AN ENUMERATOR.**
+> `return committed && glm::dot(state.velocity, up) > 0.f;`
+> Do not replace it with a test against a machine state. **There is no `Launched` enumerator and
+> there is not going to be one** — user ruling 2026-09-12: the hit reaction is DATA on the hit
+> (`HitReactionKind` + `HitReactionSpec`), carried through one generalised `HitFlinch` state, so
+> that `DAttackState` stays at four values and the visualizer initiative’s
+> `kMachineStateCellCount` fence and its four `case` sites do not move in **another
+> initiative’s files**. A velocity-keyed arm needs no enumerator knowledge at all: it is false
+> for every shipped XY knockback and true the day a lift is authored.
+
+**What breaks if THAT moves.** An enumerator-keyed arm has to be extended by every future task
+that adds a committed state, and each such task then has a reason to add an enumerator here —
+which is the pressure this design exists to remove. It also cannot see an authored upward
+component that arrives through data rather than through a state.
+
+⚠ **WHAT THE ARM DOES NOT DO, MEASURED AND ROUTED (task 27).** `dot(state.velocity, up)` is
+WORLD z, and on a SLOPE the tangential channel carries `knockbackSpeed · sin θ` of world z —
+1000 cm/s on a 30° face at the shipped speed — so an up-slope knockback DOES reach the true arm
+on the tick after the shove and loses its hover hold for the rest of the slide. The frame does not
+move with it (`n` is keyed on `walkable`, not on `support`), so the slide stays on the face.
+`BrawlerMovement.SlopeKnockbackStaysOnSlope` prints both readings and records the support state;
+the finding and its recommended fix — key the arm on the vertical CHANNEL, which is computable
+here because the frame does not depend on the detach decision — are routed to the lead in
+`impl/impl_notes_seam_27.md`. **Not changed unilaterally: the arm is the architect’s, ruled.**
+
+⚠ **THE `Jumping` HALF IS UNCHANGED AND STILL UNBUILT.** Task 76 landed
 `static_assert(!detail::kHasLaunched<DAttackState>, … "Was fence T3-17 (the Launched half).")`
-with a `kHasHitFlinch` vacuity control beside it. That is a **remote tripwire**: the build
-breaks for the person editing `DAttackMachineSimulation.h`, in the file that makes the
-sentence false, and not here.
+with a `kHasHitFlinch` vacuity control beside it, and task 27 **restated its message** rather than
+deleting it: it no longer says "fill the arm", it says there is no `Launched` by design and the
+arm is velocity-keyed. That is still a **remote tripwire** — the build breaks for the person
+editing `DAttackMachineSimulation.h`, in the file that makes the sentence false, and not here.
 
 ⛔ **The `Jumping` half does not convert and cannot.** Adding
 `inline constexpr uint8_t kFlagJumping = 1u << 4;` is invisible to any expression over the
 three existing flag constants — the new name is simply not in it. There is nothing to assert
 until the bit and its writer exist, which is exactly what the fence is about.
 
-✅ **Re-verified 2026-09-11 against the shipped bytes:** `DAttackState` is
-`{Attacking, Idle, GuardFlinch, HitFlinch}` (`DAttackMachineSimulation.h:49-55`), in that
-declared order; and bits 4-7 of `State::flags` are free — `kFlagFrozen` is bit 0,
-`SupportState` rides bits 1-2, `kFlagHasCommand` is bit 3.
+✅ **Re-verified 2026-09-12 against the shipped bytes:** `DAttackState` is
+`{Attacking, Idle, GuardFlinch, HitFlinch}`, in that declared order, and `kDAttackStateCount` is
+still `4u`; bits 4-7 of `State::flags` are free — `kFlagFrozen` is bit 0, `SupportState` rides
+bits 1-2, `kFlagHasCommand` is bit 3. **Both arms of the predicate are now driven by
+`BrawlerMovement.XYKnockbackDoesNotDetach`**, which replaced
+`DetachGateIsVacuousUntilJumpLands` — that case’s own header asked to be deleted the day the
+vacuity ended.
 
 ---
 
@@ -425,6 +473,70 @@ its line number was wrong and is corrected here.**
 
 ⛔ **Measured DOES-NOT-CONVERT** (task 75, arm `ARM 11`). A defence of a decision’s
 PLACEMENT has no expression: both placements compile.
+
+---
+
+## G-22 — `m_hitReaction` is meaningless outside `HitFlinch`
+
+**Tag site:** `BrawlerMovementSimulation.h`, immediately above
+`inline bool machineFreezesMovement(const dAttackMachineSimulation::State& machineState)` — the
+FIRST of the two sibling predicates that read the byte. **One tag, one entry, two sites**: the
+prohibition is the same sentence at both, and splitting it would have put two ids on one idea.
+The second site is `machineLaunchesMovement`, directly below.
+
+**Added by:** task 27, 2026-09-12. Not part of task 68’s conversion census.
+
+> ⛔ **NEVER TEST `m_hitReaction` WITHOUT TESTING `m_currentState == DAttackState::HitFlinch`
+> IN THE SAME EXPRESSION.** The byte is written ONLY by the hit veto, on entry, and it is never
+> cleared on exit — outside `HitFlinch` it is the STALE kind of the last hit this character
+> took, and it is read by nothing.
+
+**What breaks if it moves.** `HitReactionKind::Stun` is 0, so a character that has never been hit
+reads `Stun` and a `machineFreezesMovement` shortened to `m_hitReaction == Stun` would freeze
+**every idle character in the game** — a total-failure mode that no slope, wall or replay case
+would be needed to notice. The other direction is the quiet one: a character that took a knockback
+an hour ago still reads `Knockback`, so a `committed` test shortened the same way would suspend the
+movement model and hold whatever velocity the body had, permanently. ⭐ The pair is written as
+two whole predicates, each spelling the state test out again, rather than as one shared boolean
+local: a local can be read without the test that produced it, and a predicate cannot.
+
+⚠ **It does not convert to a `static_assert`.** The claim is about what a runtime byte MEANS in
+a state the compiler cannot see. What the compiler does pin, in `OGBrawler/HitReaction.h`, is the
+half that is expressible: `Stun == 0`, so a default-constructed `State` — which is exactly what
+`injectCorrectionState` reads a correction into — reads as the pre-task-27 behaviour.
+
+✅ **Re-verified 2026-09-12:** the only writer of `m_hitReaction` is the inbound-hit veto in
+`dAttackMachineSimulation::integrate3`; the only readers are the two predicates this tag sits on.
+
+---
+
+## G-23 — `committed` is tested BEFORE `frozen`, and the order is the rule
+
+**Tag site:** `BrawlerMovementSimulation.h`, on step 3’s `if (committed)` in `integrate`.
+
+**Added by:** task 27, 2026-09-12. Not part of task 68’s conversion census.
+
+> ⛔ **DO NOT REORDER THESE TWO BRANCHES, AND DO NOT MERGE THEM INTO ONE CONDITION.** A
+> committed state owns the velocity OUTRIGHT; `frozen` is the model’s gate, not a veto over a
+> commitment. Holding guard during a knockback must NOT stop the slide.
+
+**What breaks if it moves.** `frozen` is true whenever bit 0 of the input flags byte is held, and a
+player who is being thrown five metres is very likely holding guard. Test `frozen` first and the
+slide stops dead on the tick the button goes down — a 5 m throw becomes a 0 m throw, in the one
+situation the player is most likely to create. ⭐ **Guarding is already blocked, and not by this
+branch:** `DAttackGuardSimulation` disables every guard shape whenever
+`attackMachineSimulation.m_currentState != DAttackState::Idle`, which covers the whole lockout. The
+shape gate is the mechanism; freezing the body would be a second, wrong one.
+
+⚠ **The `frozen` BIT still records `frozen`.** `State::flags`’ bit 0 is set from the `frozen`
+local regardless of which branch ran, so during a guard-held knockback the wire bit reads 1 while
+the body slides. Its only reader is `BrawlerMovementVisualization.h`, so this is a display
+inaccuracy and nothing more — recorded here so the next reader does not treat the bit as the
+answer to "did the model run".
+
+✅ **Pinned by `BrawlerMovement.HoldGuardDoesNotFreezeASlide`**, which holds
+`kInputFlagHoldGuard` through the launch tick and the tick after it, with a control arm proving the
+bit is live in the same fixture.
 
 ---
 

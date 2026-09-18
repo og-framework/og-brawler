@@ -49,8 +49,18 @@
 #include "OGSimulation/SimulatableList.h"       // SimulatableList
 #include "OGSimulation/StorageView.h"           // StorageView
 #include "OGSimulation/SimulationTimeContext.h" // SimulationTimeStep
+#include "OGSimulation/SystemRoleAffinity.h"    // SystemRoleAffinity
 #include "OGBrawler/SimulatableBrawler.h"       // SimulatableBrawler, simulatableBrawler::StaticData
 #include "OGBrawler/BrawlerProjectileSimulation.h"
+#include "OGBrawler/HitReaction.h"
+#include "OGSimulation/OGAssert.h"
+#include "glm/vec2.hpp"
+#include "glm/vec3.hpp"
+#include "glm/vec4.hpp"
+#include "glm/mat4x4.hpp"
+#include "glm/geometric.hpp"
+#include "glm/common.hpp"
+#include "glm/gtc/matrix_transform.hpp"
 
 namespace brawlerHitRouting
 {
@@ -68,8 +78,10 @@ namespace brawlerHitRouting
         // calling each hook. UNQUALIFIED SimulatableList — global namespace (D12).
         using RequiredSimulatables = SimulatableList<SimulatableBrawler>;
 
+        static constexpr SystemRoleAffinity kRoleAffinity = SystemRoleAffinity::AllRoles;
+
         // preIntegrate — no work in v1. Routing is a post-integrate reduction
-        // (it reads each character's just-produced attackHits[] / projectile slot
+        // (it reads each character's just-produced hitsThisTick[] / projectile slot
         // state), so nothing needs to run before integrateAll. Present to satisfy
         // the four-hook SimulationSystem concept.
         void preIntegrate(const SimulationTimeStep& /*step*/,
@@ -80,9 +92,11 @@ namespace brawlerHitRouting
 
         // postIntegrate — the per-tick routing pass (T16 logic, relocated). Four
         // branches:
-        //   1. Reset every character's inboundHit flags (wasHitThisTick,
-        //      wasProjectileBlockedThisTick) — both are one-shots owned here.
+        //   1. Reset every character's whole inboundHit slice — the two one-shot
+        //      bools and the resolved reaction beside them are owned here.
         //   2. Radial swing hits (T3): route HitFlinch to the struck character.
+        //      [movement-sim task 83] Fires exactly once per hit — the per-TICK
+        //      hitsThisTick[], never the per-SWING attackHits[] ledger.
         //   3. Projectile damage hits (T3, endReason==2): route HitFlinch to the
         //      struck character (endTick guard makes it fire exactly once).
         //   4. Projectile guard-blocks (T15, endReason==4): route GuardFlinch to
@@ -93,7 +107,7 @@ namespace brawlerHitRouting
         // is inherently self-directed.
         void postIntegrate(const SimulationTimeStep& step,
                            StorageView<SimulatableBrawler> view,
-                           const simulatableBrawler::StaticData& /*staticData*/)
+                           const simulatableBrawler::StaticData& staticData)
         {
             const uint32_t currentTick = step.getTick();
 
@@ -110,26 +124,66 @@ namespace brawlerHitRouting
             std::sort(ordered.begin(), ordered.end(),
                 [](const auto& a, const auto& b) { return a.first < b.first; });
 
-            // 1. Reset every character's inbound-signal flags before repopulating
+            // 1. Reset every character's inbound-signal slice before repopulating
             //    this tick. The routing pass owns the reset/set lifecycle so each
             //    tick's signal is fresh (the machine sim never sees a stale flag).
+            //    ⚠ [movement-sim task 27] WHOLE-SLICE, not field-by-field: the slice
+            //    now carries the resolved reaction (kind, speed, direction, dwell)
+            //    beside the two bools, and a reset that names fields is a reset that
+            //    the next field added is silently missing from.
             for (const auto& [id, brawlerPtr] : ordered)
             {
                 auto& slice = brawlerPtr->editAllState().editDerivedState()
                     .edit<brawlerInboundHit::DerivedState>();
-                slice.wasHitThisTick               = false;   // T3
-                slice.wasProjectileBlockedThisTick = false;   // T15
+                slice = brawlerInboundHit::DerivedState{};
             }
 
-            // 2. Radial swing hits — each attacker's post-integrate attackHits[]
+            // 2. Radial swing hits — each attacker's post-integrate hitsThisTick[]
             //    carries the stable root body id of every character its weapon
-            //    overlapped this tick.
+            //    registered a hit on THIS TICK, and the direction the weapon was
+            //    travelling through each of those hits.
+            //
+            // ⭐⭐ [movement-sim task 83] hitsThisTick, NOT attackHits, AND THE
+            //    DIFFERENCE IS THE WHOLE OF THE USER'S 12 METRES. attackHits is the
+            //    radial sim's per-SWING DEDUP LEDGER: it accumulates for the whole
+            //    swing and is cleared only in deactivate(). Iterating it here meant
+            //    ONE hit re-fired on EVERY remaining tick of the swing — the target's
+            //    velocity was re-assigned at full launch speed with no decay for the
+            //    ~0.4 s the swing had left (8.0 m of constant travel, then 5.17 m of
+            //    decay = 13.2 m against an authored 5 m), the lockout timer restarted
+            //    every tick, a stun re-entered every tick, and the direction was
+            //    re-resolved from positions that had MOVED, so the throw curved.
+            //    ⛔ The bug was not that the container was wrong; it was that the
+            //    per-SWING container was being read as a per-TICK signal. Both still
+            //    exist and both are still needed.
+            //    ⭐ Branch 3 below already had the right shape — a projectile slot
+            //    keeps endReason==2 until it recycles, so it fires on
+            //    slot.endTick == currentTick and nowhere else. This is that idiom.
             for (const auto& [attackerId, attackerPtr] : ordered)
             {
                 const auto& radialDerived =
                     attackerPtr->getAllState().getDerivedState()
                         .get<dAttackRadialSimulation::DerivedState>();
-                for (const auto& hit : radialDerived.getAttackHits())
+                if (radialDerived.getHitsThisTick().empty())
+                    continue;
+
+                const unsigned int sequenceId =
+                    attackerPtr->getAllState().getState()
+                        .get<dAttackRadialSimulation::State>().currenSequenceId;
+                OG_CHECK(isRealAttackSequence(sequenceId)
+                      && sequenceId < staticData.m_hitReactions.size(),
+                    "brawlerHitRouting::System::postIntegrate - a radial DAMAGING hit was "
+                    "registered while the attacker's wire currenSequenceId is not a row of "
+                    "m_hitReactions. The reaction table is indexed by sequence id and the "
+                    "constructor asserts it covers m_attackSequences, so this is either a hit "
+                    "raised under the Hadouken sentinel (the radial sim early-returns on it and "
+                    "must raise none) or a table that stopped matching the sequence list.");
+                if (!isRealAttackSequence(sequenceId)
+                    || sequenceId >= staticData.m_hitReactions.size())
+                    continue;
+                const HitReactionSpec& spec = staticData.m_hitReactions[sequenceId];
+
+                for (const auto& hit : radialDerived.getHitsThisTick())
                 {
                     auto found = this->m_byRootBodyId.find(hit.hitRootBodyId.value);
                     if (found == this->m_byRootBodyId.end())
@@ -137,8 +191,23 @@ namespace brawlerHitRouting
                     SimulatableBrawler* target = found->second;
                     if (target == attackerPtr)   // D5 self-hit filter (pointer identity, not rootBodyId)
                         continue;
-                    target->editAllState().editDerivedState()
-                        .edit<brawlerInboundHit::DerivedState>().wasHitThisTick = true;
+                    // ⭐ [movement-sim task 83] THE DIRECTION IS THE SWING TANGENT — the way
+                    // the weapon was travelling through the hit, which is the user's "orthogonal
+                    // to the weapon at the moment of the hit". It is computed at the push site,
+                    // where the projection onto the swing plane and the sequence's authored
+                    // angular velocity are both already in hand; nothing here re-derives it.
+                    // ⛔ The away-from-attacker rule task 27 shipped is now the FALLBACK, and it
+                    // is still load-bearing: a swing whose axis is horizontal has a VERTICAL
+                    // tangent whose XY projection is degenerate, and normalisedXY would otherwise
+                    // hand a NaN straight into a velocity that never leaves the body. Both
+                    // arguments are evaluated, which costs two wire reads and buys a rule that
+                    // cannot be reached with a half-initialised fallback.
+                    resolveHitReaction(
+                        staticData, spec,
+                        normalisedXY(hit.swingTangent,
+                                     directionAwayFromAttacker(*attackerPtr, *target)),
+                        target->editAllState().editDerivedState()
+                            .edit<brawlerInboundHit::DerivedState>());
                 }
             }
 
@@ -161,8 +230,11 @@ namespace brawlerHitRouting
                     SimulatableBrawler* target = found->second;
                     if (target == attackerPtr)
                         continue;
-                    target->editAllState().editDerivedState()
-                        .edit<brawlerInboundHit::DerivedState>().wasHitThisTick = true;
+                    resolveHitReaction(
+                        staticData, staticData.m_projectileHitReaction,
+                        normalisedXY(slot.spawnDir, glm::vec2(1.f, 0.f)),
+                        target->editAllState().editDerivedState()
+                            .edit<brawlerInboundHit::DerivedState>());
                 }
             }
 
@@ -223,6 +295,63 @@ namespace brawlerHitRouting
         }
 
     private:
+        static glm::vec2 normalisedXY(const glm::vec3& v, const glm::vec2& fallback)
+        {
+            const glm::vec2 xy(v.x, v.y);
+            const float lengthSq = glm::dot(xy, xy);
+            return lengthSq > 0.f ? xy * (1.f / glm::sqrt(lengthSq)) : fallback;
+        }
+
+        static glm::vec2 attackerAimXY(const SimulatableBrawler& attacker)
+        {
+            const dAttackRadialSimulation::InitialConditions& ic =
+                attacker.getAllState().getState()
+                    .get<dAttackRadialSimulation::InitialConditions>();
+            const glm::vec3 axis =
+                (glm::dot(ic.initialAimRotationAxis, ic.initialAimRotationAxis) > 0.f)
+                    ? ic.initialAimRotationAxis
+                    : glm::vec3(0.f, 0.f, 1.f);
+            const glm::vec3 aim = glm::vec3(
+                glm::rotate(glm::mat4(1.f), ic.initialAimAngle, axis)
+                    * glm::vec4(1.f, 0.f, 0.f, 0.f));
+            return normalisedXY(aim, glm::vec2(1.f, 0.f));
+        }
+
+        static glm::vec2 directionAwayFromAttacker(const SimulatableBrawler& attacker,
+                                                   const SimulatableBrawler& target)
+        {
+            const glm::vec3 attackerPosition =
+                attacker.getAllState().getState()
+                    .get<brawlerMovementSimulation::State>().bodyState.position;
+            const glm::vec3 targetPosition =
+                target.getAllState().getState()
+                    .get<brawlerMovementSimulation::State>().bodyState.position;
+            return normalisedXY(targetPosition - attackerPosition, attackerAimXY(attacker));
+        }
+
+        static void resolveHitReaction(const simulatableBrawler::StaticData& staticData,
+                                       const HitReactionSpec& spec,
+                                       const glm::vec2& directionXY,
+                                       brawlerInboundHit::DerivedState& slice)
+        {
+            OG_CHECK(staticData.m_movementStaticData.launchDecel > 0.f,
+                "brawlerHitRouting::System::resolveHitReaction - launchDecel must be POSITIVE. "
+                "A knockback's lockout is knockbackSpeed / launchDecel, so a zero decel is an "
+                "infinite slide paired with a zero-length lockout - the character would be sliding "
+                "and free to attack on the same tick, which is the exact window the lockout "
+                "exists to close.");
+
+            const bool knockback = spec.kind == HitReactionKind::Knockback;
+            slice.wasHitThisTick = true;
+            slice.reactionKind   = spec.kind;
+            slice.knockbackSpeed = knockback ? spec.knockbackSpeed : 0.f;
+            slice.hitDirectionXY = knockback ? directionXY : glm::vec2(0.f);
+            slice.flinchDuration = knockback
+                ? glm::max(spec.lockoutDuration,
+                           spec.knockbackSpeed / staticData.m_movementStaticData.launchDecel)
+                : spec.lockoutDuration;
+        }
+
         // Actor-level root-body-id -> registered brawler, for cross-character
         // routing. Key = the character capsule's BodyId.value
         // (CharacterBindings::capsuleBodyId); value = raw pointer into storage's
