@@ -22,76 +22,12 @@ an entry EXISTS. It never checks that this text is TRUE.
 in `BrawlerRingoutScoreSystem-rationale.md`. A guard is a prohibition plus the consequence
 of ignoring it, and nothing else.
 
+<!-- lint-external-ref: m_isAuthority -- retired identifier: ring-out task 19 deleted brawlerRingout::ScoreSystem's role flag; every occurrence below is inside a RETIRED entry, quoting the header as it stood -->
+<!-- lint-external-ref: setIsAuthority -- retired identifier: ring-out task 19 deleted the setter with the flag; every occurrence below is quoted, historical text inside a RETIRED entry -->
+
 ⭐ **Every consequence below was MEASURED by injection on 2026-09-13**, not reasoned. The
 arm, the binary it ran against and the resulting failure list are recorded in the
 ring-out initiative workspace, in task 14's implementation notes.
-
----
-
-## G-01 — The award is gated to the authority role, and the step cannot supply that gate
-
-**Tag site:** `BrawlerRingoutScoreSystem.h`, on the `if (!this->m_isAuthority) return;`
-that opens `postIntegrate`.
-
-**The fence, verbatim — these are the bytes it occupied in the pre-conversion header:**
-
-<!-- header lines 32-36 -->
-```
-// ══ ⛔ THE ROLE GATE, AND WHY THE STEP CANNOT SUPPLY IT ════════════════════════════════════
-// `SimulationSystemsExecutor` fires these hooks on ALL THREE roles — the authority tick, a
-// client's forward prediction tick, and EVERY resim replay tick (`SimulationManager.h`, grep
-// `or rollback routing stops being deterministic`). An ungated award double-counts on every
-// client, once per replayed tick, forever.
-```
-
-<!-- header lines 149-150 -->
-```
-        // ⛔ THE GATE. See the banner: a client reaches this on its forward prediction tick
-        // AND on every replayed tick of every resim.
-```
-
-**What breaks if it moves.** `SimulationSystemsExecutor` fires this hook on all three
-roles. Deleting the early return leaves every client awarding points on its own forward
-prediction tick **and once more per replayed tick of every resim**, forever, against a
-replicated value the server keeps overwriting.
-
-**Measured:** deleting the two-line early return that the tag sits on turns exactly
-one case red —
-`RingoutScore.ANonAuthorityRoleAwardsNothing` (39 cases, 1 failed).
-
-⚠ The gate must stay on `m_isAuthority` and must not be re-derived from `step`: that the
-step cannot answer the question is now a `static_assert` — see **G-09** in §R below.
-
----
-
-## G-02 — The role gate is defaulted CLOSED
-
-**Tag site:** `BrawlerRingoutScoreSystem.h`, on `bool m_isAuthority = false;`.
-
-**The fence, verbatim:**
-
-<!-- header lines 44-47 -->
-```
-// ⭐ IT DEFAULTS TO FALSE, AND THAT IS THE DESIGN. A `ScoreSystem` nobody configured awards
-// NOTHING. The failure mode of a forgotten wiring call is a scoreboard stuck at zero — loud,
-// harmless, and repairable — rather than a client quietly inventing points that the server
-// never granted and the replicated value keeps overwriting.
-```
-
-<!-- header lines 283-283 -->
-```
-    // ⛔ THE ROLE GATE, DEFAULTED CLOSED. See `setIsAuthority`.
-```
-
-**What breaks if it moves.** Changing the initialiser to `true` — the natural "make it
-work out of the box" edit — inverts the failure mode of a forgotten wiring call from a
-scoreboard stuck at zero into every client inventing points the server never granted.
-
-⛔ **The compiler CANNOT take this one, and that was measured rather than assumed.**
-`ScoreSystem` holds a `std::unordered_map`, so it is not usable in a constant expression;
-the probe `constexpr ScoreSystem s; return s.getIsAuthority();` fails to compile with
-MSVC `C3615: constexpr function cannot result in a constant expression`. The default is
-pinned at run time instead, by `RingoutScore.SatisfiesTheSimulationSystemConcept`.
 
 ---
 
@@ -158,33 +94,6 @@ its game-thread walk. Changing this line means re-reading that argument.
 
 ---
 
-## G-05 — Seeding the roster is authority-only
-
-**Tag site:** `BrawlerRingoutScoreSystem.h`, on the `if (!this->m_isAuthority) return;`
-in `onCharacterRegistered`.
-
-**The fence, verbatim:**
-
-<!-- header lines 245-249 -->
-```
-    // ⛔ AUTHORITY ONLY, like the award itself. On a client the table stays empty for the life
-    // of the session — the same property `ASimulationManagerUImpl::m_authorityRegisteredIds`
-    // and task 3's `m_spawnSlots` both rely on, and for the same reason: nothing on that role
-    // ever writes it, so nothing on that role can read a wrong answer out of it. A client
-    // learns scores from the replicated `UPROPERTY` task 5 adds, never from here.
-```
-
-**What breaks if it moves.** Ungating it gives a client a roster it has no business
-holding, which is the precondition for the client reading a wrong answer out of a table
-nothing on that role ever writes correctly. The property the code rests on is that on a
-client the table is empty for the life of the session.
-
-⚠ **Measured, and this is the honest half:** deleting this gate leaves all 39 cases green.
-It is a prohibition with no machine backstop; the suite drives registration only through
-authority rigs.
-
----
-
 ## G-06 — Seed with `emplace`, never with `operator[]`
 
 **Tag site:** `BrawlerRingoutScoreSystem.h`, on `this->m_scores.emplace(id, 0u);`.
@@ -207,9 +116,167 @@ they differ only on a path no case in the suite drives.
 
 ---
 
-## G-07 — `onCharacterUnregistered` is UNGATED, and that is deliberate
+## §R Retired ids
 
-**Tag site:** `BrawlerRingoutScoreSystem.h`, immediately above `onCharacterUnregistered`.
+Spent forever. `guard_tag_lint.ps1` CHECK 4 rejects any tag naming one.
+
+⚠ **CHECK 4 does not check that the assertion which replaced a fence still exists.** Each
+entry below therefore names its id inside the assertion's own message text, so deleting
+the assertion deletes the only surviving mention of the id.
+
+⛔ **READ EVERY ENTRY BELOW UP TO ITS "Replaced by" PARAGRAPH IN THE PAST TENSE.** It is the
+entry as it stood, carried across unedited, in the present tense it was written in — it
+describes a header that no longer looks like that. Only the **Replaced by** paragraph, and
+anything after it, describes the shipped tree. Where the carried text gave an instruction that
+the replacement has since falsified, the instruction is struck and corrected in place.
+
+### G-01 — RETIRED, replaced by the executor's role gate
+
+**Tag site, as it stood:** `BrawlerRingoutScoreSystem.h`, on the `if (!this->m_isAuthority) return;`
+that opened `postIntegrate`. Both the tag and the statement are DELETED.
+
+**The fence, verbatim — these are the bytes it occupied in the pre-conversion header:**
+
+<!-- header lines 32-36 -->
+```
+// ══ ⛔ THE ROLE GATE, AND WHY THE STEP CANNOT SUPPLY IT ════════════════════════════════════
+// `SimulationSystemsExecutor` fires these hooks on ALL THREE roles — the authority tick, a
+// client's forward prediction tick, and EVERY resim replay tick (`SimulationManager.h`, grep
+// `or rollback routing stops being deterministic`). An ungated award double-counts on every
+// client, once per replayed tick, forever.
+```
+
+<!-- header lines 149-150 -->
+```
+        // ⛔ THE GATE. See the banner: a client reaches this on its forward prediction tick
+        // AND on every replayed tick of every resim.
+```
+
+**What breaks if it moves.** `SimulationSystemsExecutor` fires this hook on all three
+roles. Deleting the early return leaves every client awarding points on its own forward
+prediction tick **and once more per replayed tick of every resim**, forever, against a
+replicated value the server keeps overwriting.
+
+**Measured:** deleting the two-line early return that the tag sits on turns exactly
+one case red —
+`RingoutScore.ANonAuthorityRoleAwardsNothing` (39 cases, 1 failed).
+
+⚠ ~~The gate must stay on `m_isAuthority`~~ — **corrected by task 19: there is no
+`m_isAuthority`.** What survives of that instruction is its second half, and it is unchanged:
+the gate must not be re-derived from `step`. That the step cannot answer the question is a
+`static_assert` — see **G-09** below. The role now has exactly one source, the executor's
+`isAuthority` parameter, and the assertion's message says so.
+
+**Replaced by**, in `SystemsExecutor.h`, one branch shared by all four hooks:
+
+```cpp
+static constexpr SystemRoleAffinity kRoleAffinity = SystemRoleAffinity::AuthorityOnly;   // the system says it
+...
+if (!firesOnRole<SystemT>(isAuthority))   // the executor acts on it, before it even projects the view
+    return;
+```
+
+`SimulationManager` hands the executor `!m_runsPrediction` at all eight fire sites, so the role
+is DERIVED at every site from the one bool the manager is constructed with, and `postIntegrate`
+is never entered off the authority rather than entering and returning.
+
+**The measurement that replaces this entry’s injection.** Stubbing
+`SimulationSystemsExecutor::firesOnRole` to `return true` — the executor-level form of deleting
+the early return — turns `RingoutScore.ANonAuthorityRoleAwardsNothing` red. That case now drives
+the real executor rather than the system directly, so the injection it bites on is the gate
+itself. Reproduced by ring-out task 19; the arm and its counts are in that task’s notes.
+
+### G-02 — RETIRED, replaced by a compile-time declaration
+
+**Tag site, as it stood:** `BrawlerRingoutScoreSystem.h`, on `bool m_isAuthority = false;`.
+Both the tag and the member are DELETED.
+
+**The fence, verbatim:**
+
+<!-- header lines 44-47 -->
+```
+// ⭐ IT DEFAULTS TO FALSE, AND THAT IS THE DESIGN. A `ScoreSystem` nobody configured awards
+// NOTHING. The failure mode of a forgotten wiring call is a scoreboard stuck at zero — loud,
+// harmless, and repairable — rather than a client quietly inventing points that the server
+// never granted and the replicated value keeps overwriting.
+```
+
+<!-- header lines 283-283 -->
+```
+    // ⛔ THE ROLE GATE, DEFAULTED CLOSED. See `setIsAuthority`.
+```
+
+**What breaks if it moves.** Changing the initialiser to `true` — the natural "make it
+work out of the box" edit — inverts the failure mode of a forgotten wiring call from a
+scoreboard stuck at zero into every client inventing points the server never granted.
+
+⛔ **The compiler CANNOT take this one, and that was measured rather than assumed.**
+`ScoreSystem` holds a `std::unordered_map`, so it is not usable in a constant expression;
+the probe `constexpr ScoreSystem s; return s.getIsAuthority();` fails to compile with
+MSVC `C3615: constexpr function cannot result in a constant expression`. The default is
+pinned at run time instead, by `RingoutScore.SatisfiesTheSimulationSystemConcept`.
+
+**Replaced by** the declaration itself. There is no longer a flag to default: the system states
+`kRoleAffinity = SystemRoleAffinity::AuthorityOnly` and the `SimulationSystem` concept
+**requires** the member, so a system that says nothing does not compile. What used to be a
+forgettable wiring call is now a compile error at the conformer.
+
+⭐ **The claim this entry could only pin at run time is now a `static_assert`.** The `C3615`
+finding above stands and is why: `ScoreSystem` holds a `std::unordered_map`, so it is still not
+usable in a constant expression, and `constexpr ScoreSystem s;` still will not compile. But the
+affinity is a `static constexpr` on the CLASS, not a member of an instance, so
+`RingoutScore.SatisfiesTheSimulationSystemConcept`’s
+`STATIC_REQUIRE(ScoreSystem::kRoleAffinity == SystemRoleAffinity::AuthorityOnly)` pins it at
+compile time without needing an object at all.
+
+⚠ **And the failure mode this entry defended is gone rather than improved.** "A forgotten
+wiring call" was the hazard; there is no wiring call. `SystemRoleAffinity.h` records why neither
+enumerator is a default — the argument is the same one, moved to where the next system will
+read it.
+
+### G-05 — RETIRED, replaced by the executor's role gate
+
+**Tag site, as it stood:** `BrawlerRingoutScoreSystem.h`, on the `if (!this->m_isAuthority) return;`
+in `onCharacterRegistered`. Both the tag and the statement are DELETED.
+
+**The fence, verbatim:**
+
+<!-- header lines 245-249 -->
+```
+    // ⛔ AUTHORITY ONLY, like the award itself. On a client the table stays empty for the life
+    // of the session — the same property `ASimulationManagerUImpl::m_authorityRegisteredIds`
+    // and task 3's `m_spawnSlots` both rely on, and for the same reason: nothing on that role
+    // ever writes it, so nothing on that role can read a wrong answer out of it. A client
+    // learns scores from the replicated `UPROPERTY` task 5 adds, never from here.
+```
+
+**What breaks if it moves.** Ungating it gives a client a roster it has no business
+holding, which is the precondition for the client reading a wrong answer out of a table
+nothing on that role ever writes correctly. The property the code rests on is that on a
+client the table is empty for the life of the session.
+
+⚠ **Measured, and this is the honest half:** deleting this gate leaves all 39 cases green.
+It is a prohibition with no machine backstop; the suite drives registration only through
+authority rigs.
+
+**Replaced by** the same one branch as G-01, applied to the lifecycle hooks:
+`notifyCharacterRegistered` consults `firesOnRole<SystemT>(isAuthority)` before it projects, so
+off the authority `onCharacterRegistered` is **not called at all**. The property the code rests
+on — on a client the table is empty for the life of the session — now holds BY CONSTRUCTION
+rather than by this hook remembering to return.
+
+⭐ **This is the entry the retirement is worth most for.** Its own honest half above says
+deleting the gate left all 39 cases green: a prohibition with no machine backstop. The
+replacement has two.
+`SystemsExecutor.AuthorityOnlySystemIsInertOffTheAuthority` drives all four hooks off the
+authority against a recording system and asserts every counter stays 0, and the rewritten
+`RingoutScore.ANonAuthorityRoleAwardsNothing` drives the real executor and asserts
+`scoreEntryCount() == 0` after a registration sweep. Both go red on the `firesOnRole` stub.
+
+### G-07 — RETIRED, the asymmetry it forbade no longer exists
+
+**Tag site, as it stood:** `BrawlerRingoutScoreSystem.h`, immediately above `onCharacterUnregistered`.
+The tag is DELETED; the ungated hook remains, now gated once, in the executor.
 
 **The fence, verbatim:**
 
@@ -234,15 +301,14 @@ therefore true as written. ⛔ **This is the one guard of the seven with no mach
 backstop in either direction**, and the only protection it has is that deleting the
 declaration takes its tag with it and orphans this entry.
 
----
+**Replaced by** nothing, because the asymmetry it forbade cannot be written any more. All four
+hooks share ONE gate in the executor, so there is no per-hook role branch to add here and none
+to leave out — "ungated, deliberately" has stopped being a decision a reviewer can second-guess.
 
-## §R Retired ids
-
-Spent forever. `guard_tag_lint.ps1` CHECK 4 rejects any tag naming one.
-
-⚠ **CHECK 4 does not check that the assertion which replaced a fence still exists.** Each
-entry below therefore names its id inside the assertion's own message text, so deleting
-the assertion deletes the only surviving mention of the id.
+⚠ **The retired text’s measurement stands and explains why this had to be structural.**
+Injecting a role gate into `onCharacterUnregistered` left all 39 cases green; so did deleting
+G-05’s. Two prohibitions with no backstop in either direction is what a per-system flag costs,
+and it is the argument `SystemRoleAffinity.h` records for requiring the declaration.
 
 ### G-08 — RETIRED, converted to a `static_assert`
 

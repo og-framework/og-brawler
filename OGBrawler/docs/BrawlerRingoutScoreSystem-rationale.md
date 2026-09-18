@@ -69,16 +69,36 @@ What remains is the argument for the split, which no assertion carries.
 // is in the sim and replays identically, and the AWARD is here, outside it, on one role.
 ```
 
-## 4. The role gate, and why the derivation is in the UE layer
+## 4. The role gate, and where the derivation lives
 
-⭐ **R0-5 — this fence is not orphaned here; a WORKING COPY already stands at the site**
-**where the edit it forbids is actually typed.** `SimulationManagerUImpl.cpp`, directly
-above `m_systemsExec.get<brawlerRingout::ScoreSystem>().setIsAuthority(worldIsAuthority);`,
-carries the same two prohibitions in its own words: *"⛔ worldIsAuthority, NOT
-HasAuthority(). bReplicates = false makes Role always authority on this actor"* and
-*"⛔ ABOVE THE ROLE BRANCH, AND THAT PLACEMENT IS THE PROOF THE WINDOW IS EMPTY"*. Because
-the forbidden edit is typed **there**, `⛔G-nn` at the declaration here could not reach the
-editor, so this block is rationale and carries no tag. Verified verbatim on 2026-09-13.
+⛔ **Ring-out task 19 moved the gate out of this system entirely; this paragraph is what is
+left of the argument.** `ScoreSystem` now declares
+`static constexpr SystemRoleAffinity kRoleAffinity = SystemRoleAffinity::AuthorityOnly;` and
+`SimulationSystemsExecutor` acts on that declaration: one branch, shared by all four hooks and
+taken above the view projection, so off the authority no hook here is entered at all. The role
+that branch tests is derived at each of the manager's eight fire sites from
+`SimulationManager::m_runsPrediction` — the single bool the manager is constructed with — and
+`SimulationManager.h` is engine-free core that **the low-level-test target compiles**, so the
+derivation the title of this section placed in the UE layer is now inside a test's reach. The
+"why a setter rather than the executor's `std::piecewise_construct` ctor" argument went with the
+setter: there is no flag, no wiring call, and no window in which the role is unknown, because
+nothing stores it. What the two affinities mean, and why neither is a default, is
+`OGSimulation/SystemRoleAffinity.h`. The four prohibitions this section used to support are
+retired in `BrawlerRingoutScoreSystem-guards.md` §R — **G-01**, **G-02**, **G-05**, **G-07** —
+each naming the executor-level case that replaced it.
+
+⚠ **One UE-layer role site remains, and it is not this one.** `OnPostPhysicsStep` still gates
+`pushRingoutScoresToCharacters` on `!m_manager->runsPrediction()`. That gates the score's
+REPLICATION, not the award, and per F26 nothing mechanical checks it. Task 19 removed one of the
+layer's two role sites, not both.
+
+### 4a. Superseded, retained as provenance
+
+⛔ **The two blocks below are the pre-conversion header's own bytes and they are NO LONGER
+TRUE OF THE TREE.** They are kept because this file's premise is that extraction is a move, and
+because section 15's carried-coverage measurement counts them; read them as history. The first
+argues that the derivation must live in the UE layer, which task 19 falsified by moving it into
+`SimulationManager`; the second argues for a setter that no longer exists.
 
 <!-- header lines 49-56 -->
 ```
@@ -91,21 +111,6 @@ editor, so this block is rationale and carries no tag. Verified verbatim on 2026
 // `RingoutScore.ANonAuthorityRoleAwardsNothing` can drive both a prediction tick and a resim
 // tick against it.
 ```
-
-✅ **R0 — the three load-bearing facts in the "why a setter" argument below were each
-re-verified 2026-09-13:** `m_systemsExec` is a plain value member (`BrawlerSystemsExec`
-`m_systemsExec;`, no `std::optional`); `SimulationSystemsExecutor() = default;` does still
-exist beside the `std::piecewise_construct` constructor, so that constructor closes no
-gap; and the `setIsAuthority` call site does sit above the role branch that emplaces
-`m_manager`, with nothing between them.
-
-⚠ **Three inbound citations point a reader at `setIsAuthority` for this argument** —
-`SimulationManagerUImpl.h` (*"See brawlerRingout::ScoreSystem::setIsAuthority for why a
-setter and not the executor's piecewise_construct ctor"*),
-`BrawlerRingoutScoreSystemTest.cpp` and `BrawlerRingoutScorePushContractTest.cpp`. After
-this conversion those citations land on a bare declaration, and the reader's next hop is
-the two-line docs pointer at the top of the header, then this section. **None of the three
-was edited** — the header is this task's only source-file scope.
 
 <!-- header lines 91-110 -->
 ```
@@ -306,12 +311,17 @@ death.
 ## 15. What this header used to look like, and what was dropped
 
 The pre-conversion file was **305 lines, 177 of them comment (58 %)** — 176 once the
-SPDX line is set aside. The converted file is **185 lines** and, measured rather than
-claimed, it contains **zero explanatory comment lines**: 1 SPDX line, 1 docs pointer,
-**9 tags** (7 `⛔G` + 2 `∴D`), one `} // namespace brawlerRingout`, and nothing else that
-is a comment. **28 of its lines are assertion or log message text** — English that is now
+SPDX line is set aside. Task 14's converted file was **185 lines** and, measured rather than
+claimed, contained **zero explanatory comment lines**: 1 SPDX line, 1 docs pointer, 9 tags
+(7 `⛔G` + 2 `∴D`), one `} // namespace brawlerRingout`, and nothing else that is a comment.
+⚠ **Do not read those two numbers as the shipped file's.** Ring-out task 19 deleted the role
+gate, its member and its accessors from the header and retired four of the seven `⛔G` tags, so
+both the line count and the tag count are smaller now; the property that survives is the one
+this section is actually about — **still zero explanatory comment lines**. Count them from the
+header if you need a figure; nothing here is the source of truth for one.
+A double-digit number of its lines are assertion or log message text — English that is now
 code, cannot be skimmed past, and cannot go stale separately from the check it explains.
-⚠ The comment-only measure does not see those 28 lines; report them explicitly or the
+⚠ The comment-only measure does not see those lines; report them explicitly or the
 reduction looks larger than it is.
 
 **Deleted from the header and carried nowhere**, as the rule requires in its §6: the

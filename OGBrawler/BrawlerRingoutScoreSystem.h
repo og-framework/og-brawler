@@ -12,6 +12,7 @@
 #include "OGSimulation/SimulationTimeContext.h"
 #include "OGSimulation/SimulationSerialization.h"
 #include "OGSimulation/SystemsExecutor.h"
+#include "OGSimulation/SystemRoleAffinity.h"
 #include "OGSimulation/OGAssert.h"
 #include "OGBrawler/SimulatableBrawler.h"
 #include "OGBrawler/BrawlerRingoutSimulation.h"
@@ -28,8 +29,7 @@ class ScoreSystem
 public:
     using RequiredSimulatables = SimulatableList<SimulatableBrawler>;
 
-    void setIsAuthority(bool isAuthority) { this->m_isAuthority = isAuthority; }
-    bool getIsAuthority() const { return this->m_isAuthority; }
+    static constexpr SystemRoleAffinity kRoleAffinity = SystemRoleAffinity::AuthorityOnly;
 
     uint32_t scoreOf(unsigned int characterId) const
     {
@@ -54,10 +54,6 @@ public:
                        StorageView<SimulatableBrawler> view,
                        const simulatableBrawler::StaticData& /*staticData*/)
     {
-        // ⛔G-01  docs/BrawlerRingoutScoreSystem-guards.md
-        if (!this->m_isAuthority)
-            return;
-
         struct Row
         {
             unsigned int id;
@@ -117,14 +113,10 @@ public:
                                StorageView<SimulatableBrawler> /*view*/,
                                const simulatableBrawler::StaticData& /*staticData*/)
     {
-        // ⛔G-05  docs/BrawlerRingoutScoreSystem-guards.md
-        if (!this->m_isAuthority)
-            return;
         // ⛔G-06  docs/BrawlerRingoutScoreSystem-guards.md
         this->m_scores.emplace(id, 0u);
     }
 
-    // ⛔G-07  docs/BrawlerRingoutScoreSystem-guards.md
     void onCharacterUnregistered(unsigned int id,
                                  StorageView<SimulatableBrawler> /*view*/,
                                  const simulatableBrawler::StaticData& /*staticData*/)
@@ -133,9 +125,6 @@ public:
     }
 
 private:
-    // ⛔G-02  docs/BrawlerRingoutScoreSystem-guards.md
-    bool m_isAuthority = false;
-
     // ∴D-02  docs/BrawlerRingoutScoreSystem-rationale.md
     std::unordered_map<unsigned int, uint32_t> m_scores;
 };
@@ -156,8 +145,9 @@ struct RoleBearingStep { bool getIsAuthority() const { return true; } };
 
 static_assert(SimulationSystem<brawlerRingout::ScoreSystem, simulatableBrawler::StaticData>,
     "brawlerRingout::ScoreSystem must satisfy the SimulationSystem concept: a "
-    "RequiredSimulatables alias naming a SimulatableList<>, plus preIntegrate / postIntegrate / "
-    "onCharacterRegistered / onCharacterUnregistered taking (step|id, view, staticData). "
+    "RequiredSimulatables alias naming a SimulatableList<>, a static constant SystemRoleAffinity "
+    "kRoleAffinity, plus preIntegrate / postIntegrate / onCharacterRegistered / "
+    "onCharacterUnregistered taking (step|id, view, staticData). "
     "Asserted at the definition, not only where SimulationSystemsExecutor instantiates it, "
     "because that instantiation is in SimulationManagerUImpl.h - a UE module file the "
     "low-level-test target cannot compile - so the diagnostic would otherwise appear only in "
@@ -174,9 +164,11 @@ static_assert(!brawlerRingout::detail::StepExposesARole<SimulationTimeStep>,
     "SimulationTimeStep has grown a role accessor. Was guard G-09 (SimulationTimeStep CANNOT "
     "TELL YOU THE ROLE), retired into this assertion by ringout task 14. StepKind describes the "
     "CLOCK and getIsResimulating() is FALSE on both the authority tick and a client's forward "
-    "prediction tick, which is why the flag is plumbed in through setIsAuthority instead. If "
-    "this fires, the step CAN now answer the question and ScoreSystem::m_isAuthority may be "
-    "redundant - re-read the guards doc before deleting either.");
+    "prediction tick, so the step separates replay from live, never server from client. Ringout "
+    "task 19 moved the role OUT of this system: the executor reads kRoleAffinity above and is "
+    "handed the role by SimulationManager on every fire, so there is exactly ONE role source. If "
+    "this fires, the step has become a SECOND one - re-read the guards doc before letting any "
+    "hook here branch on it.");
 
 static_assert(brawlerRingout::detail::StepExposesARole<brawlerRingout::detail::RoleBearingStep>,
     "VACUITY CONTROL for the assertion above: StepExposesARole must be TRUE of a step that does "

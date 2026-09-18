@@ -50,11 +50,10 @@ input-history pane. The constant block, the `clamp*` functions, the `*Layout` PO
 file, name for name.
 
 ⛔ **The number of differences is deliberately not stated.** A sentence naming a total is
-falsified by the next difference somebody adds — and this one already was: an earlier
-revision said *"exactly THREE differences that matter"* and was wrong when it was read,
-because `ScoreboardLayout::maxRows` is not console-driven while the panel's `visibleRows`
-**is** clamped by `clampPanelVisibleRows`. Section 3 below states the ones that have a
-reason worth writing down; it does not claim to be exhaustive.
+falsified by the next difference somebody adds, and `ScoreboardLayout::maxRows` — not
+console-driven, while the panel's `visibleRows` **is** clamped by `clampPanelVisibleRows` —
+is one such difference already. Section 3 below states the ones that have a reason worth
+writing down; it does not claim to be exhaustive.
 
 ---
 
@@ -111,9 +110,9 @@ ultrawide, and **640 px off-screen** at 1280.
 
 > ⚠ **Measured, not reasoned** — through the shipped `placedScoreboardLayout`: at 2560 the
 > hardcoded board's right edge lands at 1920 against a correct 2560, and at 1280 it lands at
-> 1920 against a correct 1280. The direction is the whole point of the paragraph and it was
-> once written the other way round; the same transposition stood in the sibling document and
-> was corrected there in the same pass.
+> 1920 against a correct 1280. ⛔ **The direction is the point:** a hardcoded width LARGER
+> than the viewport is what pushes the board off-screen, so the off-screen case is the
+> SMALLER viewport.
 
 ⛔ **Do not drop the parameter and do not hardcode a width.**
 
@@ -402,8 +401,8 @@ arithmetic rather than leaving it in this paragraph.
 
 ### 8.1 ⛔ "Over-cap is unreachable" is a claim, and it is false
 
-Stated separately because an earlier revision of the suite's own comment asserted the
-opposite and it was read as a verified fact. Nothing in `Source/OGBrawlerUnreal` rejects a
+Stated separately because the claim is easy to assume and nothing in the tree enforces it:
+nothing in `Source/OGBrawlerUnreal` rejects a
 join (`ApproveLogin`, `PreLogin`, `MaxPlayers`, `GameSession` → zero hits) <!-- lint-anchor-ignore: these four names are asserted ABSENT - the sentence exists to report zero hits, so a resolving name would falsify it -->, the cap fence
 logs and proceeds, and the score roster seeds an entry for every authority-registered
 character. **Eight rows can therefore exist**, which is what makes 3.1's accepted overlap an
@@ -520,12 +519,11 @@ scale-invariant: **no console value can flip it.**
 
 A non-positive height is therefore reachable only by **authoring** one — either by editing
 the two base constants into disagreement, or by handing this function a layout a caller
-assembled by hand, which the suite itself does. ⚠ *"Only by editing the constants"* — the
-wording carried here until it was corrected — overstated it. Measured: `ScoreboardLayout` is
-a mutable aggregate, so setting `swatchInsetY` to 12 on an otherwise default layout yields a
-swatch height of **-6** with no constant touched.
+assembled by hand, which the suite itself does. ⚠ **The second path needs no constant
+touched.** Measured: `ScoreboardLayout` is a mutable aggregate, so setting `swatchInsetY` to
+12 on an otherwise default layout yields a swatch height of **-6**.
 
-⭐ **The load-bearing half is unchanged and was re-measured** (2026-09-16): the sign is
+⭐ **The load-bearing half holds, and is measured** (2026-09-16): the sign is
 scale-invariant, so no console value can flip it — that -6 becomes -24 at scale 4 and never
 crosses zero.
 

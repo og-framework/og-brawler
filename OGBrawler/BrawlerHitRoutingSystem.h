@@ -49,6 +49,7 @@
 #include "OGSimulation/SimulatableList.h"       // SimulatableList
 #include "OGSimulation/StorageView.h"           // StorageView
 #include "OGSimulation/SimulationTimeContext.h" // SimulationTimeStep
+#include "OGSimulation/SystemRoleAffinity.h"    // SystemRoleAffinity
 #include "OGBrawler/SimulatableBrawler.h"       // SimulatableBrawler, simulatableBrawler::StaticData
 #include "OGBrawler/BrawlerProjectileSimulation.h"
 #include "OGBrawler/HitReaction.h"
@@ -76,6 +77,8 @@ namespace brawlerHitRouting
         // executor projects the full storage down to exactly this list before
         // calling each hook. UNQUALIFIED SimulatableList — global namespace (D12).
         using RequiredSimulatables = SimulatableList<SimulatableBrawler>;
+
+        static constexpr SystemRoleAffinity kRoleAffinity = SystemRoleAffinity::AllRoles;
 
         // preIntegrate — no work in v1. Routing is a post-integrate reduction
         // (it reads each character's just-produced hitsThisTick[] / projectile slot
