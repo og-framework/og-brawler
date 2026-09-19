@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <type_traits>
 
 #include "glm/vec2.hpp"
 #include "glm/vec3.hpp"
@@ -297,6 +298,14 @@ struct TickLanePollCounts
 	uint32_t delayServerUpdated   = 0u;
 	uint32_t delayServerUnchanged = 0u;
 	uint32_t delayServerElided    = 0u;
+
+	// The relay-health lane. `Updated` is the one that matters: it is a pending cell
+	// learning that its capture finally arrived, which is the whole point of the bar.
+	uint32_t relayCellsRecorded  = 0u;
+	uint32_t relayCellsUpdated   = 0u;
+	uint32_t relayCellsUnchanged = 0u;
+	uint32_t relayCellsIgnored   = 0u;
+	uint32_t relayCellsElided    = 0u;
 };
 
 // The window the retained/visible read spans, ending at the lanes' own axis tick. Both
@@ -472,6 +481,189 @@ inline void pollInputDelayLane(const AppliedCaptureInversion&         inversion,
 	}
 }
 
+// ---------------------------------------------------------------------------
+// THE DELAY LANE'S CLIENT HALF FOR A REMOTE CHARACTER.
+//
+// A remote proxy has no delay line of its own -- there is no capture of this client's
+// to delay -- so `delay->effectiveTicks` says nothing about it. What this client
+// applied for a remote is the RELAYED-RESOLUTION decision: the scheduled read's served
+// capture tick, observed per sim tick by the resolver's own ring.
+//
+// Cell X carries "capture X was applied at tick X + d", so the served capture tick IS
+// the cell and the sim tick minus it IS d -- the same two numbers, another source.
+// ⛔ THE CELL IS THE CAPTURE TICK, exactly as the local half's is.
+//
+// The server half names ONE tick per capture, so the client half must name one too, and
+// the earliest is the one the server's own is comparable with. A fallback reused across
+// many ticks is the case that makes this matter: it names one capture at many sim ticks,
+// and only the earliest of them is that capture's own delay.
+// ⭐ FIRST APPLICATION WINS -- the local half's own rule.
+//
+// It is expressed as a MINIMUM rather than as an already-filled test because the ring is
+// addressed by sim tick and therefore walked out of order.
+// ⛔ "THE FIRST SAMPLE SEEN" WOULD DEPEND ON WHERE THE RING HAPPENED TO WRAP.
+//
+// ⛔ MONOTONE: re-presenting a window can only lower a cell, never raise it.
+// ---------------------------------------------------------------------------
+template <typename RemoteObservationsT>
+inline void pollRemoteDelayClientHalf(const RemoteObservationsT& observations,
+                                      InputHistoryTickLanes&     lanes,
+                                      TickLanePollCounts&        counts)
+{
+	for (std::size_t index = 0u; index < observations.size(); ++index)
+	{
+		const auto* observation = observations.at(index);
+		if (observation == nullptr)
+			continue;
+
+		// This client resolved the injected neutral: no capture of the sender's stands
+		// behind the tick to have been late or early with.
+		// ⛔ THE HALF IS LEFT ABSENT, NEVER FILED AS A ZERO.
+		if (!observation->hasAppliedCaptureTick)
+			continue;
+
+		const std::optional<uint32_t> laneTick =
+			lanes.gate().laneTickOf(observation->appliedCaptureTick);
+		if (!laneTick.has_value())
+		{
+			++counts.delayClientElided;
+			continue;
+		}
+
+		// ⛔ THE OPERANDS ARE CAST BEFORE THE SUBTRACTION, as the server half's are: a
+		//   capture newer than the tick that applied it is a finding, not a huge unsigned.
+		const int32_t applied = static_cast<int32_t>(observation->simTick)
+		                      - static_cast<int32_t>(observation->appliedCaptureTick);
+
+		const InputDelayCell* existing = lanes.delay().find(*laneTick);
+		if (existing != nullptr && existing->clientDelayTicks.has_value()
+			&& *existing->clientDelayTicks <= applied)
+		{
+			++counts.delayClientIgnored;
+			continue;
+		}
+
+		InputDelayCell merged   = (existing != nullptr) ? *existing : InputDelayCell{};
+		merged.clientDelayTicks = applied;
+
+		const LaneWriteResult result = lanes.editDelay().record(*laneTick, merged);
+		if (result == LaneWriteResult::IgnoredStale)
+			++counts.delayClientElided;
+		else
+			++counts.delayClientRecorded;
+	}
+}
+
+
+// ---------------------------------------------------------------------------
+// THE RELAY-HEALTH LANE, FROM THE OBSERVATION RING AND THE ARRIVAL RING.
+//
+// One cell per SIM tick, joined to the arrival ring through the observation's own
+// `probeTick` -- the capture tick the read asked for. The two rings are keyed on
+// different clocks and that join is the only thing that puts them together.
+//
+// The observation ring is last-write-wins, so a resim re-answers a tick this bar has
+// already recorded; the answer the bar exists to show is the PREDICTION's.
+// ⭐ ONLY THE ARRIVAL HALF MAY EVER CHANGE -- a re-read must not repaint a miss green.
+// ⚠ The first answer this POLL SAW is what is kept -- a resim landing between two polls
+//   replaces the ring's entry before the display ever reads the first one.
+// ---------------------------------------------------------------------------
+
+// ⛔ THE FOUR FALLBACK VERDICTS ARE ONE READ HALF WITH FOUR ARRIVAL HALVES; Hit and
+//   Neutral have no arrival half left to learn, so nothing may move them.
+constexpr bool relayVerdictIsFallback(RelayReadVerdict verdict)
+{
+	return verdict == RelayReadVerdict::FallbackPending
+	    || verdict == RelayReadVerdict::FallbackArrivedReplayable
+	    || verdict == RelayReadVerdict::FallbackArrivedTooLate
+	    || verdict == RelayReadVerdict::FallbackNeverArrived;
+}
+
+template <typename RemoteObservationsT, typename RemoteArrivalsT>
+inline void pollRelayHealthLane(const RemoteObservationsT& observations,
+                                const RemoteArrivalsT&     arrivals,
+                                uint32_t                   rollbackWindowTicks,
+                                InputHistoryTickLanes&     lanes,
+                                TickLanePollCounts&        counts)
+{
+	if (!observations.hasNewestSimTick())
+		return;
+
+	const uint32_t frontierSimTick = observations.newestSimTick();
+
+	for (std::size_t index = 0u; index < observations.size(); ++index)
+	{
+		const auto* observation = observations.at(index);
+		if (observation == nullptr)
+			continue;
+
+		const std::optional<uint32_t> laneTick =
+			lanes.gate().laneTickOf(observation->simTick);
+		if (!laneTick.has_value())
+		{
+			++counts.relayCellsElided;
+			continue;
+		}
+
+		RelayReadFacts facts;
+		facts.simTick             = observation->simTick;
+		facts.frontierSimTick     = frontierSimTick;
+		facts.rollbackWindowTicks = rollbackWindowTicks;
+		facts.hit                 = observation->outcome == ScheduledRelayedReadOutcome::Hit;
+		facts.scheduledRead       = observation->probeTickFormed;
+		facts.missLabel = relayMissLabelOf(observation->outcome, observation->missClass);
+
+		// ⛔ THE JOIN KEY IS THE TICK THE READ ASKED FOR, never the one it served.
+		if (observation->probeTickFormed)
+		{
+			if (const auto* arrival = arrivals.findArrival(observation->probeTick))
+			{
+				facts.arrived          = true;
+				facts.arrivedAtSimTick = arrival->arrivedAtSimTick;
+			}
+		}
+
+		RelayHealthCell cell = relayHealthCellOf(facts);
+
+		const RelayHealthCell* existing = lanes.relayHealth().find(*laneTick);
+		if (existing != nullptr)
+		{
+			if (!relayVerdictIsFallback(existing->verdict)
+				|| !relayVerdictIsFallback(cell.verdict))
+			{
+				++counts.relayCellsIgnored;
+				continue;
+			}
+
+			// The cause belongs to the read that fell back, not to whatever re-read it.
+			cell.missLabel = existing->missLabel;
+		}
+
+		switch (lanes.editRelayHealth().record(*laneTick, cell))
+		{
+		case LaneWriteResult::RecordedCell:     ++counts.relayCellsRecorded;  break;
+		case LaneWriteResult::UpdatedCell:      ++counts.relayCellsUpdated;   break;
+		case LaneWriteResult::IgnoredDuplicate: ++counts.relayCellsUnchanged; break;
+		case LaneWriteResult::IgnoredStale:     ++counts.relayCellsElided;    break;
+		}
+	}
+}
+
+// A locally controlled character has no relayed read to observe, and THIS IS WHAT THAT
+// ABSENCE IS -- a type, so the poll's two client-half sources are mutually exclusive by
+// construction rather than by two call sites agreeing to pass the right one.
+// ⛔ A LOCAL POLL CANNOT COMPILE THE REMOTE READ, AND A REMOTE POLL CANNOT COMPILE THE
+//   LOCAL ONE: the delay line and the relay ring are never both a cell's client half.
+struct NoRemoteDelayObservations
+{
+};
+
+// The same absence, for the arrival ring. ⛔ ITS OWN TYPE rather than a reuse of the one
+//   above: the two rings are separate sources and a poll must not be able to bring one.
+struct NoRemoteInputArrivals
+{
+};
+
 // One whole lane poll: every lane, one tick, one axis, ONE gate decision.
 //
 // ⚠ THE TWO RE-POLL RULES DIFFER ON PURPOSE. Provenance UPDATES an already-recorded tick,
@@ -495,7 +687,17 @@ inline void pollInputDelayLane(const AppliedCaptureInversion&         inversion,
 // backward jump and nothing else, and the clock's own resync count, which sees either
 // direction and names the exact tick the clock left.
 // ⛔ RESIDENCY IS NOT CONSULTED: its edges cannot tell a wipe from a mid-sweep push.
-template <typename SlotReader>
+//
+// `remoteObservations` is the relayed-read ring for a REMOTE character, or
+// `NoRemoteDelayObservations` for a locally controlled one. It supplies the delay
+// lane's client half in the remote's case and nothing else; the two sources are
+// selected by TYPE, so neither poll compiles the other's read.
+//
+// `remoteArrivals` is that character's arrival ring, and `rollbackWindowTicks` is how far
+// back a resim may still reach -- the two things the relay-health lane needs beyond the
+// observations. ⛔ THE TWO REMOTE SOURCES ARE PRESENT OR ABSENT TOGETHER, asserted below
+//   rather than left to two call sites agreeing.
+template <typename SlotReader, typename RemoteObservationsT, typename RemoteArrivalsT>
 TickLanePollCounts pollInputHistoryLanes(const SlotReader&               reader,
                                          uint32_t                        liveSimTick,
                                          DAttackState                    machineState,
@@ -504,9 +706,18 @@ TickLanePollCounts pollInputHistoryLanes(const SlotReader&               reader,
                                          std::optional<uint32_t>         predictionOffsetTicks,
                                          std::optional<InputDelayDecomposition> delay,
                                          std::optional<ClockDriftReading> clock,
+                                         const RemoteObservationsT&      remoteObservations,
+                                         const RemoteArrivalsT&          remoteArrivals,
+                                         uint32_t                        rollbackWindowTicks,
                                          AppliedCaptureInversion&        inversion,
                                          InputHistoryTickLanes&          lanes)
 {
+	static_assert(std::is_same_v<RemoteObservationsT, NoRemoteDelayObservations>
+		== std::is_same_v<RemoteArrivalsT, NoRemoteInputArrivals>,
+		"The relayed-read ring and the arrival ring are one character's two remote sources. "
+		"A poll holding one without the other would draw a relay-health bar that can never "
+		"learn an arrival, or a delay bar with no read to fill it.");
+
 	TickLanePollCounts counts;
 
 	// ⛔ READ BEFORE THE NOTE BELOW OVERWRITES IT, AND BY VALUE: every difference this
@@ -605,11 +816,41 @@ TickLanePollCounts pollInputHistoryLanes(const SlotReader&               reader,
 		return counts;
 
 	pollProvenanceLane(inversion, residency, lanes, counts);
+
+	// The local path below is then reached by exactly the code it always was.
+	// ⛔ BESIDE `pollInputDelayLane`, NEVER INSIDE IT -- that is what makes "a local
+	//   character's delay cells are unchanged" a property of the shape, not of a branch.
+	if constexpr (!std::is_same_v<RemoteObservationsT, NoRemoteDelayObservations>)
+	{
+		pollRemoteDelayClientHalf(remoteObservations, lanes, counts);
+		pollRelayHealthLane(remoteObservations, remoteArrivals, rollbackWindowTicks,
+			lanes, counts);
+	}
+
 	pollInputDelayLane(inversion, liveSimTick, delay, lanes, counts);
 	pollMachineStateLane(*liveLaneTick, machineState, lanes, counts);
 	lanes.noteAxisTick(*liveLaneTick);
 
 	return counts;
+}
+
+// The poll a LOCALLY CONTROLLED character takes: the same one, with no relayed read to
+// observe. ⛔ A FORWARDER, so the one-source rule above has one implementation.
+template <typename SlotReader>
+TickLanePollCounts pollInputHistoryLanes(const SlotReader&               reader,
+                                         uint32_t                        liveSimTick,
+                                         DAttackState                    machineState,
+                                         std::optional<CaptureRowFields> liveInput,
+                                         bool                            pauseWhileIdle,
+                                         std::optional<uint32_t>         predictionOffsetTicks,
+                                         std::optional<InputDelayDecomposition> delay,
+                                         std::optional<ClockDriftReading> clock,
+                                         AppliedCaptureInversion&        inversion,
+                                         InputHistoryTickLanes&          lanes)
+{
+	return pollInputHistoryLanes(reader, liveSimTick, machineState, liveInput, pauseWhileIdle,
+		predictionOffsetTicks, delay, clock, NoRemoteDelayObservations{},
+		NoRemoteInputArrivals{}, 0u, inversion, lanes);
 }
 
 } // namespace brawlerInputHistoryVisualization

@@ -340,4 +340,34 @@ inline DirectionGlyph directionGlyphOf(const PanelLayout& layout,
 	return glyph;
 }
 
+// ---------------------------------------------------------------------------
+// THE ABSENT REMOTE PANEL, MARKED RATHER THAN SILENT.
+//
+// The row panel is built from this client's OWN capture line, and a remote proxy has
+// none: there is no capture of ours to delay, so there are no rows to fold. The meter
+// beside it DOES draw for that character, so a reader who sees two meter stacks and one
+// row panel would otherwise be left to guess whether the rows were missing, empty, or
+// simply not drawn yet.
+// ⛔ A HEADER, NEVER AN EMPTY PANEL: an empty panel claims the rows were read and found
+//   to be nothing, which is the one thing that did not happen.
+//
+// It sits beside the real panel rather than under it, because the panel is already
+// vertically centred on the viewport and a second one below it would not fit at 720p.
+// ---------------------------------------------------------------------------
+
+// Clear space between the row panel and the header that marks the absent one.
+inline constexpr float kPanelPlaceholderGap = 8.f;
+
+// The placeholder's left edge, and the row it sits on -- the panel's own top row, so the
+// two read as one display rather than as a caption that has drifted.
+inline float panelPlaceholderX(const PanelLayout& layout)
+{
+	return layout.originX + layout.rowWidth + kPanelPlaceholderGap;
+}
+
+inline float panelPlaceholderTopY(const PanelLayout& layout)
+{
+	return panelRowTopY(layout, 0u) + layout.textOffsetY;
+}
+
 } // namespace brawlerInputHistoryVisualization

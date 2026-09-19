@@ -43,6 +43,8 @@
 #include "OGBrawler/BrawlerInputHistoryVisualization.h"
 #include "OGBrawler/BrawlerInputHistoryVisualizationDelay.h"
 #include "OGBrawler/DAttackMachineSimulation.h"
+#include "OGSimulation/Network/RelayReadProbe.h"
+#include "OGSimulation/Network/RemoteInputCache.h"
 #include "OGSimulation/PCTimeManagement/ClientPredictionClock.h"
 
 namespace brawlerInputHistoryVisualization
@@ -305,6 +307,184 @@ constexpr InputDelayVerdict delayVerdictOf(const InputDelayCell& cell)
 		return InputDelayVerdict::ServerLater;
 
 	return InputDelayVerdict::ServerEarlier;
+}
+
+
+// ---------------------------------------------------------------------------
+// THE RELAY-HEALTH LANE -- KEYED ON THE SIM TICK THE REMOTE WAS INTEGRATED AT.
+//
+// The three lanes above answer about a CAPTURE. This one answers about a READ: for a
+// character this client does not control, every tick resolves through the scheduled
+// relayed read, which either finds the capture it was scheduled to find or falls back to
+// the newest one it holds. Whether the capture it wanted ever turned up at all is a
+// SECOND fact, learned later at the arrival door, and one cell carries both.
+//
+// The two halves take the delay lane's own write policies, for its reasons:
+// ⭐ THE READ HALF IS FIRST-VALUE -- what the tick ran on WHEN IT FIRST RAN.
+// ⭐ THE ARRIVAL HALF IS REWRITABLE -- a capture landing later repaints exactly one cell.
+// ---------------------------------------------------------------------------
+
+// WHY a scheduled read fell back, in one letter, printed on the run it names.
+enum class RelayMissLabel : uint8_t
+{
+	None,      // not a fallback, or a fallback with no scheduled read behind it
+	Loss,      // L -- the capture lies inside the store's own span and is absent
+	Starved,   // S -- nothing that new has been relayed yet
+	Evicted,   // O -- the read reached below the oldest capture the store still holds
+	Verify,    // V -- the schedule stamp moved: a tier transition, not loss
+};
+
+inline constexpr uint8_t kRelayMissLabelCount = 5u;
+
+// ⛔ EXACTLY ONE CHARACTER: a wider label would overlap the cell beside the run it marks.
+constexpr char relayMissLabelLetter(RelayMissLabel label)
+{
+	switch (label)
+	{
+	case RelayMissLabel::None:    return '\0';
+	case RelayMissLabel::Loss:    return 'L';
+	case RelayMissLabel::Starved: return 'S';
+	case RelayMissLabel::Evicted: return 'O';
+	case RelayMissLabel::Verify:  return 'V';
+	}
+
+	return '\0';
+}
+
+// The shipped outcome and miss class in this display's vocabulary, TOTAL over both.
+// ⛔ A FALLBACK THAT FORMED NO PROBE TICK NAMES NO CAUSE -- it asked for nothing.
+constexpr RelayMissLabel relayMissLabelOf(ScheduledRelayedReadOutcome   outcome,
+                                          ScheduledRelayedReadMissClass missClass)
+{
+	if (outcome == ScheduledRelayedReadOutcome::VerifyFail)
+		return RelayMissLabel::Verify;
+
+	if (outcome != ScheduledRelayedReadOutcome::Miss)
+		return RelayMissLabel::None;
+
+	switch (missClass)
+	{
+	case ScheduledRelayedReadMissClass::InSpan:      return RelayMissLabel::Loss;
+	case ScheduledRelayedReadMissClass::AboveNewest: return RelayMissLabel::Starved;
+	case ScheduledRelayedReadMissClass::BelowOldest: return RelayMissLabel::Evicted;
+	case ScheduledRelayedReadMissClass::NotAMiss:
+	case ScheduledRelayedReadMissClass::NoProbeTick: return RelayMissLabel::None;
+	}
+
+	return RelayMissLabel::None;
+}
+
+// What one tick's relayed read came to. NoVerdict is the hole; the rest are all real states.
+//
+// A locally controlled character has no relay to be healthy or unhealthy, and saying so
+// keeps the bar -- and the stack's height -- the same whichever character is followed.
+// ⛔ `LocalNoRelay` IS NOT AN ABSENCE.
+enum class RelayReadVerdict : uint8_t
+{
+	NoVerdict,
+	Hit,
+	Neutral,
+	LocalNoRelay,
+	FallbackPending,
+	FallbackArrivedReplayable,
+	FallbackArrivedTooLate,
+	FallbackNeverArrived,
+};
+
+inline constexpr uint8_t kRelayReadVerdictCount = 8u;
+
+struct RelayHealthCell
+{
+	RelayReadVerdict verdict   = RelayReadVerdict::NoVerdict;
+	RelayMissLabel   missLabel = RelayMissLabel::None;
+
+	// Ticks between the read and the arrival, saturating. Meaningful on the two Arrived
+	// verdicts only. ⛔ A ZERO HERE IS NOT "ON TIME" ON ANY OTHER VERDICT.
+	uint8_t          latenessTicks = 0u;
+
+	bool operator==(const RelayHealthCell& o) const
+	{
+		return verdict == o.verdict && missLabel == o.missLabel
+		    && latenessTicks == o.latenessTicks;
+	}
+};
+
+using RelayHealthLane = TickLane<RelayHealthCell>;
+
+// How long after a tick an arrival can still matter to it: a resim reaches back
+// `rollbackWindowTicks`, and past that the relay store itself has outrun the capture.
+// ⛔ THE STORE'S OWN CAPACITY, NAMED RATHER THAN RESTATED AS A LITERAL.
+constexpr uint32_t relayNeverHorizonTicks(uint32_t rollbackWindowTicks)
+{
+	return rollbackWindowTicks + static_cast<uint32_t>(kRemoteInputCacheCapacityTicks);
+}
+
+// Everything one verdict is decided from. The poll assembles it from the observation, the
+// arrival ring and the clock; the decision below is pure and takes nothing else.
+struct RelayReadFacts
+{
+	uint32_t simTick             = 0u;
+	uint32_t frontierSimTick     = 0u;
+	uint32_t rollbackWindowTicks = 0u;
+
+	bool     hit                 = false;
+	// Whether the read asked the relay for a capture tick at all.
+	bool     scheduledRead       = false;
+
+	bool     arrived             = false;
+	uint32_t arrivedAtSimTick    = 0u;
+
+	RelayMissLabel missLabel     = RelayMissLabel::None;
+};
+
+// ⛔ TOTAL, and the rules are applied IN THIS ORDER.
+constexpr RelayHealthCell relayHealthCellOf(const RelayReadFacts& facts)
+{
+	RelayHealthCell cell;
+
+	if (facts.hit)
+	{
+		cell.verdict = RelayReadVerdict::Hit;
+		return cell;
+	}
+
+	// Rung 0, the join window's underflow guard and the replay's ref rung all resolve
+	// without asking the relay for a capture tick, so no arrival could have been late for
+	// them. ⛔ A REAL STATE, NOT A HOLE -- this lane's own rule, like every other.
+	if (!facts.scheduledRead)
+	{
+		cell.verdict = RelayReadVerdict::Neutral;
+		return cell;
+	}
+
+	cell.missLabel = facts.missLabel;
+
+	if (facts.arrived)
+	{
+		// An arrival stamped at or before the tick that wanted it is a race the read lost,
+		// never a negative lateness.
+		const uint32_t lateness = (facts.arrivedAtSimTick > facts.simTick)
+		                              ? (facts.arrivedAtSimTick - facts.simTick)
+		                              : 0u;
+
+		cell.latenessTicks = (lateness > 255u) ? 255u : static_cast<uint8_t>(lateness);
+		cell.verdict       = (lateness <= facts.rollbackWindowTicks)
+		                         ? RelayReadVerdict::FallbackArrivedReplayable
+		                         : RelayReadVerdict::FallbackArrivedTooLate;
+		return cell;
+	}
+
+	// Past the horizon an arrival could neither be replayed into this tick nor even be
+	// stored, so "never" is final rather than "not yet".
+	// ⭐ ONLY AN ACTUAL ARRIVAL WITHDRAWS IT -- the arm above, never a later poll.
+	const uint32_t elapsed = (facts.frontierSimTick > facts.simTick)
+	                             ? (facts.frontierSimTick - facts.simTick)
+	                             : 0u;
+
+	cell.verdict = (elapsed <= relayNeverHorizonTicks(facts.rollbackWindowTicks))
+	                   ? RelayReadVerdict::FallbackPending
+	                   : RelayReadVerdict::FallbackNeverArrived;
+	return cell;
 }
 
 // ---------------------------------------------------------------------------
@@ -719,6 +899,8 @@ public:
 	MachineStateLane&       editMachineState() { return m_machineState; }
 	const InputDelayLane&   delay() const { return m_delay; }
 	InputDelayLane&         editDelay() { return m_delay; }
+	const RelayHealthLane&  relayHealth() const { return m_relayHealth; }
+	RelayHealthLane&        editRelayHealth() { return m_relayHealth; }
 
 	bool     hasAxis() const { return m_hasAxis; }
 	// Precondition: hasAxis().
@@ -859,11 +1041,18 @@ public:
 	// The delay verdict cell at `tick`, or nullptr when no cell answers for it.
 	const InputDelayCell* delayCellAt(uint32_t tick) const { return m_delay.find(tick); }
 
+	// The relay-health cell at `tick`, or nullptr when no cell answers for it.
+	const RelayHealthCell* relayHealthCellAt(uint32_t tick) const
+	{
+		return m_relayHealth.find(tick);
+	}
+
 private:
 	LaneIdleGate     m_gate;
 	ProvenanceLane   m_provenance;
 	MachineStateLane m_machineState;
 	InputDelayLane   m_delay;
+	RelayHealthLane  m_relayHealth;
 	uint32_t         m_newestAxisTick = 0u;
 	bool             m_hasAxis        = false;
 

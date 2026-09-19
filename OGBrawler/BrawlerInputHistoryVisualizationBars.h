@@ -31,6 +31,7 @@
 // ---------------------------------------------------------------------------
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -214,6 +215,56 @@ constexpr LaneCellStyle delayVerdictStyleOfOrdinal(uint8_t ordinal)
 	return delayVerdictStyleOf(static_cast<InputDelayVerdict>(ordinal));
 }
 
+// ---------------------------------------------------------------------------
+// THE RELAY-HEALTH PALETTE -- SEVEN COLOURS PLUS A HOLE.
+//
+// "I found the input I was looking for" is the same claim on both bars, and two greens a
+// shade apart would be read as two different claims. It is the one deliberate collision
+// between two of this meter's palettes, and a case pins the identity rather than the gap.
+// ⭐ `Hit` IS THE DELAY BAR'S `Agree` GREEN, CHANNEL FOR CHANNEL AND ON PURPOSE.
+//
+// Every other colour here clears the IN-PALETTE floor against the DELAY bar directly
+// above it as well, so the one collision stays the one that was chosen.
+//
+// The design asks for dark grey twice and red once, and none of the three is reachable:
+// Unknown (0.42), RanUnconfirmed (0.88) and the horizon rule (0.55) hold the grey axis
+// while the machine bar's Idle teal holds its dark end, and the dark-red axis is bracketed
+// by Attacking and the delay bar's NoCaptureNamed. They are desaturated and re-hued
+// instead; the two inert states never share a bar, since `LocalNoRelay` fills the whole
+// window or none of it.
+// ⚠ NEITHER INERT STATE IS GREY, AND `FallbackNeverArrived` IS NOT RED.
+// ---------------------------------------------------------------------------
+constexpr LaneCellStyle relayReadVerdictStyleOf(RelayReadVerdict verdict)
+{
+	switch (verdict)
+	{
+	case RelayReadVerdict::NoVerdict:
+		return { LaneCellFill::Hole, {} };
+	case RelayReadVerdict::Hit:
+		return { LaneCellFill::State, { 0.00f, 0.84f, 0.00f } };
+	case RelayReadVerdict::Neutral:
+		return { LaneCellFill::State, { 0.30f, 0.08f, 0.30f } };
+	case RelayReadVerdict::LocalNoRelay:
+		return { LaneCellFill::State, { 0.22f, 0.15f, 0.04f } };
+	case RelayReadVerdict::FallbackPending:
+		return { LaneCellFill::State, { 0.82f, 0.84f, 0.00f } };
+	case RelayReadVerdict::FallbackArrivedReplayable:
+		return { LaneCellFill::State, { 0.00f, 0.29f, 0.79f } };
+	case RelayReadVerdict::FallbackArrivedTooLate:
+		return { LaneCellFill::State, { 0.93f, 0.40f, 0.35f } };
+	case RelayReadVerdict::FallbackNeverArrived:
+		return { LaneCellFill::State, { 0.60f, 0.00f, 0.35f } };
+	}
+
+	return { LaneCellFill::Unnamed, kUnnamedLaneColor };
+}
+
+// Asked by ordinal, matching the three tables above -- one table each, forwarded here.
+constexpr LaneCellStyle relayReadVerdictStyleOfOrdinal(uint8_t ordinal)
+{
+	return relayReadVerdictStyleOf(static_cast<RelayReadVerdict>(ordinal));
+}
+
 // Light cells need dark ink and dark cells need light ink, or the run length vanishes
 // into the cell it belongs to. Green-weighted, which is where perceived brightness is.
 constexpr bool laneLabelPrefersDarkInk(LaneCellColor color)
@@ -229,6 +280,11 @@ struct FrameMeterCell
 {
 	bool    filled = false;
 	uint8_t value  = 0u;
+
+	// A second ordinal a bar may put on its cells, joined into run identity below. Every
+	// bar that has nothing to say here leaves it 0 and its runs are exactly what they were.
+	// ⛔ IT IS NOT A COLOUR: `styleOf` never sees it.
+	uint8_t label  = 0u;
 };
 
 struct FrameMeterBarCells
@@ -246,17 +302,23 @@ enum class FrameMeterBarKind : uint8_t
 	Provenance,
 	InputDelay,
 	CharacterState,
+	RelayHealth,
 };
 
-inline constexpr uint8_t kFrameMeterBarKindCount = 3u;
+inline constexpr uint8_t kFrameMeterBarKindCount = 4u;
 
 // Every bar defaults ON; the UE-side gates flip these before geometry is asked for
 // anything.
+// The other three bars describe the character the stack is about whoever it is; this one
+// describes a relay, which only a stack following someone else's character has, so the
+// draw site turns it on for that stack alone.
+// ⚠ `relayHealth` DEFAULTS OFF.
 struct FrameMeterBarSelection
 {
 	bool provenance     = true;
 	bool inputDelay     = true;
 	bool characterState = true;
+	bool relayHealth    = false;
 };
 
 // ⛔ THE ONLY PLACE A KIND MAPS TO ITS OWN FLAG.
@@ -271,17 +333,20 @@ constexpr bool frameMeterBarKindEnabled(const FrameMeterBarSelection& selection,
 		return selection.inputDelay;
 	case FrameMeterBarKind::CharacterState:
 		return selection.characterState;
+	case FrameMeterBarKind::RelayHealth:
+		return selection.relayHealth;
 	}
 
 	return false;
 }
 
-// How many bars are switched on, 0..3.
+// How many bars are switched on, 0..4.
 constexpr uint32_t frameMeterEnabledBarCount(const FrameMeterBarSelection& selection)
 {
 	return static_cast<uint32_t>(selection.provenance)
 	     + static_cast<uint32_t>(selection.inputDelay)
-	     + static_cast<uint32_t>(selection.characterState);
+	     + static_cast<uint32_t>(selection.characterState)
+	     + static_cast<uint32_t>(selection.relayHealth);
 }
 
 // `kind`'s slot AMONG THE ENABLED BARS, in declaration order; nullopt when it is off.
@@ -305,11 +370,35 @@ constexpr std::optional<uint32_t> frameMeterBarSlotOf(const FrameMeterBarSelecti
 // below keeps forwarding to today's shape.
 inline constexpr uint32_t kFrameMeterBarCount   = 2u;
 
+// What a labelled run says. Two bars say HOW LONG the run is; the relay bar says WHY it
+// fell back, because a fallback's cause is the thing a reader cannot get from the colour.
 // R3: no run labels on the input-delay bar -- its runs are short and sparse, and the
 // numbers would read as noise.
+enum class FrameMeterRunLabel : uint8_t
+{
+	None,
+	RunLength,
+	CauseLetter,
+};
+
+// ⛔ THE ONLY PLACE A BAR'S LABEL VOCABULARY IS DECIDED.
+constexpr FrameMeterRunLabel frameMeterRunLabelOf(FrameMeterBarKind kind)
+{
+	switch (kind)
+	{
+	case FrameMeterBarKind::Provenance:     return FrameMeterRunLabel::RunLength;
+	case FrameMeterBarKind::InputDelay:     return FrameMeterRunLabel::None;
+	case FrameMeterBarKind::CharacterState: return FrameMeterRunLabel::RunLength;
+	case FrameMeterBarKind::RelayHealth:    return FrameMeterRunLabel::CauseLetter;
+	}
+
+	return FrameMeterRunLabel::None;
+}
+
+// ⛔ RE-EXPRESSED THROUGH THE TABLE ABOVE, never a second answer to the same question.
 constexpr bool frameMeterBarDrawsRunLabels(FrameMeterBarKind kind)
 {
-	return kind != FrameMeterBarKind::InputDelay;
+	return frameMeterRunLabelOf(kind) != FrameMeterRunLabel::None;
 }
 
 // How many cells a window fills, never more than the lanes physically hold.
@@ -373,6 +462,34 @@ inline void readDelayBar(const InputHistoryTickLanes& lanes,
 	}
 }
 
+// The relay-health bar over the SAME window. `isLocallyControlled` is the ONE locality
+// test this display makes, taken at the call site and passed in: a character this client
+// controls resolves no relayed read at all, and every tick of its window says so rather
+// than reading as a window nothing has polled.
+// ⛔ A LOCAL CHARACTER'S BAR IS FULL, NOT EMPTY -- the stack's height never moves.
+inline void readRelayHealthBar(const InputHistoryTickLanes& lanes,
+                               const PollWindow&            window,
+                               bool                         isLocallyControlled,
+                               FrameMeterBarCells&          bar)
+{
+	bar.count = frameMeterCellCount(window);
+
+	for (uint32_t offset = 0u; offset < bar.count; ++offset)
+	{
+		const RelayHealthCell* cell = lanes.relayHealthCellAt(window.oldestTick + offset);
+
+		const RelayReadVerdict verdict =
+			(cell != nullptr)     ? cell->verdict
+			: isLocallyControlled ? RelayReadVerdict::LocalNoRelay
+			                      : RelayReadVerdict::NoVerdict;
+
+		bar.cells[offset].filled = (verdict != RelayReadVerdict::NoVerdict);
+		bar.cells[offset].value  = static_cast<uint8_t>(verdict);
+		bar.cells[offset].label  = static_cast<uint8_t>(
+			(cell != nullptr) ? cell->missLabel : RelayMissLabel::None);
+	}
+}
+
 // ---------------------------------------------------------------------------
 // RUNS, DETECTED AT DRAW TIME. A run is a maximal stretch of neighbouring cells holding
 // one value; the number goes on `lastOffset`, which is the run's RIGHT-hand cell.
@@ -383,6 +500,10 @@ struct LaneRun
 	uint32_t lastOffset  = 0u;
 	uint32_t length      = 0u;
 	uint8_t  value       = 0u;
+
+	// The cells' own `label`, which is part of what made them one run. ⛔ LAST FIELD, so
+	//   every existing brace-initialised run keeps meaning what it meant.
+	uint8_t  label       = 0u;
 };
 
 struct LaneRunList
@@ -403,9 +524,12 @@ inline void collectLaneRuns(const FrameMeterBarCells& bar, LaneRunList& out)
 		if (!cell.filled)
 			continue;
 
+		// ⛔ THE LABEL IS PART OF RUN IDENTITY. A run is what one label can truthfully be
+		//   printed on, so two neighbours of one colour with different labels are two runs.
 		const bool extendsPrevious = out.count != 0u
 			&& out.runs[out.count - 1u].lastOffset + 1u == offset
-			&& out.runs[out.count - 1u].value == cell.value;
+			&& out.runs[out.count - 1u].value == cell.value
+			&& out.runs[out.count - 1u].label == cell.label;
 
 		if (extendsPrevious)
 		{
@@ -415,7 +539,7 @@ inline void collectLaneRuns(const FrameMeterBarCells& bar, LaneRunList& out)
 			continue;
 		}
 
-		out.runs[out.count] = LaneRun{ offset, offset, 1u, cell.value };
+		out.runs[out.count] = LaneRun{ offset, offset, 1u, cell.value, cell.label };
 		++out.count;
 	}
 }
@@ -519,6 +643,96 @@ inline FrameMeterGeometry frameMeterGeometryFor(const FrameMeterLayout& layout,
 {
 	return frameMeterGeometryFor(
 		layout, viewportWidth, viewportHeight, cellCount, kFrameMeterBarCount);
+}
+
+// ---------------------------------------------------------------------------
+// TWO STACKS, ONE ANCHOR -- AND THE ANCHORED ONE IS NOT THE PRIMARY.
+//
+// The meter is anchored to the BOTTOM and its own label band plus readout rows already
+// spend the bottom margin, so there is no room underneath it for a second stack: about
+// 38 px at 1080p and 6 px at 720p. The second stack therefore takes TODAY'S ANCHOR and
+// the primary is LIFTED off it by one whole stack plus a gap -- which is also why the
+// eye keeps the bottom position for the character being watched.
+//
+// The lift is a separate step applied to that function's answer, so "one stack draws
+// exactly what it drew before" is a property of the SHAPE, not of an argument being 0.
+// ⛔ `frameMeterGeometryFor` IS NOT TOUCHED BY ANY OF THIS.
+// ---------------------------------------------------------------------------
+
+// The clear space between the lifted stack's lowest readout and the anchored stack's
+// own label band.
+inline constexpr float kFrameMeterStackGap = 8.f;
+
+// The same geometry, raised by `liftPixels`. Nothing but the origin moves: both stacks
+// keep one stride, one cell width and one bar height, so a column means the same width
+// of screen on either of them.
+inline FrameMeterGeometry frameMeterLiftedBy(FrameMeterGeometry geometry, float liftPixels)
+{
+	geometry.originY -= liftPixels;
+	return geometry;
+}
+
+// How tall one whole stack draws, from its elision label band down to the bottom of its
+// last readout line. DERIVED FROM THE PLACEMENT HELPERS THEMSELVES rather than restated,
+// so a band that moves moves this with it:
+//
+//   `frameMeterElisionLabelTopY`  puts the top one padding and one label above originY
+//   `frameMeterHeight`            is the bars
+//   `frameMeterAuthorityLabelTopY` puts the offset label one padding below them
+//   `frameMeterReadoutLineTopY`   repeats a label plus a padding per readout line
+//
+// `labelHeight` is the font's measured line height, which only the draw site knows.
+// ⛔ MEASURED ONCE AND PASSED IN: two measures can differ by a pixel, and overlap by it.
+inline float frameMeterStackHeight(const FrameMeterLayout& layout,
+                                   uint32_t                barCount,
+                                   uint32_t                readoutLines,
+                                   float                   labelHeight)
+{
+	FrameMeterGeometry bars;
+	bars.barHeight = layout.barHeight;
+	bars.barGap    = layout.barGap;
+	bars.barCount  = barCount;
+
+	return layout.backdropPadding + labelHeight
+	     + frameMeterHeight(bars)
+	     + layout.backdropPadding + labelHeight
+	     + static_cast<float>(readoutLines) * (labelHeight + layout.backdropPadding);
+}
+
+// How far the PRIMARY stack is lifted so the nearest one can take its anchor.
+//
+// The lift moves this stack's entire extent -- the readouts hanging below its origin as
+// well as the label band above it -- so it must clear the ANCHORED stack's TOP EDGE, and
+// the two stacks reach that edge from different places:
+//
+//   * the lifted stack contributes its OWN whole height, because that is what hangs below
+//     the point the lift moves. It is ITS OWN HEIGHT AND NEVER THE OTHER STACK'S, since
+//     the two do not draw the same number of readout lines -- the clock is on the primary.
+//   * the anchored stack contributes the difference between the two BAR BANDS, because
+//     `frameMeterGeometryFor` anchors an origin to the viewport's bottom margin and then
+//     puts the bars ABOVE it. A taller bar band therefore raises the anchored stack's top
+//     without moving its bottom, and a lift blind to that leaves the two overlapping by
+//     exactly that difference.
+//
+// ⚠ THE TWO STACKS DO NOT DRAW THE SAME NUMBER OF BARS EITHER: the relay-health bar is
+//   on the stack that is following someone else's character, and on no other.
+inline float frameMeterPrimaryLift(const FrameMeterLayout& layout,
+                                   uint32_t                liftedBarCount,
+                                   uint32_t                liftedReadoutLines,
+                                   float                   labelHeight,
+                                   uint32_t                anchoredBarCount)
+{
+	FrameMeterGeometry liftedBars;
+	liftedBars.barHeight = layout.barHeight;
+	liftedBars.barGap    = layout.barGap;
+	liftedBars.barCount  = liftedBarCount;
+
+	FrameMeterGeometry anchoredBars = liftedBars;
+	anchoredBars.barCount = anchoredBarCount;
+
+	return frameMeterStackHeight(layout, liftedBarCount, liftedReadoutLines, labelHeight)
+	     + (frameMeterHeight(anchoredBars) - frameMeterHeight(liftedBars))
+	     + kFrameMeterStackGap;
 }
 
 // ⛔ THE ONLY SOURCE OF A COLUMN'S X, and both bars ask it -- that IS the tick alignment.
@@ -645,6 +859,29 @@ inline float frameMeterElisionLabelTopY(const FrameMeterGeometry& geometry,
                                         float                     labelHeight)
 {
 	return geometry.originY - layout.backdropPadding - labelHeight;
+}
+
+// The two whole-stack extents, stated HERE because the top edge is this label band --
+// the highest thing a stack puts on screen -- and a second expression for it could
+// drift from the band itself.
+// The top edge of a stack drawn at `geometry` -- its elision label band, which is the
+// highest thing it puts on screen. The one number a clipping check needs.
+inline float frameMeterStackTopY(const FrameMeterGeometry& geometry,
+                                 const FrameMeterLayout&   layout,
+                                 float                     labelHeight)
+{
+	return frameMeterElisionLabelTopY(geometry, layout, labelHeight);
+}
+
+// The bottom edge of a stack drawn at `geometry` with `readoutLines` readouts -- the
+// baseline-plus-height of its last readout line, which is the lowest thing it draws.
+inline float frameMeterStackBottomY(const FrameMeterGeometry& geometry,
+                                    const FrameMeterLayout&   layout,
+                                    uint32_t                  readoutLines,
+                                    float                     labelHeight)
+{
+	return frameMeterStackTopY(geometry, layout, labelHeight)
+	     + frameMeterStackHeight(layout, geometry.barCount, readoutLines, labelHeight);
 }
 
 // ---------------------------------------------------------------------------
@@ -1255,14 +1492,21 @@ constexpr uint32_t decimalDigitCount(uint32_t value)
 	return digits;
 }
 
-// A label is suppressed only when its own run is narrower than the number itself -- at
+// A label is suppressed only when its own run is narrower than the label itself -- at
 // the default stride that never happens, and on a shrunken bar it hits the shortest runs.
-inline bool runLabelFits(const FrameMeterGeometry& geometry, const LaneRun& run)
+// ⛔ IN CHARACTERS, because not every bar labels a run with a number.
+inline bool runLabelFits(const FrameMeterGeometry& geometry, const LaneRun& run,
+                         uint32_t labelCharacters)
 {
-	const float labelWidth =
-		static_cast<float>(decimalDigitCount(run.length)) * kLaneLabelDigitWidth;
+	const float labelWidth = static_cast<float>(labelCharacters) * kLaneLabelDigitWidth;
 
 	return static_cast<float>(run.length) * geometry.cellStride >= labelWidth;
+}
+
+// ⛔ THE RUN-LENGTH LABEL'S OWN WIDTH, re-expressed through the test above.
+inline bool runLabelFits(const FrameMeterGeometry& geometry, const LaneRun& run)
+{
+	return runLabelFits(geometry, run, decimalDigitCount(run.length));
 }
 
 // Centre of the run's last cell. The renderer subtracts half the measured text width,
@@ -1270,6 +1514,319 @@ inline bool runLabelFits(const FrameMeterGeometry& geometry, const LaneRun& run)
 inline float runLabelCenterX(const FrameMeterGeometry& geometry, const LaneRun& run)
 {
 	return frameMeterCellX(geometry, run.lastOffset) + geometry.cellWidth * 0.5f;
+}
+
+// ---------------------------------------------------------------------------
+// WHO THE SECOND STACK DRAWS -- THE NEAREST BRAWLER TO THE FIRST LOCAL ONE.
+//
+// Nearest by XY distance between capsule positions, because a brawler directly above
+// another is not the one you are fighting. The choice is made every frame from
+// positions that move every frame, so two candidates at nearly equal distance would
+// swap the whole stack back and forth: the previous choice is KEPT unless another is
+// closer by a clear margin.
+//
+// A client can run several brawlers of its own, and "the one nearest me" is still the
+// right answer for each; locality decides where the DELAY bar's client half comes from.
+// ⛔ GEOMETRIC ONLY -- it does not skip a locally controlled candidate.
+//
+// ⛔ THE ORDER IS TOTAL: equal distances are broken by the lower character id, so the
+//   answer does not depend on the order the candidates were gathered in.
+// ---------------------------------------------------------------------------
+
+// How much closer a rival must be before the stack switches to it.
+inline constexpr float kNearestHysteresisCm = 50.f;
+
+// How many characters one selection considers. A match this display is used on is a
+// handful of brawlers; beyond this the gather simply stops adding.
+inline constexpr std::size_t kNearestCandidateCapacity = 16u;
+
+struct NearestCharacterCandidate
+{
+	unsigned int id = 0u;
+	float        x  = 0.f;
+	float        y  = 0.f;
+};
+
+struct NearestCharacterCandidateList
+{
+	std::array<NearestCharacterCandidate, kNearestCandidateCapacity> candidates{};
+	std::size_t                                                      count = 0u;
+
+	// ⛔ FULL IS A REFUSAL, NEVER AN OVERWRITE: dropping the newest candidate loses one
+	//   brawler from the selection, dropping an old one loses whichever it landed on.
+	void add(const NearestCharacterCandidate& candidate)
+	{
+		if (count < kNearestCandidateCapacity)
+		{
+			candidates[count] = candidate;
+			++count;
+		}
+	}
+};
+
+// Squared XY distance. Squared, because the SELECTION only ever orders distances and a
+// square root would buy nothing but a rounding difference; the hysteresis below is the
+// one place a real distance is needed, and it takes the root there.
+constexpr float nearestPlanarDistanceSquared(const NearestCharacterCandidate& left,
+                                             const NearestCharacterCandidate& right)
+{
+	const float dx = left.x - right.x;
+	const float dy = left.y - right.y;
+	return dx * dx + dy * dy;
+}
+
+// The brawler nearest `localId`, or nullopt when `localId` is not among the candidates
+// or is the only one there.
+//
+// `previousChoice` is last frame's answer. It is kept whenever it is still a candidate,
+// unless the closest rival is nearer by at least `kNearestHysteresisCm`.
+// ⛔ THE MARGIN IS ON THE DISTANCE, NOT ITS SQUARE: a squared one varies with range.
+inline std::optional<unsigned int> nearestCharacterIdTo(
+	const NearestCharacterCandidateList& candidates,
+	unsigned int                         localId,
+	std::optional<unsigned int>          previousChoice)
+{
+	const NearestCharacterCandidate* local = nullptr;
+	for (std::size_t index = 0u; index < candidates.count; ++index)
+	{
+		if (candidates.candidates[index].id == localId)
+		{
+			local = &candidates.candidates[index];
+			break;
+		}
+	}
+
+	if (local == nullptr)
+		return std::nullopt;
+
+	std::optional<unsigned int> best;
+	float                       bestDistanceSquared     = 0.f;
+	bool                        previousIsCandidate     = false;
+	float                       previousDistanceSquared = 0.f;
+
+	for (std::size_t index = 0u; index < candidates.count; ++index)
+	{
+		const NearestCharacterCandidate& candidate = candidates.candidates[index];
+
+		// ⛔ THE LOCAL CHARACTER IS NOT ITS OWN NEIGHBOUR: at distance 0 it wins every time.
+		if (candidate.id == localId)
+			continue;
+
+		const float distanceSquared = nearestPlanarDistanceSquared(*local, candidate);
+
+		if (previousChoice.has_value() && candidate.id == *previousChoice)
+		{
+			previousIsCandidate     = true;
+			previousDistanceSquared = distanceSquared;
+		}
+
+		// Strictly closer, or the same distance with the lower id: one total order, so
+		// the gather's own order cannot change the answer.
+		if (!best.has_value() || distanceSquared < bestDistanceSquared
+			|| (distanceSquared == bestDistanceSquared && candidate.id < *best))
+		{
+			best                = candidate.id;
+			bestDistanceSquared = distanceSquared;
+		}
+	}
+
+	if (!best.has_value())
+		return std::nullopt;
+
+	if (previousIsCandidate)
+	{
+		const float previousDistance = std::sqrt(previousDistanceSquared);
+		const float bestDistance     = std::sqrt(bestDistanceSquared);
+
+		if (previousDistance - bestDistance < kNearestHysteresisCm)
+			return previousChoice;
+	}
+
+	return best;
+}
+
+// The XY distance between two candidates, or nullopt when either is missing from the
+// list. ⛔ THE ONE PLACE A REAL DISTANCE IS TAKEN besides the hysteresis margin, and it
+//   is taken for the READER, never for the ordering above.
+inline std::optional<float> nearestCharacterDistanceCm(
+	const NearestCharacterCandidateList& candidates, unsigned int fromId, unsigned int toId)
+{
+	const NearestCharacterCandidate* from = nullptr;
+	const NearestCharacterCandidate* to   = nullptr;
+
+	for (std::size_t index = 0u; index < candidates.count; ++index)
+	{
+		if (candidates.candidates[index].id == fromId)
+			from = &candidates.candidates[index];
+		if (candidates.candidates[index].id == toId)
+			to = &candidates.candidates[index];
+	}
+
+	if (from == nullptr || to == nullptr)
+		return std::nullopt;
+
+	return std::sqrt(nearestPlanarDistanceSquared(*from, *to));
+}
+
+// ---------------------------------------------------------------------------
+// THE TWO STACK HEADERS -- WHICH CHARACTER EACH STACK IS ABOUT.
+//
+// The primary is always the first local character; the second stack's id CHANGES as the
+// fight moves, and a bar whose subject is unnamed is a bar whose readings cannot be
+// attributed. Both stacks are therefore labelled, and the second carries the distance
+// it was chosen on and whether it is one this client controls -- which is what says
+// where its delay bar's client half came from.
+// ⛔ FACTS ONLY. The word, the format and the ink are the renderer's.
+// ---------------------------------------------------------------------------
+struct FrameMeterStackHeader
+{
+	bool         isNearestStack = false;
+	unsigned int characterId    = 0u;
+
+	// Metres, and only meaningful on the nearest stack.
+	float        distanceMeters = 0.f;
+
+	// Whether this client holds a capture line for the character -- the same test the
+	// row poll makes. ⛔ NOT A ROLE TEST: a client can control several brawlers.
+	bool         isLocallyControlled = false;
+};
+
+// ---------------------------------------------------------------------------
+// THE RELAY READOUT -- what the second stack shows where the primary shows its tier
+// and effective-delay decomposition.
+//
+// A tier is a property of the LOCAL connection and says nothing about a remote proxy.
+// What does say something is the relay this client is predicting that proxy from: the
+// schedule stamp its newest arrival carried, and how the scheduled read has been going.
+// ⛔ FACTS ONLY, the same split every other reading on this bar keeps.
+// ⛔ THE TALLY IS OVER THE OBSERVATIONS THE RING STILL HOLDS, never a session total:
+//   a run of misses that has scrolled out is not a run of misses that is happening.
+// ---------------------------------------------------------------------------
+struct RelayReadReadout
+{
+	bool     present = false;   // no reading -- draw nothing
+
+	// The schedule stamp of the newest observation, and whether there was one at all.
+	bool     dLatestKnown = false;
+	uint32_t dLatest      = 0u;
+
+	uint32_t hits        = 0u;
+	uint32_t misses      = 0u;
+	uint32_t verifyFails = 0u;
+
+	// Reads that formed no probe at all: nothing had ever arrived for this character.
+	uint32_t noProbes = 0u;
+};
+
+// ---------------------------------------------------------------------------
+// THE RELAY-HEALTH READOUT -- the four rungs of the bar above it, counted, and how late
+// the arrivals were. FACTS ONLY; the string is built UE-side, as every reading here is.
+//
+// A stack that grew a readout row where another stack has none would stop being the same
+// shape, and the pair only just fits at 720p as it is.
+// ⛔ IT SHARES THE RELAY READING'S ONE LINE AND NEVER CLAIMS A SECOND.
+// ⛔ A TALLY OVER THE DISPLAYED WINDOW, the same window the bar draws -- so the numbers
+//   under the bar and the cells in it are one reading.
+// ---------------------------------------------------------------------------
+struct RelayHealthReadout
+{
+	bool present = false;   // no cell in the window -- draw nothing
+	// This client controls the character, so there is no relay to be healthy or not.
+	bool local   = false;
+
+	uint32_t hits              = 0u;
+	uint32_t neutral           = 0u;
+	uint32_t fallbackPending   = 0u;
+	uint32_t arrivedReplayable = 0u;
+	uint32_t arrivedTooLate    = 0u;
+	uint32_t neverArrived      = 0u;
+
+	// The four causes, spelled as the bar's own run labels spell them.
+	uint32_t loss    = 0u;
+	uint32_t starved = 0u;
+	uint32_t evicted = 0u;
+	uint32_t verify  = 0u;
+
+	// The MEDIAN of the arrived cells' lateness. ⛔ ABSENT WHEN NOTHING ARRIVED, never 0:
+	//   zero ticks late is a real and common answer.
+	bool    medianLatenessKnown = false;
+	uint8_t medianLatenessTicks = 0u;
+};
+
+// Lateness is one byte, so 256 buckets answer exactly and the walk is bounded by the
+// alphabet rather than by the window.
+// ⭐ A MEDIAN FROM A HISTOGRAM, NOT A SORT.
+inline RelayHealthReadout buildRelayHealthReadout(const InputHistoryTickLanes& lanes,
+                                                  const PollWindow&            window,
+                                                  bool                         isLocallyControlled)
+{
+	RelayHealthReadout readout;
+
+	if (isLocallyControlled)
+	{
+		readout.present = true;
+		readout.local   = true;
+		return readout;
+	}
+
+	std::array<uint16_t, 256> latenessCounts{};
+	uint32_t                  arrivedCells = 0u;
+
+	const uint32_t cellCount = frameMeterCellCount(window);
+	for (uint32_t offset = 0u; offset < cellCount; ++offset)
+	{
+		const RelayHealthCell* cell = lanes.relayHealthCellAt(window.oldestTick + offset);
+		if (cell == nullptr)
+			continue;
+
+		readout.present = true;
+
+		switch (cell->verdict)
+		{
+		case RelayReadVerdict::Hit:                       ++readout.hits;              break;
+		case RelayReadVerdict::Neutral:                   ++readout.neutral;           break;
+		case RelayReadVerdict::FallbackPending:           ++readout.fallbackPending;   break;
+		case RelayReadVerdict::FallbackArrivedReplayable: ++readout.arrivedReplayable; break;
+		case RelayReadVerdict::FallbackArrivedTooLate:    ++readout.arrivedTooLate;    break;
+		case RelayReadVerdict::FallbackNeverArrived:      ++readout.neverArrived;      break;
+		case RelayReadVerdict::NoVerdict:
+		case RelayReadVerdict::LocalNoRelay:                                           break;
+		}
+
+		switch (cell->missLabel)
+		{
+		case RelayMissLabel::Loss:    ++readout.loss;    break;
+		case RelayMissLabel::Starved: ++readout.starved; break;
+		case RelayMissLabel::Evicted: ++readout.evicted; break;
+		case RelayMissLabel::Verify:  ++readout.verify;  break;
+		case RelayMissLabel::None:                       break;
+		}
+
+		if (cell->verdict == RelayReadVerdict::FallbackArrivedReplayable
+			|| cell->verdict == RelayReadVerdict::FallbackArrivedTooLate)
+		{
+			++latenessCounts[cell->latenessTicks];
+			++arrivedCells;
+		}
+	}
+
+	if (arrivedCells != 0u)
+	{
+		const uint32_t half = arrivedCells / 2u;
+		uint32_t       seen = 0u;
+		for (uint32_t bucket = 0u; bucket < 256u; ++bucket)
+		{
+			seen += latenessCounts[bucket];
+			if (seen > half)
+			{
+				readout.medianLatenessKnown = true;
+				readout.medianLatenessTicks = static_cast<uint8_t>(bucket);
+				break;
+			}
+		}
+	}
+
+	return readout;
 }
 
 } // namespace brawlerInputHistoryVisualization
