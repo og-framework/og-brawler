@@ -437,6 +437,11 @@ inline bool machineLaunchesMovement(const dAttackMachineSimulation::State& machi
         && machineState.m_hitReaction == HitReactionKind::Knockback;
 }
 
+inline bool machineLocksMovement(const dAttackMachineSimulation::State& machineState)
+{
+    return machineState.m_currentState == DAttackState::Attacking;
+}
+
 inline glm::vec2 computeDesiredVelocityUV_ContinuousAccelBrake(
     const StaticData& sd, State& state, uint32_t tick,
     glm::vec2 stickUV, glm::vec2 currentUV, float dt)
@@ -567,6 +572,8 @@ void integrate(float deltaSeconds,
 
     const bool committed = machineLaunchesMovement(machineState);
 
+    const bool locked = machineLocksMovement(machineState);
+
     const glm::vec3 up = kWorldUp;
 
     const float probeLength = sd.rideHeight + sd.snapDistance;
@@ -644,6 +651,15 @@ void integrate(float deltaSeconds,
             velocityUV = inboundHit.hitDirectionXY * inboundHit.knockbackSpeed;
         else
             velocityUV = moveTowards(currentUV, glm::vec2(0.f), sd.launchDecel * dt);
+    }
+    else if (locked)
+    {
+        // ⛔G-24  docs/BrawlerMovementSimulation-guards.md
+        const uint32_t remaining =
+            (machineState.m_attackEndTick > tick) ? machineState.m_attackEndTick - tick : 1u;
+        // ∴D-07  docs/BrawlerMovementSimulation-rationale.md
+        velocityUV =
+            currentUV * (static_cast<float>(remaining - 1u) / static_cast<float>(remaining));
     }
     else if (frozen)
     {

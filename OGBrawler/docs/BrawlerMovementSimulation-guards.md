@@ -71,8 +71,9 @@ it, so the live count is `11 + this list`:
 |---|---|---|
 | `G-22` | task 27 | the two machine predicates that read `State::m_hitReaction` |
 | `G-23` | task 27 | step 3’s dispatch — `committed` is tested before `frozen` |
+| `G-24` | task 84 | step 3’s `locked` branch — the guarded end-tick subtraction |
 
-**Live guards today: 13.**
+**Live guards today: 14.**
 
 ---
 
@@ -516,9 +517,20 @@ half that is expressible: `Stun == 0`, so a default-constructed `State` — whic
 
 **Added by:** task 27, 2026-09-12. Not part of task 68’s conversion census.
 
-> ⛔ **DO NOT REORDER THESE TWO BRANCHES, AND DO NOT MERGE THEM INTO ONE CONDITION.** A
+> ⛔ **DO NOT REORDER THESE BRANCHES, AND DO NOT MERGE THEM INTO ONE CONDITION.** A
 > committed state owns the velocity OUTRIGHT; `frozen` is the model’s gate, not a veto over a
 > commitment. Holding guard during a knockback must NOT stop the slide.
+
+⭐⭐ **[task 84, 2026-09-20] THERE ARE THREE BRANCHES NOW, NOT TWO, AND THE ORDER IS
+`committed` → `locked` → `frozen` → the walk models.** `locked` is
+`machineLocksMovement(machineState)` — the attack slide — and it is tested before `frozen` for
+the SAME argument, not a new one: guarding during an attack is already blocked by
+`DAttackGuardSimulation`, which disables every guard shape while `m_currentState != Idle`, and
+that covers the whole swing. Freezing the body on the `holdGuard` bit during a swing would be the
+same second, wrong mechanism this entry already forbids during a knockback, and it would stop the
+slide dead on the tick the button goes down.
+⛔ **`locked` is NOT folded into `committed`, and that is a separate prohibition with its own
+consequence** — see the paragraph below.
 
 **What breaks if it moves.** `frozen` is true whenever bit 0 of the input flags byte is held, and a
 player who is being thrown five metres is very likely holding guard. Test `frozen` first and the
@@ -528,15 +540,70 @@ branch:** `DAttackGuardSimulation` disables every guard shape whenever
 `attackMachineSimulation.m_currentState != DAttackState::Idle`, which covers the whole lockout. The
 shape gate is the mechanism; freezing the body would be a second, wrong one.
 
+⛔⛔ **[task 84] DO NOT MERGE `locked` INTO THE `committed` ARM, EITHER — and the reason is
+not tidiness.** `committed` is also the third argument of `detachesFromSupport(state, up,
+committed)`, whose arm is `committed && dot(velocity, up) > 0`. The attack slide writes the two
+TANGENT-PLANE channels, and on a slope the `u` axis carries `sin(theta)` of world z — so a slide
+UP a face would satisfy that arm, lose its hover hold and fly off the surface. That is precisely
+the finding ⛔G-07 records for the up-slope knockback, and reproducing it for every ordinary
+uphill swing would be a far larger defect than the one it records. `locked` therefore has its own
+predicate and never touches `committed`. Pinned by
+`BrawlerMovement.AttackSlideDoesNotDetachOnASlope`, whose control arm reproduces G-07’s detach
+on the SAME fixture.
+
 ⚠ **The `frozen` BIT still records `frozen`.** `State::flags`’ bit 0 is set from the `frozen`
-local regardless of which branch ran, so during a guard-held knockback the wire bit reads 1 while
-the body slides. Its only reader is `BrawlerMovementVisualization.h`, so this is a display
-inaccuracy and nothing more — recorded here so the next reader does not treat the bit as the
-answer to "did the model run".
+local regardless of which branch ran, so during a guard-held knockback — and, since task 84,
+during a guard-held ATTACK SLIDE — the wire bit reads 1 while the body moves. Its only reader is
+`BrawlerMovementVisualization.h`, so this is a display inaccuracy and nothing more — recorded
+here so the next reader does not treat the bit as the answer to "did the model run".
 
 ✅ **Pinned by `BrawlerMovement.HoldGuardDoesNotFreezeASlide`**, which holds
 `kInputFlagHoldGuard` through the launch tick and the tick after it, with a control arm proving the
-bit is live in the same fixture.
+bit is live in the same fixture, and — since task 84 — by
+`BrawlerMovement.HoldGuardDoesNotFreezeAnAttackSlide`, its mirror for the swing, which additionally
+asserts the frozen bit is set while the body is still sliding.
+
+---
+
+## G-24 — The end-tick subtraction is guarded, and the guard IS the stop
+
+**Tag site:** `BrawlerMovementSimulation.h`, on the line above
+`const uint32_t remaining = (machineState.m_attackEndTick > tick) ? … : 1u;` in step 3’s
+`locked` branch.
+
+**Added by:** task 84, 2026-09-20. Not part of task 68’s conversion census.
+
+> ⛔ **DO NOT SIMPLIFY THIS TO `machineState.m_attackEndTick - tick`.** ⛔ **DO NOT REPLACE
+> THE GUARD WITH AN `OG_CHECK(m_attackEndTick > tick)`.** ⛔ **DO NOT SATURATE AT 0.** The
+> subtraction is UNSIGNED and its left operand is WIRE STATE. It must saturate at **1**, whose
+> ratio `(R-1)/R` is exactly zero, because the only correct degrade for an end tick that has
+> already passed is **stop now**.
+
+**What breaks if it moves.** `m_attackEndTick` is `uint32_t` and so is `tick`. When the end tick is
+at or before the current tick, `m_attackEndTick - tick` wraps to roughly 2³², and the ratio
+`(R-1)/R` becomes `1 - 2⁻³²`, which rounds to **1.0f**. The slide is then multiplied by one on
+every tick: it never decays, never stops, and **nothing crashes, nothing logs and no other fence
+fires**. It is the quietest possible failure, and it happens on exactly the inputs a networked
+build produces — a remote proxy that adopts a mid-swing correction carrying an end tick from a
+prediction the local sim never ran, a hand-built test `State` (whose `m_attackEndTick` defaults to
+`0`), or a future variable step that lets the machine stay `Attacking` past its own prediction.
+Saturating at **0** instead would be a division by zero.
+
+⛔ **It is a `G` and NOT an `OG_CHECK`, deliberately.** A stale end tick beside a live
+`Attacking` is LEGITIMATE WIRE INPUT, not a programming error: the sim must not terminate the
+process on a value a peer sent it. (The `OG_CHECK`s that do belong to this feature are on the
+machine side, at the three write sites and in `swingTickCount`, where the operands are authored
+data and the invariant really is a construction error.)
+
+⚠ **It does not convert to a compile-time check.** The forbidden edit is a SIMPLIFICATION of a
+runtime expression — deleting a ternary whose operands are both well-typed. Nothing about it is
+visible to the compiler, and no type makes it unrepresentable without putting a wrapper around a
+tick. Taxonomy: F1a + F5a, the "obvious simplification" class, like `G-02`.
+
+✅ **Pinned by `BrawlerMovement.AttackSlideSaturatesWhenTheEndTickIsInThePast`**, which drives
+both the end-tick-in-the-past arm and the exact `m_attackEndTick == tick` boundary with the stick
+held IN the direction of travel — so neither the walk law nor a wrapped factor could have produced
+the zero it requires — and carries a control arm one tick further out that reads half speed.
 
 ---
 

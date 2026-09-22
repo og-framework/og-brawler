@@ -1321,6 +1321,16 @@ surfaces, not in a silent division by zero.
 > ⛔ The prohibition that rides both predicates is `G-22` in the guards doc: the reaction byte is
 > meaningless outside `HitFlinch` and must never be tested without it.
 >
+⭐ **[task 84, 2026-09-20] THERE IS A THIRD PREDICATE IN THIS GROUP NOW:
+`machineLocksMovement`, which is `m_currentState == DAttackState::Attacking` and nothing else.**
+It carries NO tag, and that is the deliberate answer to the rule’s first question: it is one
+comparison, and a reader with only the identifier in front of them cannot get it wrong.
+⛔ It is specifically NOT a third clause of `machineFreezesMovement`, and not a second tenant of
+`machineLaunchesMovement`: an attack neither freezes the body nor commits it — it RAMPS it, in
+step 3’s own `locked` branch, and the prohibition that rides the ramp is `⛔G-24`.
+⚠ Unlike its two siblings it does NOT read `m_hitReaction`, so `⛔G-22` does not extend to it;
+G-22’s site is still exactly the pair that reads the byte.
+
 > [movement-sim task 62] This was a template purely to keep `.m_currentState` and the
 > enumerator DEPENDENT names while the machine State type was incomplete here. The machine
 > header is included now, so both are spelled out and the compiler checks them.
@@ -1597,6 +1607,18 @@ arm beside the knockback’s assign-or-decay pair. ⛔ There is deliberately NO 
 standing there today: `committed` is exactly `machineLaunchesMovement` and the code says so, because
 an unreachable branch carrying no comment (the rule forbids one) reads as a bug rather than as a
 reservation.
+
+⭐⭐ **TASK 84 LANDED A THIRD BRANCH, AND IT IS NOT IN THE COMMITTED ARM — 2026-09-20.** Step
+3’s dispatch is now `committed` → `locked` → `frozen` → the walk models. `locked` is
+`machineLocksMovement(machineState)`, i.e. `Attacking`, and while it holds the two tangent-plane
+channels are multiplied by `(R-1)/R` — the attack movement lock, derived in §27 below.
+⛔ **It was proposed for the committed arm and that would have been a defect**: `committed` also
+feeds `detachesFromSupport`, whose arm is keyed on `dot(velocity, up) > 0`, so an uphill slide
+would detach and fly. The arm therefore still has exactly ONE tenant (the knockback) and the
+paragraph above still holds for task 31’s `Dashing`, which genuinely does own velocity outright.
+⚠ **Task 31 interacts with `locked` by construction and with no special case:** a dash-cancelled
+into an attack simply leaves dash speed in `state.velocity` on the first `Attacking` tick, and the
+ramp starts from whatever it finds. Noted, not handled here.
 
 
 <!-- header lines 1429-1436 -->
@@ -1954,6 +1976,17 @@ is already the second entry below, and the second was a twin of `flags`' bit 3.
 <!-- header lines 1835-1852 -->
 > ⭐⭐ [movement-sim task 76] THE WIRE FIELD ORDER, PINNED BY NAME — the successor to the
 > APPEND-ONLY sentences above, which until now were guarded by PROSE ALONE.
+
+⭐ **[task 84, 2026-09-20] THE COMPOSITE GREW AND THIS SLICE DID NOT.** `dAttackMachineSimulation
+::State` gained `uint32_t m_attackEndTick` (slice 21 → 25 B, composite 335 → 339 B,
+`kStateWireBytes` 346 → 350 B, correction buffer 347/384 with 37 B of headroom). The attack slide
+that field drives is a step-3 law here, but the CARRIER is the machine’s, because the machine is
+the sub-simulation that both owns the `Idle → Attacking` transition and holds the authored
+sequence table. `brawlerMovementSimulation::State` is untouched at 61 B and six members, and the
+`StateHasExactlySixMembers` assertion above stands — that was the deciding argument for the
+recomputed form of the law (§27): the fixed form would have needed a seventh member here.
+⛔ `correctionStateBuffer::kWireFormatVersion` is NOT bumped: this is the append that grows an
+EXISTING slice, the case task 27’s note names as the one that declines. Zero input bytes.
 >
 > ⛔ WHY NOT A SIZE OR A COUNT. `velocity` and `positionCmd` are BOTH 12 B. Transposing them
 > leaves `syncSize<State>() == 61`, `FCompositeWireSize<simulatableBrawler::State> == 321`,
@@ -2074,6 +2107,96 @@ count is a FLOAT fact, not an arithmetic one: `4000·(1/60)` is 66.666664, so th
 8e-5 cm/s behind and the thirty-FIRST takes it to zero.
 `BrawlerMovement.LaunchedDecelsAtLaunchDecel` pins that, and asserts the closed form against the
 shipped constants rather than restating 500.
+
+---
+
+## 27. The attack slide’s ratio form — task 84 ∴D-07
+
+`velocityUV = currentUV * (static_cast<float>(remaining - 1u) / static_cast<float>(remaining));`
+
+**The user’s requirement, verbatim:** *“when a character attacks, their movement direction is
+locked and they continue in the direction they were moving, but the movement slows down during the
+attack and comes to a full stop exactly the tick where the attack ends.”*
+
+**What `remaining` counts.** `R` is the number of `Attacking` ticks left **including this one**,
+read from the machine’s `m_attackEndTick`, which is the first tick the machine will be `Idle`.
+Integration order decides both halves of that sentence: `SimulatableBrawler::integrate` runs
+machine → guard → projectile → radial → ring-out → **movement last**, so on the tick `T` the
+machine enters `Attacking` movement already sees `Attacking`, and on the tick `E` the radial
+deactivates the machine — which ran before it — is still `Attacking` and exits on `E + 1`.
+Movement therefore sees `Attacking` on `T … E` inclusive, the weapon returns to its idle pose on
+`E`, **`E` is “the tick where the attack ends”**, and the end tick is `E + 1`.
+
+**The derivation.** With nothing else changing, applying `(R-1)/R` each tick telescopes:
+
+```
+R on the m-th attacking tick = N - m + 1          (N ticks in the swing)
+v_m = v_(m-1) * (R-1)/R = v_0 * (N - m) / N
+```
+
+which is the linear ramp `v_k = v0 * (N-k)/N` — the same displacement as a constant deceleration
+of `v0 / (N * dt)`, i.e. the obvious closed form, reached without storing either operand.
+
+**⭐⭐ Why RECOMPUTED every tick and never captured at entry**, which is the row that decided it:
+
+* **State.** A captured form needs `v0` or a deceleration stored somewhere. On this side that is a
+  **seventh member of `brawlerMovementSimulation::State`**, which
+  `static_assert(detail::StateHasExactlySixMembers<State>)` forbids by ruling; on the machine side
+  it is a second wire field carrying one number. The recomputed form stores nothing: it is a pure
+  function of `(velocity, tick, m_attackEndTick)`, all three already on the wire, so a correction
+  adopted mid-slide **replays bit-identically** — rev-6’s rule that convergence never depends on
+  off-wire memory.
+* **A MOVED end.** When the end tick is rewritten — the `Attacking → Attacking` chain, and task
+  31’s dash-cancel — this form re-targets on the next tick and the stop is still exact. A
+  captured form ramps to the OLD end and sits at zero, or overshoots the new one.
+* **EXACTNESS.** At `R = 1` the factor is `float(0) / float(1)`, which is `0.f` exactly, and
+  `currentUV * 0.f` is a pair of signed zeroes. `v0 - N * (v0 / N)` is **not** `0` in float and
+  would need a clamp, which is a second rule to get wrong.
+* **DIRECTION.** The factor is a SCALAR, so the tangent-plane direction survives every tick to
+  rounding and the stick is never read. That is the whole of “their movement direction is
+  locked”: nothing in the branch can turn it.
+
+**`moveTowards` IS THE REFLEX SPELLING HERE** — the `committed` arm two lines above uses it —
+**and the honest answer is that it is not WRONG, it is UNNECESSARY.**
+⚠⚠ **MEASURED, 2026-09-20, and it refutes the reason this task was given for rejecting it.** The
+design said `moveTowards(currentUV, glm::vec2(0.f), |currentUV| / R)` would miss zero by an ulp on
+the last step. It does not: poisoned into this exact site and built, **all nine of task 84’s cases
+pass unchanged, 182 assertions**, including the `== glm::vec3(0.f)` row with no `Approx` and the
+direction-lock row. `moveTowards` returns `target` whenever `distanceSq <= maxDelta * maxDelta`, and
+with `maxDelta = |currentUV|` on the last tick that test is the `sqrt` round-trip
+`d <= (sqrt(d))²`, which on this toolchain and these values rounds the safe way. ⛔ **Do not
+re-derive the claim that it misses; it was tried.**
+
+What survives the measurement, and it is why the ratio form is the one that ships:
+
+* **It has no comparison and no `sqrt`.** `moveTowards` computes `glm::length(currentUV)` every tick
+  and then reaches zero through an inequality between a squared length and a squared root of that
+  same length. The ratio reaches zero by multiplying by a float that is exactly `0.f`, which is an
+  identity rather than a rounding outcome — the exactness the user asked for does not depend on a
+  toolchain agreeing with itself about `sqrt`.
+* **`maxDelta` would have to be spelled `|currentUV| / R`**, i.e. the caller re-derives the speed
+  the ratio never needs to name, and the two forms then agree only because that expression happens
+  to reconstruct the same step. A later reader tuning `maxDelta` — to `sd.brakingDeceleration * dt`,
+  say, which is what every other `moveTowards` in this file passes — silently loses the exact stop
+  and the ramp with it.
+⚠ Neither bullet is a measured divergence. They are statements about the mechanism, and they are
+labelled as such because the measured divergence is **none**.
+
+**⛔ The two tangent-plane channels ONLY.** The vertical channel, gravity and the `Supported`
+servo run afterwards unchanged, so a slide off a ledge becomes an ordinary fall with the same XY
+ramp. **That is intended** — user ruling, 2026-09-20: the slide may carry a character over the
+ring-out edge, there is no edge gate, no speed gate and no `Unsupported` refusal. The sim has no
+notion of an edge, an attack is a commitment, and being hit at the edge is already lethal.
+
+**The guard on the operand next to this one is `⛔G-24`**, and the two are deliberately separate
+tags on separate expressions: this section derives the ratio, that entry forbids unguarding the
+subtraction that feeds it.
+
+**Pinned by** `BrawlerMovement.AttackSlideStopsExactlyOnTheLastAttackingTick` (the ramp to the
+digit on every tick, and `== glm::vec3(0.f)` with no `Approx` on the last),
+`AttackSlideDirectionIsLockedAgainstTheStick` (stick held exactly reversed),
+`AttackSlideRetargetsWhenTheEndTickMoves` and, for the number the ratio depends on,
+`DAttack.Integrate3.AttackEndTickMatchesTheFirstIdleTick`.
 
 ---
 

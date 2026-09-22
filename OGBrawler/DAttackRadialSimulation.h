@@ -395,8 +395,12 @@ void setInitialConditions(float deltaSeconds,
 	const RuntimeBindings& bindings,
 	DerivedState& derivedState)
 {
-	OGBLOG_G("[Radial.setInitialConditions] seq=%u (attackTimer reset to 0)",
-		initialConditions.activeAttackSequence);
+	OGBLOG_G("[Radial.setInitialConditions] seq=%u aimAngle=%.4f axis=(%.3f,%.3f,%.3f) (attackTimer reset to 0)",
+		initialConditions.activeAttackSequence,
+		initialConditions.initialAimAngle,
+		initialConditions.initialAimRotationAxis.x,
+		initialConditions.initialAimRotationAxis.y,
+		initialConditions.initialAimRotationAxis.z);
 	state.attackTimer = 0.f;
 	state.currenSequenceId = initialConditions.activeAttackSequence;
 

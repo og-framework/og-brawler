@@ -99,7 +99,9 @@ void SimulatableBrawler::integrate(
     dAttackRadialSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT>     radialUtils    (dt, physAdapter, queryAdapter);
     dAttackGuardSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT>      guardUtils     (dt, physAdapter, queryAdapter);
     brawlerProjectileSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT> projectileUtils(dt, currentTick, physAdapter, queryAdapter);
-    dAttackMachineSimulation::IntegrationUtils<PhysAdapterT> machineUtils(dt, staticData.m_attackSequences, physAdapter, staticData.m_projectileStaticData);
+    // [movement-sim task 84] The tick joins dt here, the projectile's and the movement sub-sim's
+    // shape: the machine writes State::m_attackEndTick, an ABSOLUTE tick, on every radial edge.
+    dAttackMachineSimulation::IntegrationUtils<PhysAdapterT> machineUtils(dt, currentTick, staticData.m_attackSequences, physAdapter, staticData.m_projectileStaticData);
     // [movement-sim task 11] The tick joins dt here (the projectile's shape): the Cadence
     // model commits a direction on a period boundary and the teleport seed stamps it.
     brawlerMovementSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT>   movementUtils  (dt, currentTick, physAdapter, queryAdapter);

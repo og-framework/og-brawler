@@ -24,6 +24,7 @@
 #include "OGSimulation/SimulationDependencies.h"
 #include "OGSimulation/SimulationComparisonGlm.h"
 #include "OGSimulation/SimulationFieldDescriptors.h"
+#include "OGSimulation/OGAssert.h"
 #include "OGBrawlerLog.h"
 
 // [Task 25] Hadouken commitment duration. When integrate3 fires a Hadouken it transitions
@@ -103,16 +104,28 @@ class IntegrationUtils
 {
 public:
 	IntegrationUtils(float deltaTime,
+		uint32_t currentTick,
 		const std::vector<DAttackRadialSequence>& attackSequences,
 		PhysicsAdapterType& physicsAdapter,
 		const brawlerProjectileSimulation::StaticData& projectileStaticData)
 		: deltaTime(deltaTime)
+		, m_currentTick(currentTick)
 		, attackSequences(attackSequences)
 		, m_physicsAdapter(physicsAdapter)
 		, m_projectileStaticData(projectileStaticData)
 	{}
 
 	float getDeltaTime() const { return deltaTime; }
+	// [movement-sim task 84] Current simulation tick. Needed because State::m_attackEndTick is an
+	// ABSOLUTE tick, and the machine is the only sub-sim that both owns the Idle->Attacking
+	// transition and holds the sequence table, so it is the only place the end can be computed.
+	// Plumbed in from SimulationTimeStep at the SimulatableBrawler::integrate call site, exactly
+	// as brawlerProjectileSimulation::IntegrationUtils has had it since T15.
+	uint32_t getCurrentTick() const { return m_currentTick; }
+	// [movement-sim task 84] The authored sequence table this class has always held by reference
+	// but never exposed. integrate3 reads getDuration() from it at the two write sites that start
+	// a radial swing; nothing else in this header indexes it.
+	const std::vector<DAttackRadialSequence>& getAttackSequences() const { return attackSequences; }
 	PhysicsAdapterType& getPhysicsAdapter() const { return m_physicsAdapter; }
 	// Projectile launch parameters — needed by the Hadouken trigger block in integrate3 to
 	// write the projectile InitialConditions. The parent capsule position is no longer
@@ -123,10 +136,48 @@ public:
 
 private:
 	float deltaTime;
+	uint32_t m_currentTick;
 	const std::vector<DAttackRadialSequence>& attackSequences;
 	PhysicsAdapterType& m_physicsAdapter;
 	const brawlerProjectileSimulation::StaticData& m_projectileStaticData;
 };
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// [movement-sim task 84] How many ticks a swing of `duration` occupies, at a fixed `dt`.
+//
+// This is a LOOP, and it is a loop deliberately: `ceil(duration / dt)` is NOT this number.
+// DAttackRadialSimulation::integrate ends a swing on the float predicate
+// `state.attackTimer < activeAttackSequence.getDuration()` with `attackTimer` accumulated as
+// `attackTimer = attackTimer + deltaSeconds` from `0.f`. Repeated float addition is not
+// multiplication: the shipped side swings run 0.7 s and 42 * (1/60) is 0.7 in real arithmetic but
+// lands BELOW 0.7f in float, so the radial takes 43 steps where the division says 42. Nothing a
+// reader can inspect tells them which side a given (duration, dt) pair falls on, and the helper
+// must not guess -- so it performs THE SAME float operations in THE SAME order as the radial and
+// returns the count the radial itself will reach. The agreement is pinned by
+// DAttack.Integrate3.AttackEndTickMatchesTheFirstIdleTick, which drives the whole
+// SimulatableBrawler for every authored sequence and the Hadouken.
+//
+// It assumes `dt` is the same on every tick of a swing -- true today (fixed 60 Hz step,
+// kNominalSimStepSeconds; SimulationManager reads one stepDt per step). A variable step would
+// break the radial's own schedule the same way, and guarding that is not this function's job.
+inline uint32_t swingTickCount(float duration, float dt)
+{
+	OG_CHECK(duration > 0.f && dt > 0.f,
+		"dAttackMachineSimulation::swingTickCount - a non-positive duration or step would not "
+		"terminate. `duration` comes from DAttackRadialSequence::getDuration() (authored data, "
+		"plus the appended zero-velocity point) and `dt` from the fixed sim step; a zero in "
+		"either is a construction error, not wire input.");
+
+	float t = 0.f;
+	uint32_t k = 0u;
+	while (t < duration)
+	{
+		t = t + dt;
+		++k;
+	}
+	return k;
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -142,6 +193,15 @@ public:
 	unsigned int m_queuedAttackSequence = InvalidAttackSequenceId;
 	HitReactionKind m_hitReaction = HitReactionKind::Stun;
 	float m_flinchDuration = kHitFlinchDuration;
+	// [movement-sim task 84] The absolute sim tick on which this machine will next be Idle --
+	// one past the LAST Attacking tick. Written ONLY where integrate3 produces a radial EDGE
+	// (the three write sites below); read by the movement sub-simulation, which runs LAST in
+	// SimulatableBrawler::integrate and therefore sees Attacking on ticks T..E while this value
+	// is E + 1. It is ON THE WIRE because a remote proxy that enters a swing by ADOPTION never
+	// simulated the edge and could not have computed the end -- the same argument
+	// brawlerRingout::State::respawnAtTick records for its countdown. Appended LAST, so every
+	// preceding field keeps the byte offset it already had.
+	uint32_t m_attackEndTick = 0u;
 };
 
 // [Task 62] Dependencies — OwnedDeps/ExternalDeps layout.
@@ -586,7 +646,24 @@ void integrate3(float deltaTime,
 			attackIntialConditions.activeAttackSequence = kHadoukenSequenceSentinel;
 			state.m_currentState = DAttackState::Attacking;
 			state.m_timeInCurrentState = 0.f;
-			OGBLOG_G("[Machine.transition] Idle -> Attacking (Hadouken, projectile spawn requested)");
+			// [movement-sim task 84] WRITE SITE 2 of 3, and it has NO `+ 1`. There is no radial
+			// here -- the sentinel makes the weapon early-return -- so there is no Invalid arriving
+			// a tick late. The machine gates ITSELF on `m_timeInCurrentState < kHadoukenCommitment
+			// Seconds`, accumulating `+= dt` from the 0 assigned on the line above with the same
+			// `<` predicate swingTickCount replicates, and exits on the first tick the sum reaches
+			// the window.
+			{
+				const uint32_t currentTick = input.getIntegrationUtils().getCurrentTick();
+				state.m_attackEndTick =
+					currentTick + swingTickCount(kHadoukenCommitmentSeconds, deltaTime);
+				OG_CHECK(state.m_attackEndTick > currentTick,
+					"dAttackMachineSimulation::integrate3 - the Hadouken commitment must be at "
+					"least one tick long; swingTickCount returns at least 1 for any positive "
+					"duration, so this can only fire if kHadoukenCommitmentSeconds went "
+					"non-positive.");
+				OGBLOG_G("[Machine.transition] Idle -> Attacking (Hadouken, projectile spawn "
+					"requested) endTick=%u", state.m_attackEndTick);
+			}
 			break;
 		}
 
@@ -603,7 +680,22 @@ void integrate3(float deltaTime,
 
 			if (state.m_activeAttackSequence != InvalidAttackSequenceId)
 			{
-				OGBLOG_G("[Machine.transition] Idle -> Attacking seq=%u", state.m_activeAttackSequence);
+				// [movement-sim task 84] WRITE SITE 1 of 3. End tick = the radial's deactivate tick
+				// + 1: the edge fires THIS tick (the radial resets its timer to 0 and then adds one
+				// dt), it deactivates on `tick + swingTickCount`, and this machine -- which runs
+				// BEFORE the radial -- sees that Invalid one tick later and exits then.
+				const uint32_t currentTick = input.getIntegrationUtils().getCurrentTick();
+				state.m_attackEndTick = currentTick + swingTickCount(
+					input.getIntegrationUtils()
+						.getAttackSequences()[state.m_activeAttackSequence].getDuration(),
+					deltaTime) + 1u;
+				OG_CHECK(state.m_attackEndTick > currentTick,
+					"dAttackMachineSimulation::integrate3 - the attack end tick must be in the "
+					"future on the tick it is written (swingTickCount returns at least 1 for any "
+					"positive duration). A value at or before the current tick reaches the movement "
+					"sub-sim as a stopped slide.");
+				OGBLOG_G("[Machine.transition] Idle -> Attacking seq=%u endTick=%u",
+					state.m_activeAttackSequence, state.m_attackEndTick);
 				state.m_currentState = DAttackState::Attacking; state.m_timeInCurrentState = 0.f;
 
 				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state);
@@ -628,7 +720,21 @@ void integrate3(float deltaTime,
 		{
 			if (attackState.attackTimer < 0.1)
 			{
-				OGBLOG_G("[Machine.Attacking] dualtap restart seq=4 (timer<0.1)");
+				// [movement-sim task 84] NO END TICK IS WRITTEN HERE, AND THAT IS DELIBERATE.
+				// This branch re-enters setRadialSimulationInitialConditions on EVERY tick the
+				// buttons stay down inside the 0.1 s window. When the active sequence is already 4
+				// the radial's edge predicate (`currenSequenceId != activeAttackSequence`) is
+				// FALSE, so the swing is NOT restarted -- the log line says "restart" and the
+				// weapon does not move. That no-op is pre-existing and is filed as its own Backlog
+				// item; it is not fixed here. Writing `tick + swingTickCount(...) + 1` on this
+				// branch would push the predicted end LATER on every one of those held ticks while
+				// the radial ended on its original schedule: an attack that never ends and a slide
+				// that never stops. Pinned by
+				// DAttack.Integrate3.DualTapRestartLeavesTheEndTickAlone.
+				// If that Backlog item is ever fixed so the branch DOES restart the radial, this
+				// non-write becomes wrong and must be revisited in the same change.
+				OGBLOG_G("[Machine.Attacking] dualtap restart seq=4 (timer<0.1) endTick=%u (unchanged)",
+					state.m_attackEndTick);
 				state.m_queuedAttackSequence = InvalidAttackSequenceId;
 				state.m_activeAttackSequence = 4;
 
@@ -668,10 +774,24 @@ void integrate3(float deltaTime,
 		{
 			if (state.m_queuedAttackSequence != InvalidAttackSequenceId)
 			{
-				OGBLOG_G("[Machine.transition] Attacking -> Attacking (queued seq=%u)",
-					state.m_queuedAttackSequence);
 				state.m_activeAttackSequence = state.m_queuedAttackSequence;
 				state.m_queuedAttackSequence = InvalidAttackSequenceId;
+				// [movement-sim task 84] WRITE SITE 3 of 3, and the formula is site 1's. The radial
+				// is Invalid on this tick -- that is the gate this block sits behind -- so assigning
+				// a new activeAttackSequence really does re-edge it, and the new swing has its own
+				// duration. The end tick MUST be rewritten here: leaving the previous swing's value
+				// would stop the slide at a tick that has already passed.
+				const uint32_t currentTick = input.getIntegrationUtils().getCurrentTick();
+				state.m_attackEndTick = currentTick + swingTickCount(
+					input.getIntegrationUtils()
+						.getAttackSequences()[state.m_activeAttackSequence].getDuration(),
+					deltaTime) + 1u;
+				OG_CHECK(state.m_attackEndTick > currentTick,
+					"dAttackMachineSimulation::integrate3 - the chained attack's end tick must be "
+					"in the future on the tick it is written, for the same reason the Idle entry's "
+					"must.");
+				OGBLOG_G("[Machine.transition] Attacking -> Attacking (queued seq=%u) endTick=%u",
+					state.m_activeAttackSequence, state.m_attackEndTick);
 
 				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state);
 			}
@@ -729,7 +849,8 @@ struct SerializableFields<dAttackMachineSimulation::State>
 			SIM_MEMBER(S, m_activeAttackSequence),
 			SIM_MEMBER(S, m_queuedAttackSequence),
 			SIM_MEMBER(S, m_hitReaction),
-			SIM_MEMBER(S, m_flinchDuration));
+			SIM_MEMBER(S, m_flinchDuration),
+			SIM_MEMBER(S, m_attackEndTick));
 	}
 };
 

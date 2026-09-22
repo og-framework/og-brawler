@@ -278,10 +278,10 @@ public:
                 /*1 left            */ { HitReactionKind::Knockback, 2000.f, 0.f  },
                 /*2 left -> left    */ { HitReactionKind::Knockback, 2000.f, 0.f  },
                 /*3 right -> right  */ { HitReactionKind::Knockback, 2000.f, 0.f  },
-                /*4 forward/overhead*/ { HitReactionKind::Stun,         0.f, 0.3f }
+                /*4 forward/overhead*/ { HitReactionKind::Stun,         0.f, 0.65f }
             }
         )
-        , m_projectileHitReaction{ HitReactionKind::Stun, 0.f, 0.3f }
+        , m_projectileHitReaction{ HitReactionKind::Stun, 0.f, 0.65f }
         , m_attackSimulationStaticData(m_attackSequences, m_attackCircle)
         , m_guardSimulationStaticData(m_attackCircle)
         // 0.875 s × 800 cm/s = 700 cm = 7 m travel distance (T26).
