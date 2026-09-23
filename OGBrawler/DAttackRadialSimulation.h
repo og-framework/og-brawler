@@ -788,21 +788,21 @@ void integrate(float deltaSeconds,
 	// attackSequences[kHadoukenSequenceSentinel] out of bounds.
 	if (initialConditions.activeAttackSequence == kHadoukenSequenceSentinel)
 	{
-		OGBLOG_G("[Radial.branch] hadouken sentinel — weapon idle, projectile owns this attack");
+		OGBLOG_G("[Verbose][Radial.branch] hadouken sentinel — weapon idle, projectile owns this attack");
 		state.currenSequenceId = InvalidAttackSequenceId;
 		return;
 	}
 
 	if (initialConditions.activeAttackSequence == InvalidAttackSequenceId && state.currenSequenceId != InvalidAttackSequenceId)
 	{
-		OGBLOG_G("[Radial.branch] deactivate (ic invalid, state active)");
+		OGBLOG_G("[Verbose][Radial.branch] deactivate (ic invalid, state active)");
 		deactivate(deltaSeconds, input, initialConditions, staticData, state, bindings, derivedState);
 		return;
 	}
 
 	if(state.currenSequenceId != initialConditions.activeAttackSequence)
 	{
-		OGBLOG_G("[Radial.branch] setInitialConditions (state.curSeq=%u -> ic.activeSeq=%u)",
+		OGBLOG_G("[Verbose][Radial.branch] setInitialConditions (state.curSeq=%u -> ic.activeSeq=%u)",
 			state.currenSequenceId, initialConditions.activeAttackSequence);
 		setInitialConditions(deltaSeconds, input, initialConditions, staticData, state, bindings, derivedState);
 
@@ -812,7 +812,7 @@ void integrate(float deltaSeconds,
 
 	if (state.currenSequenceId == InvalidAttackSequenceId)
 	{
-		OGBLOG_G("[Radial.branch] idle (state.curSeq invalid)");
+		OGBLOG_G("[Verbose][Radial.branch] idle (state.curSeq invalid)");
 		setIdlePose(deltaSeconds, input, initialConditions, staticData, state, bindings);
 		return;
 	}
@@ -820,7 +820,7 @@ void integrate(float deltaSeconds,
 	const auto& activeAttackSequence = staticData.getAttackSequences()[state.currenSequenceId];
 	if (state.attackTimer < activeAttackSequence.getDuration())
 	{
-		OGBLOG_G("[Radial.branch] applyTorque+tick (timer=%.4f dur=%.4f)",
+		OGBLOG_G("[Verbose][Radial.branch] applyTorque+tick (timer=%.4f dur=%.4f)",
 			state.attackTimer, activeAttackSequence.getDuration());
 		applyTorque(deltaSeconds, input, initialConditions, staticData, state, bindings);
 
@@ -830,7 +830,7 @@ void integrate(float deltaSeconds,
 	}
 	else
 	{
-		OGBLOG_G("[Radial.branch] deactivate (timer>=duration: %.4f >= %.4f)",
+		OGBLOG_G("[Verbose][Radial.branch] deactivate (timer>=duration: %.4f >= %.4f)",
 			state.attackTimer, activeAttackSequence.getDuration());
 		deactivate(deltaSeconds, input, initialConditions, staticData, state, bindings, derivedState);
 	}

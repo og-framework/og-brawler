@@ -517,7 +517,7 @@ void integrate2(float deltaTime,
 	}
 }
 
-inline const char* dAttackStateName(DAttackState s)
+constexpr const char* dAttackStateName(DAttackState s)
 {
 	switch (s)
 	{
@@ -528,6 +528,22 @@ inline const char* dAttackStateName(DAttackState s)
 	}
 	return "?";
 }
+
+// [og-netcode-v2-field-defects task 7] dAttackStateName is the `%s` of three [Machine.*] lines,
+// and the OGBLOG_G clip check charges every `%s` ogblog::kMaxStringArgBytes — a bound no type can
+// prove. This is that half: every name, the "?" fallback included (index kDAttackStateCount),
+// must fit it, or a [Machine.*] line could clip silently.
+static_assert([] {
+	for (int i = 0; i <= kDAttackStateCount; ++i)
+	{
+		std::size_t length = 0;
+		for (const char* c = dAttackStateName(static_cast<DAttackState>(i)); *c != '\0'; ++c)
+			++length;
+		if (length > ::ogblog::kMaxStringArgBytes)
+			return false;
+	}
+	return true;
+}(), "a dAttackStateName exceeds ogblog::kMaxStringArgBytes; the OGBLOG_G clip check no longer bounds the [Machine.*] lines that print it");
 
 // [Task 35, re-pointed at movement-sim task 62] CharacterBindings lives in
 // `OGBrawler/BrawlerCharacterBindings.h` — the leaf header included above — so integrate3 takes
