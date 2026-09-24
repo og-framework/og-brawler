@@ -12,7 +12,7 @@ namespace brawlerInboundHit
     // integrate3 as a plain by-ref parameter (NOT an ExternalDep — see
     // current_state.md §D7).
     //
-    // Two signals, one slice — same routing shape, different transitions:
+    // Three signals, one slice — same routing shape, different transitions:
     //
     //   wasHitThisTick               (T3)  — this character was struck by an
     //                                        opposing attacker's damaging hit
@@ -25,11 +25,23 @@ namespace brawlerInboundHit
     //                                        endReason=4 (blockedByGuard).
     //                                        Drives any-state -> GuardFlinch,
     //                                        mirroring the radial swing's
-    //                                        attacker-side hasHitGuard recoil.
+    //                                        attacker-side guard-block recoil
+    //                                        (wasGuardBlockedThisTick below).
     //                                        Fires from Idle too, because a
     //                                        projectile can be blocked long
     //                                        after the shooter's Hadouken
     //                                        commitment window has expired.
+    //   wasGuardBlockedThisTick (og-netcode-v2-field-defects task 9)
+    //                                      — this character's radial swing was
+    //                                        blocked by another character's
+    //                                        guard this tick. Set by routing
+    //                                        from the radial DerivedState's
+    //                                        guardBlockedThisTick, which
+    //                                        brawlerHitDetection::System wrote.
+    //                                        Drives Attacking -> GuardFlinch
+    //                                        only (the Attacking case reads it).
+    //                                        Replaces the radial State's
+    //                                        hasHitGuard, which rode the wire.
     //
     // Lives on simulatableBrawler::DerivedState (NOT serialized State) per
     // architectural decision D1 — see current_state.md §D1 for why. Follows the
@@ -42,6 +54,7 @@ namespace brawlerInboundHit
     public:
         bool wasHitThisTick               = false;   // T3
         bool wasProjectileBlockedThisTick = false;   // T15
+        bool wasGuardBlockedThisTick      = false;   // og-netcode-v2-field-defects task 9
 
         HitReactionKind reactionKind   = HitReactionKind::Stun;
         float           knockbackSpeed = 0.f;

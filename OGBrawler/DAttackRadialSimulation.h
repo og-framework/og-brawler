@@ -1,12 +1,14 @@
 #pragma once
 // SPDX-License-Identifier: BUSL-1.1
+// docs/DAttackRadialSimulation-rationale.md · docs/DAttackRadialSimulation-guards.md
 
 #include "OGSimulation/OGExport.h"
 #include <algorithm>
 #include <vector>
 #include <limits>
+#include <type_traits>
 #include "glm/vec3.hpp"
-#include "glm/common.hpp"	// glm::abs -- see the task-32 note at the abs site below
+#include "glm/common.hpp"
 #include <glm/gtc/quaternion.hpp>
 #include "DAttackRadialSequence.h"
 #include "OGBrawler/DAttackSequenceId.h"
@@ -29,11 +31,6 @@ OGSIM_OPTIMIZE_OFF
 
 class DAttackRadialSequence;
 
-// [Task 36] InvalidAttackSequenceId, kHadoukenSequenceSentinel, and isRealAttackSequence
-// were relocated to the minimal shared header OGBrawler/DAttackSequenceId.h (included above).
-// They form an attack-sequence-ID value domain owned by neither sub-sim — see that header.
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace dAttackRadialSimulation
 {
@@ -47,10 +44,6 @@ public:
 		, attackCircle(attackCircle)
 	{}
 
-	// Holds references into sibling members of the owning simulatableBrawler::StaticData
-	// (attackSequences / attackCircle). Copying/moving would rebind those references to
-	// the source object's members, dangling once the source is destroyed. The former
-	// hand-written copy ctor did exactly that silently — now compiler-enforced non-copyable.
 	StaticData(const StaticData&) = delete;
 	StaticData(StaticData&&) = delete;
 	StaticData& operator=(const StaticData&) = delete;
@@ -66,25 +59,22 @@ private:
 	const DAttackCircle& attackCircle;
 };
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+static_assert(!std::is_copy_constructible_v<StaticData> && !std::is_move_constructible_v<StaticData>
+	&& !std::is_copy_assignable_v<StaticData> && !std::is_move_assignable_v<StaticData>,
+	"dAttackRadialSimulation::StaticData holds references into sibling members of the owning "
+	"simulatableBrawler::StaticData. A copy or a move rebinds them to the SOURCE object's members, "
+	"which dangle once it is destroyed: keep all four special members deleted. Was the "
+	"non-copyable comment on these declarations (og-netcode-v2-field-defects task 19).");
+
 
 struct DAttackHit
 {
 	glm::vec3 position;
-	BodyId hitRootBodyId;   // actor-level id of the struck character (SpatialQueryHit::rootBodyId)
-	// [movement-sim task 83] The direction the WEAPON was travelling through this hit point:
-	// the swing plane's tangent at the hit radius, signed by the sequence's AUTHORED angular
-	// velocity. Hit routing throws the target along it. Unit length, or exactly (0,0,0) when
-	// the hit projects onto the rotation axis and no tangent exists -- routing treats that as
-	// degenerate and falls back to its away-from-attacker rule, so this must never be a NaN.
-	// DERIVED SCRATCH: DAttackHit is not serialized, so this field costs ZERO wire bytes.
+	BodyId hitRootBodyId;
 	glm::vec3 swingTangent{ 0.f };
 };
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// All physics setup descriptors for the radial simulation.
-// Body descriptors are compile-time constants; query volumes depend on StaticData.
 struct PhysicsSetup
 {
 	static inline const PhysicalObjectDescriptor body{
@@ -92,7 +82,7 @@ struct PhysicsSetup
 			.simulatePhysics = true,
 			.enableGravity = false
 		},
-		{   // shapes
+		{   /*shapes*/
 			ShapeDescriptor{
 				SphereGeometry{30.f},
 				CollisionCategories::single(collisionCategory::body)
@@ -120,91 +110,41 @@ struct PhysicsSetup
 	}
 };
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// The one shared definition lives in OGSimulation/PhysicsDeclaration.h. The
-// PhysicsDeclaration concept requires `same_as<PhysicsRuntimeBindings&>`, so a
-// field-identical per-sim copy is a DISTINCT type and does not conform; this
-// alias keeps every existing `dAttackRadialSimulation::RuntimeBindings`
-// spelling valid while making the type the shared one.
 using RuntimeBindings = PhysicsRuntimeBindings;
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Mutable per-tick scratch data only.
 class DerivedState
 {
 public:
 	DerivedState()
 	{
-		// ⛔ [movement-sim task 34] RESERVE, NOT RESIZE — AND THE DIFFERENCE WAS A LIVE BUG.
-		// This was `: attackHits(4), guardHits(4)`, a member-init RESIZE that manufactured FOUR
-		// default-constructed DAttackHit entries in each container. collisionCheck's first line
-		// is `if (derivedState.editAttackHits().size() >= 4) return;` — a genuine "at most four
-		// distinct targets per swing" cap, since the container ACCUMULATES across the whole
-		// swing (deduped by rootBodyId) and is cleared only in deactivate(). So a freshly
-		// constructed DerivedState arrived at that cap ALREADY SATISFIED and collisionCheck
-		// became a silent no-op.
-		//
-		// It was reachable, and not rarely: DerivedState is a long-lived per-character member
-		// (SimulatableBrawler.h), and SimulatableBrawler::integrate runs the machine sub-sim
-		// BEFORE this one in the same tick. An attack held on a character's very first tick has
-		// the machine write a VALID activeAttackSequence, which makes integrate() skip the
-		// deactivate branch — the ONLY site that clears these containers. setInitialConditions
-		// does not clear them either. The swing then registered NO hits for its entire duration,
-		// with no assert and no log, and the four phantoms additionally reached the manager's
-		// hit routing (BrawlerHitRoutingSystem) and drew four guard-hit spheres at the origin.
-		// ⚠ Rollback/resim makes it MORE likely, not less: a resim replays from early states.
-		//
-		// ⭐ THE POINT OF RESERVING INSTEAD: size() now means exactly what the guard reads it
-		// as — "hits recorded during the CURRENT swing" — at every moment of the object's
-		// lifetime, including before the first deactivate. The coupling cannot fail silently
-		// because the failing STATE is no longer representable. An assert could not have done
-		// this job: DAttackHit carries no provenance, so four phantoms and four legitimately
-		// capped hits are indistinguishable at the guard.
-		//
-		// The 4 here is only a capacity hint (the guard's cap is what makes 4 the useful
-		// number). Pinned by DAttackRadialFirstTickCollisionTest.cpp — four cases
-		// walking the machine->radial tick-1 path end to end — and by SimulatableBrawlerTest's
-		// "the slice ctor really ran" case, which now anchors on capacity() rather than size().
 		attackHits.reserve(4);
 		guardHits.reserve(4);
 		hitsThisTick.reserve(4);
+		OG_CHECK(attackHits.empty() && guardHits.empty() && hitsThisTick.empty(),
+			"dAttackRadialSimulation::DerivedState - a fresh DerivedState must hold NO hits: RESERVE, "
+			"never resize (a member-init `attackHits(4)` is a resize). The detector's four-target cap "
+			"reads size(), so four phantom entries make every swing register nothing. Was the "
+			"RESERVE-NOT-RESIZE comment of movement-sim task 34 (og-netcode-v2-field-defects task 19).");
 	}
 
 	DerivedState(const DerivedState& other)
 		: attackHits(other.attackHits)
 		, guardHits(other.guardHits)
 		, hitsThisTick(other.hitsThisTick)
+		, guardBlockedThisTick(other.guardBlockedThisTick)
 	{}
 
 	const std::vector<DAttackHit>& getAttackHits() const { return attackHits; }
 	std::vector<DAttackHit>& editAttackHits() { return attackHits; }
 
-	// [movement-sim task 83] THE PER-TICK HIT SIGNAL, and it is a DIFFERENT THING from
-	// attackHits above -- conflating the two is the defect this member exists to close.
-	// attackHits is the per-SWING DEDUP LEDGER: it accumulates for the whole swing and is
-	// cleared only in deactivate(), which is exactly what makes "have I already hit this
-	// character?" answerable and what the <= 4 distinct targets cap counts. Hit routing used
-	// to iterate it every post-integrate, so ONE hit re-fired on EVERY remaining tick of the
-	// swing: the knockback velocity was re-assigned with no decay for ~0.4 s (13 m instead of
-	// 5 m, the user's PIE report), the lockout timer restarted every tick, a stun re-entered
-	// every tick, and the direction was re-resolved from positions that had MOVED, so the
-	// throw curved.
-	// This container holds only the hits registered on the CURRENT tick. It is cleared at the
-	// TOP of integrate(), unconditionally and before every early return.
-	// ⛔ Do NOT move that clear into collisionCheck(): collisionCheck early-returns when the
-	// swing is not Damaging and is not called at all outside a swing, so a clear there would
-	// leave the last Damaging tick's entries live for the rest of the swing -- the same bug in
-	// a smaller window.
-	// DERIVED SCRATCH, like attackHits: ZERO wire bytes.
 	const std::vector<DAttackHit>& getHitsThisTick() const { return hitsThisTick; }
 	std::vector<DAttackHit>& editHitsThisTick() { return hitsThisTick; }
 
-	// Positions where the weapon intersected another character's guard during this
-	// attack. Recorded alongside hasHitGuard in integrate() and cleared at the same
-	// point as attackHits (firstResimStep / new attack sequence). Visualization renders
-	// these as blue spheres in dAttackRadialVisualization.
+	bool getGuardBlockedThisTick() const { return guardBlockedThisTick; }
+	bool& editGuardBlockedThisTick() { return guardBlockedThisTick; }
+
 	const std::vector<DAttackHit>& getGuardHits() const { return guardHits; }
 	std::vector<DAttackHit>& editGuardHits() { return guardHits; }
 
@@ -212,94 +152,69 @@ private:
 	std::vector<DAttackHit> attackHits;
 	std::vector<DAttackHit> guardHits;
 	std::vector<DAttackHit> hitsThisTick;
+	bool guardBlockedThisTick = false;
 };
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 class PlayerInput
 {
 public:
-	// [Task 43] Plain aggregate — C++20 parenthesis aggregate init keeps construct-site calls valid.
+	// ⛔G-02  docs/DAttackRadialSimulation-guards.md
 	glm::vec3 aimDirection{};
 	bool attackLeft = false;
 	bool attackRight = false;
 
-	// THE NEUTRAL INPUT for this sub-simulation, folded into the composite by
-	// SimulationComposite::zero() — which is all getZeroPlayerInput() now is.
-	// [movement-sim task 22] The value is copied VERBATIM from what that function
-	// handed this type before the fold; it is a wire value, not something to re-derive.
-	// ⛔ (0,0,1) forwards, NOT PlayerInput{}: a value-initialised (0,0,0) aim would
-	// reach normalize(), and the difference is also the TAG the input-resolution and
-	// net-sync anti-vacuity tests discriminate on. Keep zero() != PlayerInput{}.
-	// Plain static, not constexpr: glm's vec3 constructor constexpr-ness is build-flag
-	// dependent in this tree.
+	// ⛔G-01  docs/DAttackRadialSimulation-guards.md
 	static PlayerInput zero() { return PlayerInput(glm::vec3(0.f, 0.f, 1.f), false, false); }
 };
 
 
-template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
+template <typename PhysicsBodyAdapterType>
 class IntegrationUtils
 {
 public:
 	IntegrationUtils(float deltaTime,
-		PhysicsBodyAdapterType& physicsBodyAdapter,
-		SpatialQueryAdapterType& queryAdapter)
+		PhysicsBodyAdapterType& physicsBodyAdapter)
 		: m_deltaTime(deltaTime)
 		, m_physicsBodyAdapter(physicsBodyAdapter)
-		, m_queryAdapter(queryAdapter)
 	{}
 
 	float getDeltaTime() const { return m_deltaTime; }
 	PhysicsBodyAdapterType& getPhysicsAdapter() const { return m_physicsBodyAdapter; }
-	SpatialQueryAdapterType& getQueryAdapter() const { return m_queryAdapter; }
 
 private:
 	float m_deltaTime;
 	PhysicsBodyAdapterType& m_physicsBodyAdapter;
-	SpatialQueryAdapterType& m_queryAdapter;
 };
 
-template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
-using AllInput = SimulationAllInput<PlayerInput, IntegrationUtils<PhysicsBodyAdapterType, SpatialQueryAdapterType>>;
+template <typename PhysicsBodyAdapterType>
+using AllInput = SimulationAllInput<PlayerInput, IntegrationUtils<PhysicsBodyAdapterType>>;
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 class InitialConditions
 {
 public:
-	// [Task 45] Plain aggregate — m_ prefix dropped, getInitialRotation() inlined at call sites.
 	float initialAimAngle = 0.f;
 	glm::vec3 initialAimRotationAxis{0.f, 0.f, 0.f};
 	unsigned int activeAttackSequence = InvalidAttackSequenceId;
 	unsigned int activeRootBodyId = 0;
 };
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 class State
 {
 public:
-	// [Task 44] Plain aggregate.
 	float attackTimer = 0.f;
 	unsigned int currenSequenceId = 0;
-	bool hasHitGuard = false;
 	PhysicsBodyState bodyState;
 };
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct PhysicsDeclaration
 {
 	static const PhysicalObjectDescriptor& descriptor() { return PhysicsSetup::body; }
 	static constexpr const char* name = "WeaponAxis";
 
-	// Maps the GAME's aggregate static data to this sub-simulation's own slice.
-	// This is what makes body creation generic: the engine-side fold asks each
-	// declaration for its slice instead of branching on the declaration type.
-	// A member TEMPLATE deliberately — this header cannot name
-	// simulatableBrawler::StaticData, because the aggregate includes this header
-	// (an include cycle). GameStaticDataType is deduced at the call site, where the aggregate is
-	// complete.
 	template <typename GameStaticDataType>
 	static const StaticData& staticDataOf(const GameStaticDataType& gsd) { return gsd.m_attackSimulationStaticData; }
 
@@ -318,9 +233,7 @@ struct PhysicsDeclaration
 	RuntimeBindings bindings;
 };
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// [Task 62] Dependencies — OwnedDeps/ExternalDeps layout.
 struct Dependencies {
 	using Owned = OwnedDeps<
 		dAttackRadialSimulation::InitialConditions,
@@ -331,23 +244,10 @@ struct Dependencies {
 	External external;
 };
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 OGBRAWLER_API DAttackSegment getAttackSegment(const InitialConditions& initialConditions, const StaticData& staticData, const glm::vec3& directionInRotationPlane);
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Pure block predicate shared by collisionCheck (below) and the attacker-side
-// block-prediction visualization (dAttackBlockPredictionVisualization). Extracting it
-// makes sim/viz drift structurally impossible. No side effects. Returns true iff a swing
-// of `activeAttackSequence` from `attackerRoot` (the attacker's own body position,
-// State::bodyState.position / physics.getBodyTransform(bindings.ownBodyId)[3]) would be
-// blocked by a guard body whose current world transform is `guardTransform` and whose
-// overlap position in the query is `guardOverlapPosition` (SpatialQueryHit::objectPosition
-// of the guard-category hit). Constants and the outer gate mirror collisionCheck exactly:
-// shieldAngle = 0.25f, outerShieldAngle = pi/2 (0.5 double literal → implicit narrowing,
-// preserved verbatim), and the POSITIVE `td < outerShieldAngle` gate (NOT a negated
-// early-return) preserves the sim's "NaN falls through to attack-lands" semantics.
 inline bool wouldGuardBlock(
 	unsigned int     activeAttackSequence,
 	const glm::vec3& attackerRoot,
@@ -360,8 +260,9 @@ inline bool wouldGuardBlock(
 	const glm::vec3 collisionDirection = attackerRoot - collidingPosition;
 	const glm::vec3 normalizedCollisionDirection = glm::normalize(collisionDirection);
 	const float shieldAngle      = 0.25f;
-	const float outerShieldAngle = glm::pi<float>() * 0.5;   // implicit narrowing — matches sim
+	const float outerShieldAngle = glm::pi<float>() * 0.5;
 	const float td = std::acos(glm::dot(normalizedCollisionDirection, guardForward));
+	// ⛔G-03  docs/DAttackRadialSimulation-guards.md
 	if (td < outerShieldAngle)
 	{
 		const glm::vec3 guardAxis = glm::cross(normalizedCollisionDirection, guardForward);
@@ -381,14 +282,13 @@ inline bool wouldGuardBlock(
 	return false;
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace
 {
 
-template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
+template <typename PhysicsBodyAdapterType>
 void setInitialConditions(float deltaSeconds,
-	const AllInput<PhysicsBodyAdapterType, SpatialQueryAdapterType>& input,
+	const AllInput<PhysicsBodyAdapterType>& input,
 	const InitialConditions& initialConditions,
 	const StaticData& staticData,
 	State& state,
@@ -401,6 +301,12 @@ void setInitialConditions(float deltaSeconds,
 		initialConditions.initialAimRotationAxis.x,
 		initialConditions.initialAimRotationAxis.y,
 		initialConditions.initialAimRotationAxis.z);
+	OG_CHECK(isRealAttackSequence(initialConditions.activeAttackSequence)
+		&& initialConditions.activeAttackSequence < staticData.getAttackSequences().size(),
+		"dAttackRadialSimulation::setInitialConditions - the InitialConditions sequence does not "
+		"index the sequence table. integrate's Hadouken-sentinel return must stay AHEAD of its "
+		"setInitialConditions branch, or the sentinel is used as an index. Was the Hadouken "
+		"comment in integrate (og-netcode-v2-field-defects task 19).");
 	state.attackTimer = 0.f;
 	state.currenSequenceId = initialConditions.activeAttackSequence;
 
@@ -420,9 +326,9 @@ void setInitialConditions(float deltaSeconds,
 	physics.setBodyAngularVelocity(bindings.ownBodyId, glm::vec3(0.f, 0.f, activeAttackSequence.getInitialVelocity()));
 }
 
-template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
+template <typename PhysicsBodyAdapterType>
 void setIdlePose(float deltaSeconds,
-	const AllInput<PhysicsBodyAdapterType, SpatialQueryAdapterType>& input,
+	const AllInput<PhysicsBodyAdapterType>& input,
 	const InitialConditions& initialConditions,
 	const StaticData& staticData,
 	State& state,
@@ -439,11 +345,10 @@ void setIdlePose(float deltaSeconds,
 	physics.setBodyTransform(bindings.ownBodyId, upAlignmentTransform);
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
+template <typename PhysicsBodyAdapterType>
 void applyTorque(float deltaSeconds,
-	const AllInput<PhysicsBodyAdapterType, SpatialQueryAdapterType>& input,
+	const AllInput<PhysicsBodyAdapterType>& input,
 	const InitialConditions& initialConditions,
 	const StaticData& staticData,
 	State& state,
@@ -463,262 +368,10 @@ void applyTorque(float deltaSeconds,
 	physics.addBodyTorque(bindings.ownBodyId, worldSequenceRotationAxis * a * inertiaTensor.z);
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
-void collisionCheck(float deltaSeconds,
-	const AllInput<PhysicsBodyAdapterType, SpatialQueryAdapterType>& input,
-	const InitialConditions& initialConditions,
-	const StaticData& staticData,
-	State& state,
-	const RuntimeBindings& bindings,
-	DerivedState& derivedState)
-{
-	if (derivedState.editAttackHits().size() >= 4)
-		return;
-
-	auto& physics = input.getIntegrationUtils().getPhysicsAdapter();
-	auto& queryAdapter = input.getIntegrationUtils().getQueryAdapter();
-	const auto& activeAttackSequence = staticData.getAttackSequences()[initialConditions.activeAttackSequence];
-
-	const glm::mat4x4 rootTransform = physics.getBodyTransform(bindings.ownBodyId);
-	const glm::vec3 rootTranslation = glm::vec3(rootTransform[3]);
-
-	const glm::vec4 defaultForward4(DAttackRadialSequence::defaultForward(), 0.f);
-	const glm::vec3 currentDirection = glm::vec3(rootTransform * defaultForward4);
-
-	const glm::mat4 initialRotation = glm::rotate(glm::mat4(1.f), initialConditions.initialAimAngle, initialConditions.initialAimRotationAxis);
-	const glm::vec3 worldSequenceRotationAxis = glm::vec3(initialRotation * glm::vec4(activeAttackSequence.getRotationAxis(), 0.f));
-
-	const auto currentAttackSegment = getAttackSegment(initialConditions, staticData, currentDirection);
-	if (currentAttackSegment.state != DAttackRadialSequenceState::Damaging)
-		return;
-
-	// Update parent transforms before querying
-	for (const auto& volumeId : bindings.queryVolumeIds)
-		queryAdapter.setVolumeParentTransform(volumeId, rootTransform);
-
-	SpatialQueryReport queryReport = queryAdapter.overlap(bindings.queryVolumeIds);
-
-	if (queryReport.empty())
-		return;
-
-	struct RootHitData
-	{
-		BodyId rootBodyId;
-		unsigned int guardHitIndex = 1337;
-		unsigned int bodyHitIndex = 1337;
-	};
-	std::vector<RootHitData> actorHits;
-
-	for (size_t i = 0; i < queryReport.size(); ++i)
-	{
-		const auto& hit = queryReport[i];
-
-		if (std::find_if(derivedState.editAttackHits().begin(), derivedState.editAttackHits().end(), [&hit](const DAttackHit& hitIteratorValue) {
-			return hitIteratorValue.hitRootBodyId == hit.rootBodyId;
-			}) != derivedState.editAttackHits().end())
-		{
-			continue;
-		}
-
-		const glm::vec3 hitDirection = hit.objectPosition - rootTranslation;
-
-		// [movement-sim task 33] SIGNED, AND IT MUST STAY SIGNED. This is hitDirection's
-		// component ALONG the swing axis; subtracting it below is what projects the hit onto
-		// the swing plane. This site used the ABSOLUTE value for that subtraction until task
-		// 33, which is correct only for a hit ABOVE the plane -- for one BELOW it the axial
-		// component is doubled AWAY from the plane instead of removed: (75, 0, -35) became
-		// (75, 0, -70), not (75, 0, 0). hitDistance was therefore inflated for below-plane
-		// hits only, and since it gates BOTH ends of the annulus the strike zone below the
-		// plane was displaced INWARD -- the swing lost outward reach below the plane and
-		// landed phantom hits inside the inner hole. A real behavioural fix, not hardening.
-		// Pinned by DAttackRadialSwingPlaneTest.cpp
-		// "DAttackRadial.MirroredHitsAreTheSameDistanceFromTheSwingAxis" (mirror-image hits
-		// measured 75.0 above vs 102.5914 below before the fix; 75.0 / 75.0 after).
-		const float signedDistanceAlongRotationAxis = glm::dot(hitDirection, worldSequenceRotationAxis);
-
-		// [movement-sim task 32] glm::abs, NOT unqualified abs. glm::dot returns a float
-		// here, and an unqualified `abs` in a non-dependent expression binds at this
-		// header's POINT OF DEFINITION -- so which overload wins is a property of the
-		// include set, i.e. of the toolchain. og-brawler targets a Godot port and a Jolt
-		// adapter where only C's `::abs(int)` may be in scope; under that overload this
-		// line becomes `(float)abs((int)dot(...))` and throws away the FRACTION.
-		// ⚠ This dot is a SIGNED DISTANCE in cm along the rotation axis, NOT a cosine:
-		// hitDirection is a raw world-space delta, not a unit vector. Truncation therefore
-		// bites at EVERY magnitude, not only inside (-1,1) -- 5.7 cm reads as 5 cm -- and the
-		// value gates `< getHalfThickness()` below, so bodies the swing passes cleanly under
-		// would start registering hits.
-		// Task 32 measured that this was ALREADY binding the float overload on this
-		// toolchain (MSVC 14.38), so the change is PORTABILITY HARDENING and not a
-		// behaviour fix. glm::abs cannot resolve to an integer overload for a float.
-		// Pinned by DAttackAbsQualificationTest.cpp
-		// "DAttackAbs.RadialAxisDistanceKeepsItsFraction" (0 hits vs 1 under an int overload).
-		// ⛔ [movement-sim task 33] The UNSIGNED magnitude, and it feeds the half-thickness
-		// gate below and NOTHING else. A distance FROM a plane has no sign, so glm::abs is
-		// correct there and was never the defect. Do not reuse this for the projection.
-		// (Task 32's note above still describes this call; only the dot product it wraps
-		// moved one declaration up, so the same operand reaches the same glm::abs.)
-		const float lengthAlongRotationAxis = glm::abs(signedDistanceAlongRotationAxis);
-		const glm::vec3 hitDirectionOnRotationPlane = hitDirection - signedDistanceAlongRotationAxis * worldSequenceRotationAxis;
-		const float hitDistance = glm::length(hitDirectionOnRotationPlane);
-
-		const bool hitIsInCircle = hitDistance > staticData.getAttackCircle().getInnerRadius() &&
-			hitDistance < staticData.getAttackCircle().getOuterRadius() &&
-			lengthAlongRotationAxis < staticData.getAttackCircle().getHalfThickness();
-
-		if (!hitIsInCircle)
-			continue;
-
-		const glm::vec3 normalizedHitDirection = glm::normalize(hitDirectionOnRotationPlane);
-		const auto hitAttackSegment = getAttackSegment(initialConditions, staticData, normalizedHitDirection);
-
-		if (currentAttackSegment.index != hitAttackSegment.index)
-			continue;
-
-		{
-			auto findIt = std::find_if(actorHits.begin(), actorHits.end(), [&hit](const RootHitData& hitData) {
-				return hitData.rootBodyId == hit.rootBodyId;
-				});
-			if (findIt == actorHits.end())
-			{
-				// [hit-resolution T11] Merge body and guard hits by ACTOR-level identity
-				// (rootBodyId). Both the hurtbox and the guard shape on a character now
-				// report the same rootBodyId (the capsule), so the two shape hits merge
-				// into ONE RootHitData with both bodyHitIndex and guardHitIndex set — the
-				// guard directional check below then runs on the correct pairing.
-				// The 1337 sentinels guard the body-only vs guard-case fork below
-				// (`bodyHitIndex == 1337` continue; `guardHitIndex == 1337` body-only
-				// branch). T10 fixed these initializers from 0 to 1337; T11 restores the
-				// body+guard merge that pre-D8 relied on, so the sentinel path is no
-				// longer load-bearing but is kept correct for standalone-body cases.
-				actorHits.push_back({ hit.rootBodyId, 1337, 1337 });
-				findIt = actorHits.end() - 1;
-			}
-
-			if (hit.objectCategories.contains(collisionCategory::guard))
-				findIt->guardHitIndex = static_cast<unsigned int>(i);
-			else if (hit.objectCategories.contains(collisionCategory::body))
-				findIt->bodyHitIndex = static_cast<unsigned int>(i);
-		}
-	}
-
-	// [movement-sim task 83] THE SWING TANGENT AT A HIT -- the direction the weapon is travelling
-	// through the hit point, which is the direction the hit throws its target.
-	//
-	// cross(axis, r) is the direction of INCREASING angle: glm::rotate is right-handed and this
-	// sim drives the weapon with setBodyAngularVelocity(axis * w) / addBodyTorque(axis * a * I),
-	// so +w carries a radial vector r toward cross(axis, r). Signing that by the sequence's
-	// angular velocity turns "the tangent" into "the direction of travel" -- the opposite sign
-	// would throw the target INTO the weapon. Sequence 0 runs -pi/2 -> +3pi/8 (w > 0) and
-	// sequence 1 mirrors it (w < 0), so left and right throws mirror without a second rule.
-	//
-	// AUTHORED w, NEVER the captured body angularVelocity. The captured value is produced by the
-	// engine's own integration, so it differs between peers and between a live tick and its
-	// replay; the table value is identical everywhere. A gameplay decision must not read an
-	// engine number.
-	//
-	// Recomputed here from whichever query hit is actually pushed, rather than carried down from
-	// the loop above: the body-only branch and the guard branch below push DIFFERENT hits, and a
-	// tangent belonging to a different shape than the recorded position would be a silent lie.
-	// The projection is the same one the annulus test uses, so the tangent is taken at the
-	// target's own hit radius -- the direction the swing actually touched it.
-	const float authoredAngularVelocity =
-		activeAttackSequence.getAngularVelocity(state.attackTimer);
-	auto swingTangentAt = [&](const glm::vec3& objectPosition) -> glm::vec3
-	{
-		const glm::vec3 direction = objectPosition - rootTranslation;
-		const glm::vec3 onPlane = direction
-			- glm::dot(direction, worldSequenceRotationAxis) * worldSequenceRotationAxis;
-		// A hit sitting exactly on the rotation axis has no tangent. Return the zero vector
-		// rather than normalize()'s NaN; hit routing reads that as degenerate and falls back to
-		// the away-from-attacker direction.
-		if (glm::dot(onPlane, onPlane) <= 0.f)
-			return glm::vec3(0.f);
-		const glm::vec3 tangent = glm::cross(worldSequenceRotationAxis, glm::normalize(onPlane));
-		return authoredAngularVelocity < 0.f ? -tangent : tangent;
-	};
-
-	// [movement-sim task 83] Every accepted hit is recorded TWICE, and the two containers mean
-	// different things: attackHits is the per-swing dedup ledger the loop above reads back,
-	// hitsThisTick is the one-tick signal hit routing consumes. See DerivedState.
-	auto registerAttackHit = [&derivedState](const DAttackHit& registered)
-	{
-		derivedState.editAttackHits().push_back(registered);
-		derivedState.editHitsThisTick().push_back(registered);
-	};
-
-	for (const auto& actorHit : actorHits)
-	{
-		if (actorHit.bodyHitIndex == 1337)
-			continue;
-
-		if(actorHit.guardHitIndex == 1337)
-		{
-			const auto& hit = queryReport[actorHit.bodyHitIndex];
-			registerAttackHit({ hit.objectPosition, hit.rootBodyId,
-				swingTangentAt(hit.objectPosition) });
-		}
-		else
-		{
-			const auto& hit = queryReport[actorHit.guardHitIndex];
-			// Query guard body transform via PhysicsBodyAdapter using hit's BodyId
-			const glm::mat4x4 guardTransform = physics.getBodyTransform(hit.bodyId);
-
-			// Compute the indicator position on the attacker's weapon line. Two cases:
-			//   1. If the weapon line (rootTranslation + t * currentDirection) crosses the
-			//      opponent's inner circle, use the near intersection (entry side, closer
-			//      to the attacker). Math: quadratic t² + 2bt + c = 0 with b = dot(v, d),
-			//      c = |v|² - r², v = attacker - opponent; smaller root = -b - sqrt(...).
-			//   2. If the weapon line misses the inner circle (guard hits can register via
-			//      spatial overlap even when the weapon direction is off to one side), fall
-			//      back to the closest point on the weapon line to the opponent — the foot
-			//      of the perpendicular from opponent onto the line: t = dot(opponent - attacker, d).
-			// In both cases t is clamped to the visible weapon segment [0, outerRadius] so
-			// the indicator can never appear off the end of the blade or behind the attacker.
-			auto weaponHitIndicatorPosition = [&]() -> glm::vec3 {
-				const glm::vec2 weaponDirXY = glm::normalize(glm::vec2(currentDirection.x, currentDirection.y));
-				const glm::vec2 attackerXY(rootTranslation.x, rootTranslation.y);
-				const glm::vec2 opponentXY(hit.objectPosition.x, hit.objectPosition.y);
-				const glm::vec2 v = attackerXY - opponentXY;
-				const float innerR = staticData.getAttackCircle().getInnerRadius();
-				const float outerR = staticData.getAttackCircle().getOuterRadius();
-				const float b = glm::dot(v, weaponDirXY);
-				const float c = glm::dot(v, v) - innerR * innerR;
-				const float discriminant = b * b - c;
-				float t;
-				if (discriminant >= 0.f)
-					t = -b - std::sqrt(discriminant); // near intersection on inner circle
-				else
-					t = glm::dot(opponentXY - attackerXY, weaponDirXY); // closest point on weapon line
-				t = glm::clamp(t, 0.f, outerR);
-				return glm::vec3(attackerXY.x + t * weaponDirXY.x, attackerXY.y + t * weaponDirXY.y, hit.objectPosition.z);
-			};
-
-			// Guard directional block classification now lives in the shared
-			// dAttackRadialSimulation::wouldGuardBlock predicate (above) so the sim and
-			// the attacker-side block-prediction viz cannot drift. Side effects stay at
-			// the call site: weaponHitIndicatorPosition() depends on currentDirection,
-			// which is not an input to the pure predicate.
-			if (wouldGuardBlock(initialConditions.activeAttackSequence, rootTranslation, guardTransform, hit.objectPosition))
-			{
-				state.hasHitGuard = true;
-				derivedState.editGuardHits().push_back({ weaponHitIndicatorPosition(), hit.rootBodyId });
-				break;
-			}
-
-			registerAttackHit({ hit.objectPosition, hit.rootBodyId,
-				swingTangentAt(hit.objectPosition) });
-		}
-	}
-
-}
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
+template <typename PhysicsBodyAdapterType>
 void deactivate(float deltaSeconds,
-	const AllInput<PhysicsBodyAdapterType, SpatialQueryAdapterType>& input,
+	const AllInput<PhysicsBodyAdapterType>& input,
 	const InitialConditions& initialConditions,
 	const StaticData& staticData,
 	State& state,
@@ -737,16 +390,14 @@ void deactivate(float deltaSeconds,
 
 	derivedState.editAttackHits().clear();
 	derivedState.editGuardHits().clear();
-	state.hasHitGuard = false;
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 } //anonymous namespace
 
-template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
+template <typename PhysicsBodyAdapterType>
 void integrate(float deltaSeconds,
-	const AllInput<PhysicsBodyAdapterType, SpatialQueryAdapterType>& input,
+	const AllInput<PhysicsBodyAdapterType>& input,
 	const StaticData& staticData,
 	Dependencies deps,
 	const RuntimeBindings& bindings,
@@ -755,20 +406,11 @@ void integrate(float deltaSeconds,
 	const InitialConditions& initialConditions = deps.owned.get<InitialConditions>();
 	State& state = deps.owned.edit<State>();
 
-	// [movement-sim task 83] THE PER-TICK HIT SIGNAL IS CLEARED HERE, FIRST AND
-	// UNCONDITIONALLY -- ahead of the Hadouken sentinel return, the deactivate branch, the
-	// idle branch and collisionCheck itself. Every one of those is a path out of this
-	// function, and a tick that leaves by any of them registered no hits, so it must publish
-	// none. This is the ONLY clear site, which is what makes "hitsThisTick is what happened
-	// on THIS tick" true for every tick rather than for the Damaging ones only.
-	// ⛔ Not in collisionCheck: it early-returns when the swing is not Damaging and is not
-	// called outside a swing at all, so a clear there would leave the last Damaging tick's
-	// entries live and hit routing would keep re-firing them.
-	// attackHits is deliberately NOT cleared here -- it is the per-SWING dedup ledger and
-	// deactivate() stays its only clear site.
+	// ⛔G-04  docs/DAttackRadialSimulation-guards.md
 	derivedState.editHitsThisTick().clear();
+	// ⛔G-05  docs/DAttackRadialSimulation-guards.md
+	derivedState.editGuardBlockedThisTick() = false;
 
-	// [NP-6] Explicit attachment math — replaces updateLinearAttachmentToOwner()
 	{
 		auto& physics = input.getIntegrationUtils().getPhysicsAdapter();
 		glm::mat4 parentTransform = physics.getBodyTransform(bindings.parentBodyId);
@@ -781,11 +423,6 @@ void integrate(float deltaSeconds,
 	OGBLOG_G("[Radial.integrate] ic.activeSeq=%u state.curSeq=%u state.attackTimer=%.4f",
 		initialConditions.activeAttackSequence, state.currenSequenceId, state.attackTimer);
 
-	// Hadouken sentinel: the machine sim owns this "attack" via the projectile sub-sim.
-	// Keep the weapon idle (the attachment math above already re-parents it this tick) and
-	// reset currenSequenceId so the machine's Attacking->Idle exit fires naturally next
-	// tick. Returning here also avoids the setInitialConditions path indexing
-	// attackSequences[kHadoukenSequenceSentinel] out of bounds.
 	if (initialConditions.activeAttackSequence == kHadoukenSequenceSentinel)
 	{
 		OGBLOG_G("[Verbose][Radial.branch] hadouken sentinel — weapon idle, projectile owns this attack");
@@ -824,8 +461,6 @@ void integrate(float deltaSeconds,
 			state.attackTimer, activeAttackSequence.getDuration());
 		applyTorque(deltaSeconds, input, initialConditions, staticData, state, bindings);
 
-		collisionCheck(deltaSeconds, input, initialConditions, staticData, state, bindings, derivedState);
-
 		state.attackTimer = state.attackTimer + deltaSeconds;
 	}
 	else
@@ -839,13 +474,10 @@ void integrate(float deltaSeconds,
 template <typename StateReplicator>
 void network(StateReplicator& replicator)
 {
-	// [Task 44] State is now a plain aggregate; no getter/setter-based network registration needed.
-	// network() has no callers currently.
 }
 
 }
 
-// [Task 39] SerializableFields specializations for dAttackRadialSimulation types.
 
 template <>
 struct SerializableFields<dAttackRadialSimulation::InitialConditions>
@@ -870,7 +502,6 @@ struct SerializableFields<dAttackRadialSimulation::State>
 		return std::make_tuple(
 			SIM_MEMBER(S, attackTimer),
 			SIM_MEMBER(S, currenSequenceId),
-			SIM_MEMBER(S, hasHitGuard),
 			SIM_MEMBER(S, bodyState));
 	}
 };
@@ -892,6 +523,5 @@ static_assert(SimulationInput<dAttackRadialSimulation::PlayerInput>);
 static_assert(SimulationInitialConditions<dAttackRadialSimulation::InitialConditions>);
 
 OGSIM_OPTIMIZE_ON
-
 
 

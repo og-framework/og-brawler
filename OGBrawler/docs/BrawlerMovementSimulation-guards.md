@@ -786,10 +786,11 @@ Was must-never-move **T3-1**.
 // input sequence) — none of them reach this file.
 ```
 
-**What broke if it moved.** The cycle it forbids **cannot be made an error**: `#pragma once` silently leaves one side incomplete depending on which header the TU entered from. There is no compiler diagnostic to fall back on, so the only guard is a sentence beside the include that would re-create it.
+**What broke if it moved.** A re-created include cycle. It is not silent: measured by og-netcode-v2-field-defects task 18 (2026-09-23): re-adding the include to `DAttackMachineSimulation.h` fails with `C2653` in every translation unit that reaches the machine header first, `SimulatableBrawler.h` included, and compiles only when the movement header is entered first. So the compiler holds it, in the include order the product uses.
 
 **Deleted, not relocated — the edit it forbids is typed in another file, and that file
-already says so.** `DAttackMachineSimulation.h:475-476` carries the working copy: *“the
+already said so.** `DAttackMachineSimulation.h` carried the working copy until og-netcode-v2-field-defects
+task 18 converted that header; its text is now in `DAttackMachineSimulation-rationale.md` §1: *“the
 dependency now points one way — movement -> machine — and THIS HEADER MUST NEVER INCLUDE
 `BrawlerMovementSimulation.h`, directly or through any of its other includes.”* Presence
 re-verified on the shipped bytes **before** this deletion.

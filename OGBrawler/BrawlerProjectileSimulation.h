@@ -77,7 +77,7 @@ public:
     float spawnZOffset;
 
     // T29/T31 — half-angle (radians) of the guard's MIDDLE block section.
-    // Matches DAttackRadialSimulation.h:450 'shieldAngle' middle-section threshold.
+    // Matches the 'shieldAngle' middle-section threshold in dAttackRadialSimulation::wouldGuardBlock.
     // Projectile direction within this half-angle of the target's guard forward = block;
     // outside it (within the outer cone OR beyond) = damage hit. Gameplay tuning value
     // (not TimeConfig-governed), so no R-P1 lint blacklist entry.

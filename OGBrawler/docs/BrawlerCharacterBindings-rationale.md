@@ -51,7 +51,7 @@ OGBrawlerHadouken T34**, the bindings migration, and is written with its initiat
 
 `CharacterBindings` is a per-character handle holding one field: the body id of the character's main
 physics capsule. It is **consumed by four places** — `dAttackMachineSimulation::integrate3`
-(`DAttackMachineSimulation.h:483`), the `SimulatableBrawler` composite that owns it
+(`DAttackMachineSimulation.h` :: `integrate3`), the `SimulatableBrawler` composite that owns it
 (`SimulatableBrawler.h:42-43`, `:62`), the hit-routing system through the composite's accessor
 (`BrawlerHitRoutingSystem.h:202`), and the tests — and **written in exactly one**, the registration
 path in `SimulationManagerUImpl.cpp` (§5).
@@ -110,7 +110,9 @@ when the movement sub-simulation began reading the machine's `State` (the flinch
 machine header, and the machine header already included the movement header for `CharacterBindings`.
 The graph became a genuine cycle — and with `#pragma once` **a cycle does not error**: it silently
 leaves one side incomplete, depending on which header the translation unit entered from.
-`DAttackMachineSimulation.h:471-473` records the moment: *"the 'no include cycle' that made that
+⚠ Incomplete is not silent when the incomplete side's names are used, which they are here. Re-creating the cycle today fails with `C2653` in every translation unit that enters from the machine header, `SimulatableBrawler.h` included, and compiles only when the movement header is entered first (measured by og-netcode-v2-field-defects task 18, 2026-09-23). It is order-dependent, not silent.
+The machine header's own comment above `integrate3`, now carried in `DAttackMachineSimulation-rationale.md` §1,
+records the moment: *"the 'no include cycle' that made that
 safe STOPPED BEING TRUE once the movement sub-simulation began reading this header's `State` and
 `PlayerInput` slices."*
 
@@ -133,7 +135,7 @@ pre-conversion header said "Both templates are gone now", and a reader who check
 
 ⚠ **History, closed 2026-09-10.** Task 62 wrote this header's summary of the acyclicity invariant as
 *"`DAttackMachineSimulation.h` reaches neither of the other two"*, which contradicted the diagram two
-lines above it: the machine header includes **this** file, directly, at `DAttackMachineSimulation.h:17`.
+lines above it: the machine header includes **this** file, directly, in its own include list.
 Task 62's own review caught it; **task 64** rewrote it to the form in §2, which is the form already
 stated in the two headers that enforce it. All three now say the same thing.
 
@@ -175,7 +177,7 @@ and the true picture is the stronger argument:
 
 | consumer | namespace |
 |---|---|
-| `integrate3` | `dAttackMachineSimulation` (`DAttackMachineSimulation.h:63`) |
+| `integrate3` | `dAttackMachineSimulation` (`DAttackMachineSimulation.h`) |
 | the `SimulatableBrawler` composite | **the global namespace** — `SimulatableBrawler.h` declares none, which is why `:62` must spell `simulatableBrawler::CharacterBindings` |
 | the hit-routing read | `brawlerHitRouting` (`BrawlerHitRoutingSystem.h:55`, use at `:202`) |
 | the tests | global scope |
@@ -256,7 +258,7 @@ removal dropped a duplicate, not the only witness. ⚠ Neither was ever a Shippi
 
 ## 6. The unfiled OGBrawlerHadouken T34 migration, and why its case is weaker than it looks
 
-**The fact is still true.** Radial (`DAttackRadialSimulation.h:680`), guard
+**The fact is still true.** Radial (`dAttackRadialSimulation::integrate`'s attachment block), guard
 (`DAttackGuardSimulation.h:257`) and projectile (`BrawlerProjectileSimulation.h:474`) still read a
 bare `bindings.parentBodyId`, while the machine sub-simulation takes a `CharacterBindings`. Folding
 a bindings field into every sub-simulation's `RuntimeBindings` would remove that duplication.

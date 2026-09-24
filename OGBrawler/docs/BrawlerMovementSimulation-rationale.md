@@ -102,9 +102,9 @@ says so and the text is left alone.
 ## 1. The include graph — what this header pulls in, and why
 
 The three include-site paragraphs, in file order. The acyclicity fence that stood at
-lines 43-46 is **not** here: it is guard **G-18**, retired and deleted, because
-`DAttackMachineSimulation.h` already carries the working copy at the site where the
-forbidden include would be typed.
+lines 43-46 is **not** here: it is guard **G-18**, retired and deleted, because the
+forbidden include is typed in `DAttackMachineSimulation.h`, and the compiler holds it there
+(`DAttackMachineSimulation-rationale.md` §1).
 
 
 <!-- header lines 25-33 -->
@@ -135,6 +135,8 @@ forbidden include would be typed.
 > for `CharacterBindings`, so including it back was a cycle — and `#pragma once` does not turn a
 > cycle into an error, it silently leaves one side incomplete depending on which header the
 > translation unit entered from, which is the worst available failure mode.
+
+⚠ **Measured by og-netcode-v2-field-defects task 18 (2026-09-23):** re-creating that cycle is not silent. Re-adding the include to `DAttackMachineSimulation.h` fails with `C2653` in every translation unit that enters from the machine header, `SimulatableBrawler.h` included, and compiles only when this header is entered first. See guard G-18.
 
 
 <!-- header lines 47-55 -->
@@ -1299,7 +1301,7 @@ surfaces, not in a silent division by zero.
 > ⚠ *"Behaviour is identical: the same two enumerators, in the same order."* compares
 > today's spelled-out `machineFreezesMovement` to a **template task 62 deleted**, which
 > cannot be read. ⛔ And it misreads against code that *can* be read: the enum declares
-> `GuardFlinch` before `HitFlinch` — `DAttackMachineSimulation.h:53` and `:54`,
+> `GuardFlinch` before `HitFlinch` — the `DAttackState` declaration in `DAttackMachineSimulation.h`,
 > re-verified 2026-09-11 — while this function tests `HitFlinch` first, so *"in the same
 > order"* is the reverse of the declaration it sits beside.
 > ⇒ **Recommend deleting the clause** when this text next has an owner; it

@@ -159,7 +159,7 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	// getAttackHits() is now T3's manager-side routing source, not a viz marker. Body
 	// hits are shown target-side via the HitFlinch sphere (DAttackTargetVisualizationTwo).
 	// Guard-hit indicator: 15 cm blue (colorId 2) sphere at every position where the
-	// weapon intersected another character's guard. Populated alongside hasHitGuard.
+	// weapon intersected another character's guard. Populated by brawlerHitDetection::detectRadialHits alongside guardBlockedThisTick.
 	for (const auto& hit : radialSimulationDerivedState.getGuardHits())
 		rendererFunctor.drawSphere(hit.position, 15.f, 2, 0.333f);
 }

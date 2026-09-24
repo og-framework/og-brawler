@@ -225,11 +225,12 @@ deletion.
 stated it as *"nothing reachable from `DAttackMachineSimulation.h` includes
 `BrawlerMovementSimulation.h`, directly or through any of its other includes. That is the invariant
 to protect."* The edit that violates it is an `#include` typed in one of the **other two** headers,
-and **both already carry the prohibition at the line where it would be typed**:
+and **neither carries it as a sentence any more: the compiler holds it** — measured by og-netcode-v2-field-defects task 18 (2026-09-23): re-adding the include to `DAttackMachineSimulation.h` fails with `C2653` in every translation unit that reaches the machine header first, `SimulatableBrawler.h` included, and compiles only when the movement header is entered first (`DAttackMachineSimulation-rationale.md` §1). The two sentences that stood at those sites when this
+entry was written:
 
 * `BrawlerMovementSimulation.h:43-44` — *"⛔ KEEP THE GRAPH ACYCLIC: nothing reachable from
   `DAttackMachineSimulation.h` may include `BrawlerMovementSimulation.h`."*
-* `DAttackMachineSimulation.h:475-477` — *"THIS HEADER MUST NEVER INCLUDE
+* `DAttackMachineSimulation.h`, above `integrate3` (until og-netcode-v2-field-defects task 18) — *"THIS HEADER MUST NEVER INCLUDE
   `BrawlerMovementSimulation.h`, directly or through any of its other includes."*
 
 The invariant itself, the diagram and the history are in `BrawlerCharacterBindings-rationale.md`

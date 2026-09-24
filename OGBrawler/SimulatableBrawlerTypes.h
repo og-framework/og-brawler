@@ -287,7 +287,7 @@ public:
         // 0.875 s × 800 cm/s = 700 cm = 7 m travel distance (T26).
         // 6th arg (T29; narrowed T31) = guardMiddleSectionHalfAngle 0.25 rad (≈14.3°) →
         //   only a near-centre-line guard alignment blocks the projectile, matching the
-        //   radial sim's middle-section threshold (DAttackRadialSimulation.h:450 shieldAngle).
+        //   radial sim's middle-section threshold (shieldAngle in dAttackRadialSimulation::wouldGuardBlock).
         // 7th arg (T30) = innerCircleRadius — the brawler attack circle inner radius, so a
         //   blocked projectile's marker lands on that circle (edge facing the shooter).
         // 8th arg (T30) = indicatorPersistTicks 20 ≈ 0.333 s at 60 Hz (radial guard-hit feel).

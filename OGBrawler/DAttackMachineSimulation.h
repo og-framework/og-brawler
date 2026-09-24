@@ -1,9 +1,10 @@
 #pragma once
 // SPDX-License-Identifier: BUSL-1.1
+// docs/DAttackMachineSimulation-rationale.md · docs/DAttackMachineSimulation-guards.md
 
 #include <vector>
 #include "glm/vec3.hpp"
-#include "glm/common.hpp"	// glm::abs -- see the task-32 note at the abs site below
+#include "glm/common.hpp"
 #include <glm/gtc/quaternion.hpp>
 #include "DAttackRadialSequence.h"
 #include "DAttackRadialSimulation.h"
@@ -11,14 +12,7 @@
 #include "OGBrawler/HitReaction.h"
 #include "OGBrawler/DAttackDirectionClassifier.h"
 #include "OGBrawler/BrawlerProjectileSimulation.h"
-// [movement-sim task 62] The LEAF header, NOT `BrawlerMovementSimulation.h`. Everything this
-// header wants from the movement sub-sim is `CharacterBindings` (one field, one dependency),
-// and it must not reach the movement header — movement includes THIS one, so the dependency
-// points one way. See the note above `integrate3`.
 #include "OGBrawler/BrawlerCharacterBindings.h"
-// [hit-resolution T2] brawlerInboundHit::DerivedState — read by integrate3 as a plain
-// by-ref param (NOT an ExternalDep, see current_state.md §D7). Zero-dependency header,
-// no include cycle.
 #include "OGBrawler/BrawlerInboundHit.h"
 #include "OGBrawler/InputSequence/InputSequence.h"
 #include "OGSimulation/SimulationDependencies.h"
@@ -27,21 +21,8 @@
 #include "OGSimulation/OGAssert.h"
 #include "OGBrawlerLog.h"
 
-// [Task 25] Hadouken commitment duration. When integrate3 fires a Hadouken it transitions
-// Idle -> Attacking with the kHadoukenSequenceSentinel active (the sentinel lives at file
-// scope in DAttackRadialSimulation.h, included above). Without a commitment window the
-// machine exits Attacking -> Idle one tick later (the radial early-returns and leaves
-// currenSequenceId == InvalidAttackSequenceId), which lets a still-held attack button chain
-// an immediate normal swing. This minimum dwell (0.3 s ≈ 18 ticks at 60 Hz) keeps the
-// machine in Attacking for the projectile cast before the normal exit-to-Idle gate fires.
 static constexpr float kHadoukenCommitmentSeconds = 0.3f;
 
-// [hit-resolution T1] Minimum dwell for the target-side HitFlinch state. When an inbound hit
-// signal arrives (T2 threads the real External; T1 gates on a false placeholder), the machine
-// transitions Idle/Attacking -> HitFlinch and stays there until m_timeInCurrentState exceeds this
-// window, then returns to Idle. Mirrors the existing GuardFlinch duration (0.3 s ≈ 18 ticks at
-// 60 Hz). File-scope constant matches the kHadoukenCommitmentSeconds precedent above; the eventual
-// lift into DAttackMachineSimulationRuntimeTweakables.h is R-P1 cleanup tracked separately.
 static constexpr float kHitFlinchDuration = 0.3f;
 
 
@@ -56,8 +37,6 @@ enum class DAttackState
 	HitFlinch,
 };
 
-// The enumerator count, kept ADJACENT so adding a state without bumping it is visible
-// in the same few lines. A display that folds over DAttackState sweeps against this.
 inline constexpr unsigned char kDAttackStateCount = 4u;
 
 class DAttackRadialSequence;
@@ -65,39 +44,22 @@ class DAttackRadialSequence;
 namespace dAttackMachineSimulation
 {
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 class PlayerInput
 {
 public:
-	// [Task 43] Plain aggregate — const dropped so MemberFieldDesc::write() can assign.
 	glm::vec3 aimDirection{};
 	bool attackLeft = false;
 	bool attackRight = false;
 	glm::vec2 moveDirection{};
 	glm::vec3 moveDirectionWorld{};
-	// Set by the input-layer motion matcher (buildPlayerInput) to inputSequence::kHadoukenActionId
-	// on the tick a Hadouken sequence completes; 0 otherwise. Appended last so the existing
-	// 5-arg aggregate-init call sites keep compiling (C++20 parenthesized aggregate init
-	// defaults this to 0). Travels through the PlayerInput RPC like any other input field.
 	uint32_t triggeredActionId = 0;
 
-	// THE NEUTRAL INPUT for this sub-simulation, folded into the composite by
-	// SimulationComposite::zero() — which is all getZeroPlayerInput() now is.
-	// [movement-sim task 22] The value is copied VERBATIM from what that function
-	// handed this type before the fold; it is a wire value, not something to re-derive.
-	// ⛔ (0,0,1) forwards, NOT PlayerInput{}: a value-initialised (0,0,0) aim would
-	// reach normalize(), and the difference is also the TAG the input-resolution and
-	// net-sync anti-vacuity tests discriminate on. Keep zero() != PlayerInput{}.
 	static PlayerInput zero()
 	{
-		// triggeredActionId is left to its default member initialiser (0) by C++20
-		// parenthesized aggregate init, exactly as the pre-fold call site did.
+		// ⛔G-01  docs/DAttackMachineSimulation-guards.md
 		return PlayerInput(glm::vec3(0.f, 0.f, 1.f), false, false, glm::vec2(0.f), glm::vec3(0.f));
 	}
 };
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename PhysicsAdapterType>
 class IntegrationUtils
@@ -116,22 +78,9 @@ public:
 	{}
 
 	float getDeltaTime() const { return deltaTime; }
-	// [movement-sim task 84] Current simulation tick. Needed because State::m_attackEndTick is an
-	// ABSOLUTE tick, and the machine is the only sub-sim that both owns the Idle->Attacking
-	// transition and holds the sequence table, so it is the only place the end can be computed.
-	// Plumbed in from SimulationTimeStep at the SimulatableBrawler::integrate call site, exactly
-	// as brawlerProjectileSimulation::IntegrationUtils has had it since T15.
 	uint32_t getCurrentTick() const { return m_currentTick; }
-	// [movement-sim task 84] The authored sequence table this class has always held by reference
-	// but never exposed. integrate3 reads getDuration() from it at the two write sites that start
-	// a radial swing; nothing else in this header indexes it.
 	const std::vector<DAttackRadialSequence>& getAttackSequences() const { return attackSequences; }
 	PhysicsAdapterType& getPhysicsAdapter() const { return m_physicsAdapter; }
-	// Projectile launch parameters — needed by the Hadouken trigger block in integrate3 to
-	// write the projectile InitialConditions. The parent capsule position is no longer
-	// pre-resolved here (T33): integrate3 looks it up on-demand via the physics adapter from
-	// the CharacterBindings handle, matching the bindings-as-integrate-param pattern radial/
-	// guard/projectile already use.
 	const brawlerProjectileSimulation::StaticData& getProjectileStaticData() const { return m_projectileStaticData; }
 
 private:
@@ -142,25 +91,6 @@ private:
 	const brawlerProjectileSimulation::StaticData& m_projectileStaticData;
 };
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-// [movement-sim task 84] How many ticks a swing of `duration` occupies, at a fixed `dt`.
-//
-// This is a LOOP, and it is a loop deliberately: `ceil(duration / dt)` is NOT this number.
-// DAttackRadialSimulation::integrate ends a swing on the float predicate
-// `state.attackTimer < activeAttackSequence.getDuration()` with `attackTimer` accumulated as
-// `attackTimer = attackTimer + deltaSeconds` from `0.f`. Repeated float addition is not
-// multiplication: the shipped side swings run 0.7 s and 42 * (1/60) is 0.7 in real arithmetic but
-// lands BELOW 0.7f in float, so the radial takes 43 steps where the division says 42. Nothing a
-// reader can inspect tells them which side a given (duration, dt) pair falls on, and the helper
-// must not guess -- so it performs THE SAME float operations in THE SAME order as the radial and
-// returns the count the radial itself will reach. The agreement is pinned by
-// DAttack.Integrate3.AttackEndTickMatchesTheFirstIdleTick, which drives the whole
-// SimulatableBrawler for every authored sequence and the Hadouken.
-//
-// It assumes `dt` is the same on every tick of a swing -- true today (fixed 60 Hz step,
-// kNominalSimStepSeconds; SimulationManager reads one stepDt per step). A variable step would
-// break the radial's own schedule the same way, and guarding that is not this function's job.
 inline uint32_t swingTickCount(float duration, float dt)
 {
 	OG_CHECK(duration > 0.f && dt > 0.f,
@@ -173,13 +103,12 @@ inline uint32_t swingTickCount(float duration, float dt)
 	uint32_t k = 0u;
 	while (t < duration)
 	{
+		// ⛔G-02  docs/DAttackMachineSimulation-guards.md
 		t = t + dt;
 		++k;
 	}
 	return k;
 }
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename PhysicsAdapterType>
 using AllInput = SimulationAllInput<PlayerInput, IntegrationUtils<PhysicsAdapterType>>;
@@ -193,18 +122,9 @@ public:
 	unsigned int m_queuedAttackSequence = InvalidAttackSequenceId;
 	HitReactionKind m_hitReaction = HitReactionKind::Stun;
 	float m_flinchDuration = kHitFlinchDuration;
-	// [movement-sim task 84] The absolute sim tick on which this machine will next be Idle --
-	// one past the LAST Attacking tick. Written ONLY where integrate3 produces a radial EDGE
-	// (the three write sites below); read by the movement sub-simulation, which runs LAST in
-	// SimulatableBrawler::integrate and therefore sees Attacking on ticks T..E while this value
-	// is E + 1. It is ON THE WIRE because a remote proxy that enters a swing by ADOPTION never
-	// simulated the edge and could not have computed the end -- the same argument
-	// brawlerRingout::State::respawnAtTick records for its countdown. Appended LAST, so every
-	// preceding field keeps the byte offset it already had.
 	uint32_t m_attackEndTick = 0u;
 };
 
-// [Task 62] Dependencies — OwnedDeps/ExternalDeps layout.
 struct Dependencies {
 	using Owned = OwnedDeps<dAttackMachineSimulation::State>;
 	using External = ExternalDeps<
@@ -232,16 +152,7 @@ void setRadialSimulationInitialConditions(float deltaTime,
 	const glm::vec3 defaultUp(0.f, 0.f, 1.f);
 	const float aimDot = glm::dot(aimDirection, defaultForward);
 	const float aimAngle = glm::acos(aimDot);
-	// [movement-sim task 32] glm::abs, NOT unqualified abs -- byte-identical to the
-	// guard site task 29 fixed in DAttackGuardSimulation.h, and fixed for the same
-	// reason. Under C's `::abs(int)`, which may be the only overload visible at this
-	// header's point of definition on the Godot/Jolt toolchains, the expression
-	// collapses to `|aimDot| == 1` EXACTLY: the near-pole epsilon band disappears and
-	// the normalize(cross(...)) below is handed a near-zero vector.
-	// Task 32 measured that this was ALREADY binding the float overload on this
-	// toolchain (MSVC 14.38): PORTABILITY HARDENING, not a behaviour fix. Pinned by
-	// DAttackAbsQualificationTest.cpp
-	// "DAttackAbs.MachineNearPoleAimTakesTheEpsilonBandBranch" (axis.z +1 vs -1).
+	// ⛔G-03  docs/DAttackMachineSimulation-guards.md
 	const bool aimEqualsForward = glm::abs(glm::abs(aimDot) - 1.f) < 0.0001f;
 	const glm::vec3 aimRotationAxis = [&aimEqualsForward, &defaultUp, &defaultForward, &aimDirection]() {
 		if (aimEqualsForward)
@@ -266,12 +177,6 @@ void integrate(float deltaTime,
 
 	const PlayerInput& playerInput = input.getPlayerInput();
 
-	// [hit-resolution T1] Inbound-hit veto. Placeholder signal (always false until T2 threads the
-	// real brawlerInboundHit::DerivedState External). Read at the top of the integrate body — before
-	// case dispatch and before any attack-input handling — so a live signal vetoes attack inputs on
-	// the hit tick. On a live hit we cancel the active/queued sequences (mirroring the GuardFlinch
-	// cancellation) and drop into HitFlinch; the switch below then lands in the HitFlinch case with
-	// m_timeInCurrentState freshly reset.
 	const bool inboundHit_PLACEHOLDER = false;
 	if (inboundHit_PLACEHOLDER && state.m_currentState != DAttackState::HitFlinch)
 	{
@@ -309,7 +214,8 @@ void integrate(float deltaTime,
 	}
 	case DAttackState::Attacking:
 	{
-		if (attackState.hasHitGuard)
+		const bool guardBlocked_PLACEHOLDER = false;
+		if (guardBlocked_PLACEHOLDER)
 		{
 			state.m_currentState = DAttackState::GuardFlinch; state.m_timeInCurrentState = 0.f;
 			state.m_activeAttackSequence = InvalidAttackSequenceId;
@@ -326,13 +232,13 @@ void integrate(float deltaTime,
 
 				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state);
 			}
-			else if (attackState.attackTimer/*!sic*/ > 0.3)
+			else if (attackState.attackTimer > 0.3)
 			{
 				state.m_queuedAttackSequence = 4;
 			}
 		}
 
-		if (attackState.attackTimer/*!sic*/ > 0.3 && state.m_queuedAttackSequence == InvalidAttackSequenceId)
+		if (attackState.attackTimer > 0.3 && state.m_queuedAttackSequence == InvalidAttackSequenceId)
 		{
 			if (playerInput.attackLeft && (attackIntialConditions.activeAttackSequence == 0 || attackIntialConditions.activeAttackSequence == 2))
 				state.m_queuedAttackSequence = 2;
@@ -371,9 +277,6 @@ void integrate(float deltaTime,
 	}
 	case DAttackState::HitFlinch:
 	{
-		// [hit-resolution T1] Mirrors GuardFlinch: dwell for kHitFlinchDuration, no attack-input
-		// reads (gating is automatic — the switch never reaches Idle/Attacking while flinching),
-		// then return to Idle.
 		if (state.m_timeInCurrentState > state.m_flinchDuration)
 		{
 			state.m_currentState = DAttackState::Idle; state.m_timeInCurrentState = 0.f;
@@ -398,12 +301,6 @@ void integrate2(float deltaTime,
 
 	const PlayerInput& playerInput = input.getPlayerInput();
 
-	// [hit-resolution T1] Inbound-hit veto. Placeholder signal (always false until T2 threads the
-	// real brawlerInboundHit::DerivedState External). Read at the top of the integrate body — before
-	// case dispatch and before any attack-input handling — so a live signal vetoes attack inputs on
-	// the hit tick. On a live hit we cancel the active/queued sequences (mirroring the GuardFlinch
-	// cancellation) and drop into HitFlinch; the switch below then lands in the HitFlinch case with
-	// m_timeInCurrentState freshly reset.
 	const bool inboundHit_PLACEHOLDER = false;
 	if (inboundHit_PLACEHOLDER && state.m_currentState != DAttackState::HitFlinch)
 	{
@@ -441,7 +338,8 @@ void integrate2(float deltaTime,
 	}
 	case DAttackState::Attacking:
 	{
-		if (attackState.hasHitGuard)
+		const bool guardBlocked_PLACEHOLDER = false;
+		if (guardBlocked_PLACEHOLDER)
 		{
 			state.m_currentState = DAttackState::GuardFlinch; state.m_timeInCurrentState = 0.f;
 			state.m_activeAttackSequence = InvalidAttackSequenceId;
@@ -458,13 +356,13 @@ void integrate2(float deltaTime,
 
 				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state);
 			}
-			else if (attackState.attackTimer/*!sic*/ > 0.3)
+			else if (attackState.attackTimer > 0.3)
 			{
 				state.m_queuedAttackSequence = 4;
 			}
 		}
 
-		if (attackState.attackTimer/*!sic*/ > 0.3 && state.m_queuedAttackSequence == InvalidAttackSequenceId)
+		if (attackState.attackTimer > 0.3 && state.m_queuedAttackSequence == InvalidAttackSequenceId)
 		{
 			if (playerInput.attackLeft && (attackIntialConditions.activeAttackSequence == 0 || attackIntialConditions.activeAttackSequence == 2))
 				state.m_queuedAttackSequence = 2;
@@ -503,9 +401,6 @@ void integrate2(float deltaTime,
 	}
 	case DAttackState::HitFlinch:
 	{
-		// [hit-resolution T1] Mirrors GuardFlinch: dwell for kHitFlinchDuration, no attack-input
-		// reads (gating is automatic — the switch never reaches Idle/Attacking while flinching),
-		// then return to Idle.
 		if (state.m_timeInCurrentState > state.m_flinchDuration)
 		{
 			state.m_currentState = DAttackState::Idle; state.m_timeInCurrentState = 0.f;
@@ -517,6 +412,10 @@ void integrate2(float deltaTime,
 	}
 }
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#pragma warning(push)
+#pragma warning(error: 4062)
+#endif
 constexpr const char* dAttackStateName(DAttackState s)
 {
 	switch (s)
@@ -528,11 +427,21 @@ constexpr const char* dAttackStateName(DAttackState s)
 	}
 	return "?";
 }
+#if defined(_MSC_VER) && !defined(__clang__)
+#pragma warning(pop)
+#endif
 
-// [og-netcode-v2-field-defects task 7] dAttackStateName is the `%s` of three [Machine.*] lines,
-// and the OGBLOG_G clip check charges every `%s` ogblog::kMaxStringArgBytes — a bound no type can
-// prove. This is that half: every name, the "?" fallback included (index kDAttackStateCount),
-// must fit it, or a [Machine.*] line could clip silently.
+static_assert([] {
+	for (int i = 0; i < kDAttackStateCount; ++i)
+		if (dAttackStateName(static_cast<DAttackState>(i))[0] == '?')
+			return false;
+	return dAttackStateName(static_cast<DAttackState>(kDAttackStateCount))[0] == '?';
+}(), "kDAttackStateCount must equal the number of DAttackState enumerators, and dAttackStateName "
+	"must name every one ('?' is only the out-of-range fallback): add a state, its name and the "
+	"count together. C4062 is an error on MSVC around dAttackStateName, so an unnamed state fails "
+	"there first. Replaces the comment that kept the count ADJACENT to the enum so a missed bump "
+	"would be visible.");
+
 static_assert([] {
 	for (int i = 0; i <= kDAttackStateCount; ++i)
 	{
@@ -545,16 +454,6 @@ static_assert([] {
 	return true;
 }(), "a dAttackStateName exceeds ogblog::kMaxStringArgBytes; the OGBLOG_G clip check no longer bounds the [Machine.*] lines that print it");
 
-// [Task 35, re-pointed at movement-sim task 62] CharacterBindings lives in
-// `OGBrawler/BrawlerCharacterBindings.h` — the leaf header included above — so integrate3 takes
-// a plain const reference and the T33 templated workaround stays gone.
-// ⛔ It used to live in `BrawlerMovementSimulation.h`, and the "no include cycle" that made that
-// safe STOPPED BEING TRUE once the movement sub-sim began reading this header's `State` and
-// `PlayerInput` slices. Task 62 moved the struct to a leaf both sides can include. The
-// dependency now points one way — movement -> machine — and THIS HEADER MUST NEVER INCLUDE
-// `BrawlerMovementSimulation.h`, directly or through any of its other includes.
-// The Hadouken trigger resolves the parent capsule transform on-demand from the bindings handle
-// — matching the bindings-as-integrate-param pattern radial/guard/projectile already use.
 template <typename PhysicsAdapterType>
 void integrate3(float deltaTime,
 	const AllInput<PhysicsAdapterType>& input,
@@ -575,17 +474,6 @@ void integrate3(float deltaTime,
 		attackState.currenSequenceId, attackState.attackTimer,
 		playerInput.attackLeft ? 1 : 0, playerInput.attackRight ? 1 : 0);
 
-	// [hit-resolution T2] Inbound-hit veto. Real signal read from the plain by-ref parameter
-	// (T1's compile-time-false placeholder is gone). inboundHit is a per-character
-	// brawlerInboundHit::DerivedState slice on the composite DerivedState, populated by the
-	// manager's routing pass (T3) on the prior tick. It is passed as a plain integrate3 param
-	// (NOT via deps.external) because it lives on the DerivedState composite, not the serialized
-	// State composite — see current_state.md §D7. Sits AHEAD of the switch — and therefore ahead
-	// of the Idle case's Hadouken trigger and attack-input handling — so a live signal vetoes both
-	// attack inputs and the Hadouken trigger on the hit tick. On a live hit we cancel the
-	// active/queued sequences (mirroring the Attacking -> GuardFlinch cancellation) and drop into
-	// HitFlinch; the switch below then lands in the HitFlinch case with m_timeInCurrentState
-	// freshly reset.
 	if (inboundHit.wasHitThisTick)
 	{
 		OGBLOG_G("[Machine.transition] %s -> HitFlinch (inbound hit, reaction=%u dwell=%.4f)",
@@ -599,18 +487,7 @@ void integrate3(float deltaTime,
 		attackIntialConditions.activeAttackSequence = InvalidAttackSequenceId;
 	}
 
-	// [hit-resolution T15] Shooter-side GuardFlinch from a blocked projectile.
-	// The manager routing pass sets wasProjectileBlockedThisTick=true on THIS character
-	// (the shooter) when any of its projectile slots ended the prior tick with
-	// endReason=4 (blockedByGuard, per T14). Fires the same recoil the radial swing's
-	// attacker-side hasHitGuard path produces (see the switch cases below). Unlike the
-	// hasHitGuard path, this one intentionally fires from any origin state — including
-	// Idle — because a projectile can be blocked long after the shooter's Hadouken
-	// commitment window has expired and they've returned to Idle. Same cancellation
-	// as the HitFlinch veto above: active/queued sequences cleared so the switch below
-	// lands in the GuardFlinch case with m_timeInCurrentState freshly reset. The
-	// `!= GuardFlinch` guard prevents re-transition if the character is already
-	// flinching (rapid successive blocks coalesce to a single flinch window).
+	// ⛔G-04  docs/DAttackMachineSimulation-guards.md
 	if (inboundHit.wasProjectileBlockedThisTick && state.m_currentState != DAttackState::GuardFlinch)
 	{
 		OGBLOG_G("[Machine.transition] %s -> GuardFlinch (projectile blocked)", dAttackStateName(state.m_currentState));
@@ -624,52 +501,34 @@ void integrate3(float deltaTime,
 	{
 	case DAttackState::Idle:
 	{
-		// Hadouken trigger: the input-layer motion matcher (buildPlayerInput) sets
-		// triggeredActionId to kHadoukenActionId on the tick a motion completes. Spawn a
-		// projectile in the aim direction and hand the radial weapon a sentinel sequence so
-		// it stays in its idle pose. This sits AHEAD of the plain attackLeft/attackRight
-		// handling so a matched motion takes priority over the idle swing on the same tick.
 		if (playerInput.triggeredActionId == inputSequence::kHadoukenActionId)
 		{
 			brawlerProjectileSimulation::InitialConditions& projectileIC =
 				deps.external.edit<brawlerProjectileSimulation::InitialConditions>();
 			const brawlerProjectileSimulation::StaticData& projSD =
 				input.getIntegrationUtils().getProjectileStaticData();
-			// [Task 33] Resolve the parent capsule position on-demand from the CharacterBindings
-			// handle, instead of receiving it pre-resolved via IntegrationUtils. This matches the
-			// radial/guard/projectile pattern (bindings passed to integrate, physics queried inside).
 			const glm::vec3 parentPosition = glm::vec3(
 				input.getIntegrationUtils().getPhysicsAdapter().getBodyTransform(
 					characterBindings.capsuleBodyId)[3]);
 
-			// XY-projected aim, with a degenerate-aim fallback to avoid a NaN from normalize.
 			const glm::vec3 aimXYraw(playerInput.aimDirection.x, playerInput.aimDirection.y, 0.f);
 			const glm::vec3 aimXY = (glm::length(aimXYraw) < 0.0001f)
 				? glm::vec3(1.f, 0.f, 0.f)
 				: glm::normalize(aimXYraw);
 
-			// Closed-form launch parameters (Task 13): write spawnDir, NOT velocity — the
-			// projectile sim derives velocity = spawnDir * projectileSpeed each tick.
 			projectileIC.spawnRequestPending = 1;
 			projectileIC.spawnPos = parentPosition
 				+ aimXY * projSD.spawnForwardOffset
 				+ glm::vec3(0.f, 0.f, projSD.spawnZOffset);
 			projectileIC.spawnDir = aimXY;
 
-			// Hand the radial weapon the sentinel so its integrate early-returns (idle pose)
-			// instead of indexing attackSequences[] out of bounds.
 			state.m_activeAttackSequence = kHadoukenSequenceSentinel;
 			attackIntialConditions.activeAttackSequence = kHadoukenSequenceSentinel;
 			state.m_currentState = DAttackState::Attacking;
 			state.m_timeInCurrentState = 0.f;
-			// [movement-sim task 84] WRITE SITE 2 of 3, and it has NO `+ 1`. There is no radial
-			// here -- the sentinel makes the weapon early-return -- so there is no Invalid arriving
-			// a tick late. The machine gates ITSELF on `m_timeInCurrentState < kHadoukenCommitment
-			// Seconds`, accumulating `+= dt` from the 0 assigned on the line above with the same
-			// `<` predicate swingTickCount replicates, and exits on the first tick the sum reaches
-			// the window.
 			{
 				const uint32_t currentTick = input.getIntegrationUtils().getCurrentTick();
+				// ∴D-01  docs/DAttackMachineSimulation-rationale.md
 				state.m_attackEndTick =
 					currentTick + swingTickCount(kHadoukenCommitmentSeconds, deltaTime);
 				OG_CHECK(state.m_attackEndTick > currentTick,
@@ -685,10 +544,7 @@ void integrate3(float deltaTime,
 
 		if(playerInput.attackLeft || playerInput.attackRight)
 		{
-			// ⛔ ONE DEFINITION, SHARED WITH THE INDICATOR. The forward/side decision
-			// lives in dAttackDirection::classify so the drawn indicator and the attack
-			// that fires cannot disagree. This path is AUTHORITATIVE; the classifier
-			// knows nothing about rendering.
+			// ⛔G-05  docs/DAttackMachineSimulation-guards.md
 			state.m_activeAttackSequence = dAttackDirection::classify(
 				playerInput.aimDirection,
 				glm::vec3(playerInput.moveDirectionWorld),
@@ -696,11 +552,8 @@ void integrate3(float deltaTime,
 
 			if (state.m_activeAttackSequence != InvalidAttackSequenceId)
 			{
-				// [movement-sim task 84] WRITE SITE 1 of 3. End tick = the radial's deactivate tick
-				// + 1: the edge fires THIS tick (the radial resets its timer to 0 and then adds one
-				// dt), it deactivates on `tick + swingTickCount`, and this machine -- which runs
-				// BEFORE the radial -- sees that Invalid one tick later and exits then.
 				const uint32_t currentTick = input.getIntegrationUtils().getCurrentTick();
+				// ∴D-02  docs/DAttackMachineSimulation-rationale.md
 				state.m_attackEndTick = currentTick + swingTickCount(
 					input.getIntegrationUtils()
 						.getAttackSequences()[state.m_activeAttackSequence].getDuration(),
@@ -723,9 +576,9 @@ void integrate3(float deltaTime,
 	}
 	case DAttackState::Attacking:
 	{
-		if (attackState.hasHitGuard)
+		if (inboundHit.wasGuardBlockedThisTick)
 		{
-			OGBLOG_G("[Machine.transition] Attacking -> GuardFlinch (hasHitGuard)");
+			OGBLOG_G("[Machine.transition] Attacking -> GuardFlinch (guard blocked)");
 			state.m_currentState = DAttackState::GuardFlinch; state.m_timeInCurrentState = 0.f;
 			state.m_activeAttackSequence = InvalidAttackSequenceId;
 			state.m_queuedAttackSequence = InvalidAttackSequenceId;
@@ -736,19 +589,8 @@ void integrate3(float deltaTime,
 		{
 			if (attackState.attackTimer < 0.1)
 			{
-				// [movement-sim task 84] NO END TICK IS WRITTEN HERE, AND THAT IS DELIBERATE.
-				// This branch re-enters setRadialSimulationInitialConditions on EVERY tick the
-				// buttons stay down inside the 0.1 s window. When the active sequence is already 4
-				// the radial's edge predicate (`currenSequenceId != activeAttackSequence`) is
-				// FALSE, so the swing is NOT restarted -- the log line says "restart" and the
-				// weapon does not move. That no-op is pre-existing and is filed as its own Backlog
-				// item; it is not fixed here. Writing `tick + swingTickCount(...) + 1` on this
-				// branch would push the predicted end LATER on every one of those held ticks while
-				// the radial ended on its original schedule: an attack that never ends and a slide
-				// that never stops. Pinned by
-				// DAttack.Integrate3.DualTapRestartLeavesTheEndTickAlone.
-				// If that Backlog item is ever fixed so the branch DOES restart the radial, this
-				// non-write becomes wrong and must be revisited in the same change.
+				// ⛔G-06  docs/DAttackMachineSimulation-guards.md
+
 				OGBLOG_G("[Machine.Attacking] dualtap restart seq=4 (timer<0.1) endTick=%u (unchanged)",
 					state.m_attackEndTick);
 				state.m_queuedAttackSequence = InvalidAttackSequenceId;
@@ -756,14 +598,14 @@ void integrate3(float deltaTime,
 
 				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state);
 			}
-			else if (attackState.attackTimer/*!sic*/ > 0.3)
+			else if (attackState.attackTimer > 0.3)
 			{
 				OGBLOG_G("[Machine.Attacking] queue seq=4 (dual,timer>0.3)");
 				state.m_queuedAttackSequence = 4;
 			}
 		}
 
-		if (attackState.attackTimer/*!sic*/ > 0.3 && state.m_queuedAttackSequence == InvalidAttackSequenceId)
+		if (attackState.attackTimer > 0.3 && state.m_queuedAttackSequence == InvalidAttackSequenceId)
 		{
 			if (playerInput.attackLeft && (attackIntialConditions.activeAttackSequence == 0 || attackIntialConditions.activeAttackSequence == 2))
 			{
@@ -777,11 +619,6 @@ void integrate3(float deltaTime,
 			}
 		}
 
-		// [Task 25] Hold the Hadouken-Attacking state for a minimum commitment window before
-		// the normal exit-to-Idle gate may fire. The radial sim early-returns on the sentinel
-		// (leaving currenSequenceId == InvalidAttackSequenceId from tick T+1), so without this
-		// guard the machine would drop back to Idle one tick after the trigger and a still-held
-		// attack button would chain an immediate normal swing.
 		const bool inHadoukenCommitment =
 			state.m_activeAttackSequence == kHadoukenSequenceSentinel
 			&& state.m_timeInCurrentState < kHadoukenCommitmentSeconds;
@@ -792,12 +629,8 @@ void integrate3(float deltaTime,
 			{
 				state.m_activeAttackSequence = state.m_queuedAttackSequence;
 				state.m_queuedAttackSequence = InvalidAttackSequenceId;
-				// [movement-sim task 84] WRITE SITE 3 of 3, and the formula is site 1's. The radial
-				// is Invalid on this tick -- that is the gate this block sits behind -- so assigning
-				// a new activeAttackSequence really does re-edge it, and the new swing has its own
-				// duration. The end tick MUST be rewritten here: leaving the previous swing's value
-				// would stop the slide at a tick that has already passed.
 				const uint32_t currentTick = input.getIntegrationUtils().getCurrentTick();
+				// ⛔G-07  docs/DAttackMachineSimulation-guards.md
 				state.m_attackEndTick = currentTick + swingTickCount(
 					input.getIntegrationUtils()
 						.getAttackSequences()[state.m_activeAttackSequence].getDuration(),
@@ -834,9 +667,6 @@ void integrate3(float deltaTime,
 	}
 	case DAttackState::HitFlinch:
 	{
-		// [hit-resolution T1] Mirrors GuardFlinch: dwell for kHitFlinchDuration, no attack-input
-		// reads (gating is automatic — the switch never reaches Idle/Attacking while flinching),
-		// then return to Idle.
 		if (state.m_timeInCurrentState > state.m_flinchDuration)
 		{
 			OGBLOG_G("[Machine.transition] HitFlinch -> Idle");
@@ -850,8 +680,6 @@ void integrate3(float deltaTime,
 }
 
 }
-
-// [Task 39] SerializableFields specializations for dAttackMachineSimulation types.
 
 template <>
 struct SerializableFields<dAttackMachineSimulation::State>

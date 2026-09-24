@@ -96,7 +96,7 @@ void SimulatableBrawler::integrate(
 {
     const float dt = step.getDeltaSeconds();
     const uint32_t currentTick = step.getTick();
-    dAttackRadialSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT>     radialUtils    (dt, physAdapter, queryAdapter);
+    dAttackRadialSimulation::IntegrationUtils<PhysAdapterT>                    radialUtils    (dt, physAdapter);
     dAttackGuardSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT>      guardUtils     (dt, physAdapter, queryAdapter);
     brawlerProjectileSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT> projectileUtils(dt, currentTick, physAdapter, queryAdapter);
     // [movement-sim task 84] The tick joins dt here, the projectile's and the movement sub-sim's
@@ -149,7 +149,7 @@ void SimulatableBrawler::integrate(
     {
         auto deps = makeDependencies<dAttackRadialSimulation::Dependencies>(state);
         dAttackRadialSimulation::integrate(dt,
-            dAttackRadialSimulation::AllInput<PhysAdapterT, QueryAdapterT>(
+            dAttackRadialSimulation::AllInput<PhysAdapterT>(
                 input.get<dAttackRadialSimulation::PlayerInput>(), radialUtils),
             staticData.m_attackSimulationStaticData, deps,
             attackBindings, derivedState.edit<dAttackRadialSimulation::DerivedState>());

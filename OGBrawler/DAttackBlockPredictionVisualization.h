@@ -297,8 +297,9 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 	if (queryReport.empty())
 		return;
 
-	// (7) Group hits per defender by rootBodyId — mirrors dAttackRadialSimulation::collisionCheck
-	// (lines 419-481). Both the hurtbox (body) and guard shapes on a character report the SAME
+	// (7) Group hits per defender by rootBodyId — mirrors brawlerHitDetection::detectRadialHits
+	// (BrawlerHitDetectionSystem.h; it lived in dAttackRadialSimulation until
+	// og-netcode-v2-field-defects task 9 moved hit detection into a system). Both the hurtbox (body) and guard shapes on a character report the SAME
 	// rootBodyId (the capsule), so they merge into one record with both indices set. The 1337
 	// sentinels distinguish body-only / guard-only cases below. Hit ordering within the report is
 	// unspecified (engine broadphase), so we index by rootBodyId, never positionally.
@@ -364,11 +365,11 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 		}
 
 		// Fetch the guard body's world transform via the GT-safe reader adapter — same signature
-		// as the sim's collisionCheck, but reading GT-interpolated state from the game thread.
+		// as the sim's detector (detectRadialHits), but reading GT-interpolated state from the game thread.
 		const glm::mat4 guardTransform =
 			input.getPhysicsReader().getBodyTransform(queryReport[actorHit.guardHitIndex].bodyId);
 
-		// Shared predicate — identical implementation the sim's collisionCheck calls, so the viz
+		// Shared predicate — identical implementation the sim's detector calls, so the viz
 		// cannot drift from the sim's actual block outcome.
 		const bool willBlock = dAttackRadialSimulation::wouldGuardBlock(
 			attackGeometry.predictedSequenceIdFromIdle,

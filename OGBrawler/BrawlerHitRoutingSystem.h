@@ -101,10 +101,20 @@ namespace brawlerHitRouting
         //      struck character (endTick guard makes it fire exactly once).
         //   4. Projectile guard-blocks (T15, endReason==4): route GuardFlinch to
         //      the shooter (self-flag; no map lookup).
+        //   5. Radial guard-blocks (og-netcode-v2-field-defects task 9): route
+        //      GuardFlinch to the attacker whose swing was blocked this tick
+        //      (self-flag; no map lookup). The block itself is DETECTED by
+        //      brawlerHitDetection::System, which fires before this system.
         //
         // D5 self-hit filter (SimulatableBrawler* pointer identity — NOT
-        // rootBodyId) applies on the target-routing branches (2, 3) only; branch 4
-        // is inherently self-directed.
+        // rootBodyId) applies on the target-routing branches (2, 3) only; branches 4
+        // and 5 are inherently self-directed.
+        //
+        // [og-netcode-v2-field-defects task 9] Branch 2 reads hitsThisTick, which is now
+        // written by brawlerHitDetection::System (BrawlerHitDetectionSystem.h) in the SAME
+        // post-integrate phase, before this system — firing order is template order in
+        // SimulationSystemsExecutor, and the manager's BrawlerSystemsExec lists detection
+        // first. Timing to the machine is unchanged: detected and routed on T, consumed on T+1.
         void postIntegrate(const SimulationTimeStep& step,
                            StorageView<SimulatableBrawler> view,
                            const simulatableBrawler::StaticData& staticData)
@@ -254,6 +264,26 @@ namespace brawlerHitRouting
                         continue;
                     attackerPtr->editAllState().editDerivedState()
                         .edit<brawlerInboundHit::DerivedState>().wasProjectileBlockedThisTick = true;
+                }
+            }
+
+            // 5. [og-netcode-v2-field-defects task 9] Radial guard-blocks — an attacker whose
+            //    swing brawlerHitDetection::System found blocked by a guard THIS tick (the
+            //    radial DerivedState's per-tick guardBlockedThisTick) gets GuardFlinch routed
+            //    to itself, exactly as branch 4 does for a blocked projectile. Self-directed,
+            //    so no map lookup and no self-hit filter. The flag it copies is derived and
+            //    is recomputed on every replayed tick; the radial State's hasHitGuard, which
+            //    this replaces, rode the wire.
+            //    ⛔ It must be COPIED here, not written onto the slice by the detector: branch
+            //    1 above resets the whole slice every tick, and detection fires before routing,
+            //    so a bit the detector set on the slice would be wiped before anyone read it.
+            for (const auto& [attackerId, attackerPtr] : ordered)
+            {
+                if (attackerPtr->getAllState().getDerivedState()
+                        .get<dAttackRadialSimulation::DerivedState>().getGuardBlockedThisTick())
+                {
+                    attackerPtr->editAllState().editDerivedState()
+                        .edit<brawlerInboundHit::DerivedState>().wasGuardBlockedThisTick = true;
                 }
             }
         }
