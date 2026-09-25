@@ -282,6 +282,12 @@ public:
             }
         )
         , m_projectileHitReaction{ HitReactionKind::Stun, 0.f, 0.65f }
+        // [movement-sim task 88] A projectile that hits a target ALREADY in HitFlinch (either
+        // reaction kind — user ruling 2026-09-21) launches it instead of stunning it. HAND-AUTHORED:
+        // speed 2000 is the melee knockback's (2000^2 / (2 * 4000) = 500 cm), and the dwell resolves
+        // to max(0, 2000 / launchDecel) = 0.5 s exactly as melee does. Selected in
+        // brawlerHitRouting::System branch 3; pinned absolutely in BrawlerHitRoutingTest.cpp.
+        , m_projectileHitOnFlinchReaction{ HitReactionKind::Knockback, 1789.f, 0.f }
         , m_attackSimulationStaticData(m_attackSequences, m_attackCircle)
         , m_guardSimulationStaticData(m_attackCircle)
         // 0.875 s × 800 cm/s = 700 cm = 7 m travel distance (T26).
@@ -411,6 +417,8 @@ public:
     std::vector<DAttackRadialSequence> m_attackSequences;
     std::vector<HitReactionSpec> m_hitReactions;
     HitReactionSpec m_projectileHitReaction;
+    // [movement-sim task 88] The projectile's reaction when the target is already in HitFlinch.
+    HitReactionSpec m_projectileHitOnFlinchReaction;
     dAttackRadialSimulation::StaticData m_attackSimulationStaticData;
     dAttackGuardSimulation::StaticData m_guardSimulationStaticData;
     brawlerProjectileSimulation::StaticData m_projectileStaticData;

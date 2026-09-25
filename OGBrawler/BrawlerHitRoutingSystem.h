@@ -114,6 +114,8 @@ namespace brawlerHitRouting
         //   3. Projectile damage hits (T3; SlotOutcome::Hit): route HitFlinch to the
         //      struck character. Fires once: the detector resets the outcome every
         //      pass, and the shooter's integrate ends the slot in the same step.
+        //      [movement-sim task 88] The spec is m_projectileHitReaction (Stun), or
+        //      m_projectileHitOnFlinchReaction (Knockback) when the target is in HitFlinch.
         //   4. Projectile guard-blocks (T15; SlotOutcome::BlockedByGuard): route
         //      GuardFlinch to the shooter (self-flag; no map lookup).
         //   5. Radial guard-blocks (og-netcode-v2-field-defects task 9): route
@@ -265,8 +267,26 @@ namespace brawlerHitRouting
                     SimulatableBrawler* target = found->second;
                     if (target == attackerPtr)
                         continue;
+                    // [movement-sim task 88] A target ALREADY in HitFlinch (either reaction
+                    // kind, user ruling 2026-09-21) is LAUNCHED rather than re-stunned; the
+                    // machine's cross-kind rules (design_hit_reactions.md §3) do the rest.
+                    // ⛔ m_currentState ONLY: GuardFlinch is a separate enumerator, so a
+                    // guard-flinching target still takes the authored Stun.
+                    // ⭐ Read in THIS pass, before any integrate: a melee hit routed in the same
+                    // pass has not reached the target's machine yet, so a same-pass projectile
+                    // still sees the pre-hit state and stays a Stun (pinned in
+                    // HitRouting.ProjectileOnFlinchSameTickStaysAStun). Both inputs are on the
+                    // wire, so a resim reproduces the choice.
+                    const bool targetFlinching =
+                        target->getAllState().getState()
+                            .get<dAttackMachineSimulation::State>().m_currentState
+                        == DAttackState::HitFlinch;
+                    // The direction below is the projectile's travel direction; a Stun
+                    // discards it, a Knockback launches along it.
                     resolveHitReaction(
-                        staticData, staticData.m_projectileHitReaction,
+                        staticData,
+                        targetFlinching ? staticData.m_projectileHitOnFlinchReaction
+                                        : staticData.m_projectileHitReaction,
                         normalisedXY(slot.spawnDir, glm::vec2(1.f, 0.f)),
                         target->editAllState().editDerivedState()
                             .edit<brawlerInboundHit::DerivedState>());
