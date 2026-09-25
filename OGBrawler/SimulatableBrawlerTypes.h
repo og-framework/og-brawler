@@ -278,7 +278,7 @@ public:
                 /*1 left            */ { HitReactionKind::Knockback, 2000.f, 0.f  },
                 /*2 left -> left    */ { HitReactionKind::Knockback, 2000.f, 0.f  },
                 /*3 right -> right  */ { HitReactionKind::Knockback, 2000.f, 0.f  },
-                /*4 forward/overhead*/ { HitReactionKind::Stun,         0.f, 0.65f }
+                /*4 forward/overhead*/ { HitReactionKind::Stun,         0.f,  0.72f }
             }
         )
         , m_projectileHitReaction{ HitReactionKind::Stun, 0.f, 0.65f }
