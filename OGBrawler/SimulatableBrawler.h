@@ -98,7 +98,7 @@ void SimulatableBrawler::integrate(
     const uint32_t currentTick = step.getTick();
     dAttackRadialSimulation::IntegrationUtils<PhysAdapterT>                    radialUtils    (dt, physAdapter);
     dAttackGuardSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT>      guardUtils     (dt, physAdapter, queryAdapter);
-    brawlerProjectileSimulation::IntegrationUtils<PhysAdapterT, QueryAdapterT> projectileUtils(dt, currentTick, physAdapter, queryAdapter);
+    brawlerProjectileSimulation::IntegrationUtils<PhysAdapterT>                projectileUtils(dt, currentTick, physAdapter);
     // [movement-sim task 84] The tick joins dt here, the projectile's and the movement sub-sim's
     // shape: the machine writes State::m_attackEndTick, an ABSOLUTE tick, on every radial edge.
     dAttackMachineSimulation::IntegrationUtils<PhysAdapterT> machineUtils(dt, currentTick, staticData.m_attackSequences, physAdapter, staticData.m_projectileStaticData);
@@ -140,7 +140,7 @@ void SimulatableBrawler::integrate(
             m_physics.get<brawlerProjectileSimulation::PhysicsDeclaration<2>>().bindings
         };
         brawlerProjectileSimulation::integrate(dt,
-            brawlerProjectileSimulation::AllInput<PhysAdapterT, QueryAdapterT>(
+            brawlerProjectileSimulation::AllInput<PhysAdapterT>(
                 input.get<brawlerProjectileSimulation::PlayerInput>(), projectileUtils),
             staticData.m_projectileStaticData, deps,
             projectileBindings, derivedState.edit<brawlerProjectileSimulation::DerivedState>());

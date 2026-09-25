@@ -265,6 +265,11 @@ below it never runs on a trigger tick.
 > handle, instead of receiving it pre-resolved via IntegrationUtils. This matches the
 > radial/guard/projectile pattern (bindings passed to integrate, physics queried inside).
 
+⚠ R0, 2026-09-24: "physics queried inside" no longer holds for two of the three. The radial
+(og-netcode-v2-field-defects task 9) and the projectile (task 17) issue no spatial queries: their
+hit detection is `brawlerHitDetection::System`'s. Both still write their own bodies through the
+physics adapter, and the guard still toggles its shapes.
+
 <!-- header lines 654 -->
 > XY-projected aim, with a degenerate-aim fallback to avoid a NaN from normalize.
 
@@ -317,7 +322,10 @@ is not driven.
 
 **R0.** The slice is written by `brawlerHitRouting::System::postIntegrate` (the systems executor's
 routing system, after every character's integrate), not by a manager-owned routing pass. "On the prior
-tick" is true. The reference to `current_state.md` §D7 points at an initiative workspace outside this
+tick" is true. ⚠ **Since og-netcode-v2-field-defects task 20** the pass is
+`brawlerHitRouting::System::preIntegrate` of the consuming tick: it reduces the prior tick's end state
+and writes the slice inside the tick that reads it, so "set on the prior tick" is no longer literal;
+"about the prior tick" is. The reference to `current_state.md` §D7 points at an initiative workspace outside this
 repository. Its substance is the compile error in §1. "Ahead of the switch" is an ordering, and it
 has no tag.
 
@@ -590,7 +598,7 @@ Verified against the tree on 2026-09-23.
 | 7 | 89-90 | a `(0,0,0)` aim would reach `normalize()` (as what separates the two) | every read of this slice's aim XY-projects first, where both are the zero vector |
 | 8 | 153-154 | 42 × (1/60) lands BELOW `0.7f` | it lands exactly on `0.7f`; the duration is `0.70000005f` |
 | 9 | 197-198 | `m_attackEndTick` is written only on radial edges, at three sites | three sites, two of them radial edges |
-| 10 | 589, 611 | the inbound slice is set by the manager's routing pass | by `brawlerHitRouting::System::postIntegrate` |
+| 10 | 589, 611 | the inbound slice is set by the manager's routing pass | by `brawlerHitRouting::System::postIntegrate` (`preIntegrate` of the consuming tick since task 20) |
 | 11 | 595-596 | after the veto the switch lands in `HitFlinch` | not when a projectile block arrives on the same tick (§7.3) |
 | 12 | 758-760 | a dual-tap write would push the end later while the radial keeps its schedule | true only when the active sequence is already 4 (§8.4) |
 

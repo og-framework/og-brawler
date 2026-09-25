@@ -19,6 +19,7 @@
 #include "OGSimulation/OGAssert.h"
 #include "OGBrawler/SimulatableBrawler.h"
 #include "OGBrawler/DAttackRadialSimulation.h"
+#include "OGBrawler/BrawlerProjectileHitDetection.h"
 #include "OGBrawler/DAttackRadialSequence.h"
 #include "OGBrawler/DAttackSequenceId.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
@@ -48,6 +49,11 @@ void detectRadialHits(float deltaSeconds,
 {
 	using namespace dAttackRadialSimulation;
 
+	// ⛔G-13  docs/BrawlerHitDetectionSystem-guards.md
+	derivedState.editHitsThisTick().clear();
+	derivedState.editGuardBlockedThisTick() = false;
+	derivedState.editGuardHits().clear();
+
 	// ⛔G-01  docs/BrawlerHitDetectionSystem-guards.md
 	if (state.currenSequenceId == InvalidAttackSequenceId
 		|| initialConditions.activeAttackSequence == InvalidAttackSequenceId
@@ -56,8 +62,8 @@ void detectRadialHits(float deltaSeconds,
 		return;
 	OG_CHECK(state.attackTimer > 0.f,
 		"brawlerHitDetection::detectRadialHits - the radial's State and InitialConditions name the "
-		"same valid sequence but attackTimer is not positive. Post-integrate the swing branch "
-		"leaves attackTimer >= deltaSeconds; see G-01.");
+		"same valid sequence but attackTimer is not positive. The previous tick's swing branch "
+		"leaves attackTimer >= deltaSeconds for this preIntegrate to read; see G-01.");
 
 	if (derivedState.editAttackHits().size() >= 4)
 		return;
@@ -220,7 +226,7 @@ void detectRadialHits(float deltaSeconds,
 	}
 }
 
-// One character's melee detection for this tick, read off its post-integrate state.
+// One character's melee detection for the previous tick, read off the state its integrate left.
 template <typename PhysicsReaderType, typename SpatialQueryAdapterType>
 void detectRadialHits(float deltaSeconds,
 	SimulatableBrawler& attacker,
@@ -258,15 +264,9 @@ public:
 	const PhysicsReaderType& physicsAdapter() const { return *m_physics; }
 	SpatialQueryAdapterType& queryAdapter() const { return *m_queryAdapter; }
 
-	void preIntegrate(const SimulationTimeStep& /*step*/,
-	                  StorageView<SimulatableBrawler> /*view*/,
-	                  const simulatableBrawler::StaticData& /*staticData*/)
-	{
-	}
-
-	void postIntegrate(const SimulationTimeStep& step,
-	                   StorageView<SimulatableBrawler> view,
-	                   const simulatableBrawler::StaticData& staticData)
+	void preIntegrate(const SimulationTimeStep& step,
+	                  StorageView<SimulatableBrawler> view,
+	                  const simulatableBrawler::StaticData& staticData)
 	{
 		std::vector<std::pair<unsigned int, SimulatableBrawler*>> ordered;
 		view.forEachSimulatable<SimulatableBrawler>(
@@ -281,6 +281,20 @@ public:
 		// ⛔G-12  docs/BrawlerHitDetectionSystem-guards.md
 		for (const auto& [id, attacker] : ordered)
 			detectRadialHits(step.getDeltaSeconds(), *attacker, staticData, *m_physics, *m_queryAdapter);
+
+		std::vector<ProjectileShooter> shooters;
+		shooters.reserve(ordered.size());
+		for (const auto& [id, shooter] : ordered)
+			shooters.push_back(projectileShooterOf(*shooter));
+		// ⛔G-14  docs/BrawlerHitDetectionSystem-guards.md
+		detectProjectileHits(step.getDeltaSeconds(), step.getTick(), staticData.m_projectileStaticData,
+			shooters, *m_physics, *m_queryAdapter);
+	}
+
+	void postIntegrate(const SimulationTimeStep& /*step*/,
+	                   StorageView<SimulatableBrawler> /*view*/,
+	                   const simulatableBrawler::StaticData& /*staticData*/)
+	{
 	}
 
 	void onCharacterRegistered(unsigned int /*id*/,

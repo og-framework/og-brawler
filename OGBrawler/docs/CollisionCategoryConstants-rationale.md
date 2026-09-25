@@ -137,6 +137,11 @@ the UE side.
 
 **`bodyGuardProjectile`** — Projectile-sim query mask: character hurtbox + guard shield + other projectiles (so projectiles
 detect each other and both cancel — see T13 branch in the projectile sim's hit loop).
+⚠ R0, 2026-09-24 (og-netcode-v2-field-defects task 17): that branch left the projectile sim. The
+overlap and the cancel run in `brawlerHitDetection::System`'s projectile pass
+(`BrawlerProjectileHitDetection.h`, guards G-04), which ends BOTH slots of an overlapping pair on
+the same tick. Before task 17 "both cancel" held only if both shooters' queries saw each other,
+and the first shooter to integrate parked its body before the second queried (measured).
 
 **`worldOnly`** — Ground (attachment) probe: static level geometry only.
 

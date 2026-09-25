@@ -153,9 +153,23 @@ ticks that leave `integrate` early.
   into a file that owns no part of this slice's lifetime.
 
 **What breaks if the edit is made.** Routing (`BrawlerHitRoutingSystem.h`) iterates
-`getHitsThisTick()` every post-integrate. A stale entry re-fires the knockback, lockout and stun on
+`getHitsThisTick()` every pass. A stale entry re-fires the knockback, lockout and stun on
 every remaining tick of the swing: the 13 m throw of movement-sim task 83.
 `HitRouting.RadialHitFiresOnceAcrossTheSwing` is the end-to-end pin.
+
+**R0, og-netcode-v2-field-defects task 20 (2026-09-24).** Detection and routing now run in
+`preIntegrate` of T+1, and the detector ALSO clears `hitsThisTick` and `guardBlockedThisTick`, at
+its very top, before any return (`BrawlerHitDetectionSystem-guards.md` G-13). That is an addition,
+not the move this guard forbids, and it answers the "nothing else guarantees the call" objection:
+the pass now runs for every character in storage on every tick, including characters `integrate`
+skips. Consequences for this entry, stated plainly:
+* In production this clear now runs AFTER routing has read the signal (routing is in
+  `preIntegrate(T+1)`, this clear at the top of `integrate(T+1)`). Deleting it would no longer
+  re-fire a hit in production, because the detector's own clear runs first on every pass. What it
+  still protects: every single-character rig that calls `integrate` and the detector directly, and
+  the reversed-order outcome the `SimulationManagerUImpl.h` `firesBefore` message names (routing
+  before detection reads an EMPTY list because this clear ran; without it, routing would read the
+  previous pass's list and route every hit one tick late instead of never).
 
 **Score (§9.1): the move names a destination ("into the detector"), not a statement to cross, so
 by clause E it is a cut at the tag, scored as deletion → `yes`.** The same entry's *"attackHits is
@@ -185,7 +199,8 @@ covers the first statement of the run only (§9.1 clause B).
 attacker's inbound slice as `wasGuardBlockedThisTick`, and `dAttackMachineSimulation::integrate3`
 recoils into `GuardFlinch` on the next tick. A stale `true` recoils the attacker again on every
 tick until something else clears it. Verified 2026-09-23 against `BrawlerHitRoutingSystem.h`
-branch 5.
+branch 5. ⚠ Since task 20, branch 5 runs in `preIntegrate` of T+1 and the recoil is on T+1, the
+tick after the block; the detector also clears the flag itself (G-04's R0 note applies here too).
 
 **Score (§9.1): cut at the tag (clause E, destination) → `yes`.**
 

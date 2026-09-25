@@ -7,19 +7,17 @@
 #include <cmath>
 #include <cstdint>
 #include <algorithm>   // std::remove_if (erase-remove prune)
+#include "glm/vec2.hpp"
 #include "glm/vec3.hpp"
 #include "glm/mat4x4.hpp"
-#include "glm/geometric.hpp"      // dot, length, normalize
-#include "glm/trigonometric.hpp"  // acos
-#include "glm/common.hpp"         // clamp
+#include "glm/geometric.hpp"      // dot
 #include "OGSimulation/SimulationDependencies.h"
 #include "OGSimulation/SimulationFieldDescriptors.h"
 #include "OGSimulation/PhysicsBodyState.h"
 #include "OGSimulation/PhysicsBodyAdapter.h"
 #include "OGSimulation/PhysicsDeclaration.h"
-#include "OGSimulation/SpatialQueryAdapter.h"
 #include "OGSimulation/QueryGeometry.h"
-#include "OGSimulation/SpatialQueryResult.h"
+#include "OGSimulation/BodyId.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
 #include "OGBrawler/DAttackRadialSimulation.h"
 #include "OGBrawlerLog.h"
@@ -133,9 +131,11 @@ struct PhysicsSetup
             QueryVolumeDescriptor{
                 SphereGeometry{staticData.colliderRadius},
                 // [hit-resolution T13] Include the projectile category so projectiles
-                // still detect each other (both cancel via the endReason=3 branch in
-                // the hit loop). Drop `projectile` from this mask if pass-through
-                // semantics are preferred over mutual cancellation.
+                // still detect each other (both cancel with endReason=3: since
+                // og-netcode-v2-field-defects task 17 the pair is decided by
+                // brawlerHitDetection's projectile pass, BrawlerProjectileHitDetection.h).
+                // Drop `projectile` from this mask if pass-through semantics are
+                // preferred over mutual cancellation.
                 collisionCategory::bodyGuardProjectile,
                 glm::mat4(1.f),
                 collisionCategory::queryRouting
@@ -174,7 +174,9 @@ struct ProjectileSlot
     glm::vec3 spawnDir       {};    // unit vector; velocity = spawnDir * projectileSpeed
     uint32_t  endTick        = 0;   // 0 == still alive; >0 == ended at this tick
     uint8_t   endReason      = 0;   // 0=alive, 1=lifetimeExpired, 2=hit, 3=cancelledByProjectile [T13], 4=blockedByGuard [T14]
-    BodyId    hitRootBodyId;        // actor-level id of struck character; meaningful only when endReason == 2
+    // [og-netcode-v2-field-defects task 17] `hitRootBodyId` (4 B) LEFT THE WIRE here. Its one
+    // reader was hit routing's branch 3, which now takes the struck character from
+    // DerivedState::detectedThisTick in the same pass that detected it.
 
     // Transient, LOCAL-ONLY body state. Recomputed each tick from the closed
     // form and used by the physics composite's captureBodyStatesAll() (which
@@ -203,7 +205,6 @@ struct ProjectileSlot
         return spawnTick == o.spawnTick
             && endTick == o.endTick
             && endReason == o.endReason
-            && hitRootBodyId == o.hitRootBodyId
             && isSimilarToField(spawnPos, o.spawnPos)
             && isSimilarToField(spawnDir, o.spawnDir);
     }
@@ -254,16 +255,47 @@ struct ProjectileIndicator
     uint32_t  tickStamp   = 0;
 };
 
+// [og-netcode-v2-field-defects task 17] What brawlerHitDetection::System's projectile pass
+// (BrawlerProjectileHitDetection.h) found for one slot in THIS step's pre-integrate pass. The
+// values are the endReason codes the slot is ended with, so integrate stores them unchanged.
+enum class SlotOutcome : uint8_t
+{
+    None                  = 0,
+    Hit                   = 2,
+    CancelledByProjectile = 3,
+    BlockedByGuard        = 4,
+};
+static_assert(static_cast<uint8_t>(SlotOutcome::Hit) == 2
+           && static_cast<uint8_t>(SlotOutcome::CancelledByProjectile) == 3
+           && static_cast<uint8_t>(SlotOutcome::BlockedByGuard) == 4,
+    "brawlerProjectileSimulation::SlotOutcome - integrate writes the outcome into ProjectileSlot::endReason "
+    "as is, and endReason's codes are 2 hit, 3 cancelledByProjectile, 4 blockedByGuard (1 is lifetime "
+    "expiry, which integrate decides itself). Was the per-slot branch inside integrate that wrote the codes.");
+
+struct SlotDetection
+{
+    SlotOutcome outcome = SlotOutcome::None;
+    BodyId      struckRootBodyId;       // Hit / BlockedByGuard: the struck character's root body id
+    glm::vec3   objectPosition{};       // Hit / BlockedByGuard: the struck shape's position
+    glm::vec3   targetRootPosition{};   // BlockedByGuard: the guard body's translation (the character root)
+};
+
 class DerivedState
 {
 public:
     // Damage hits — body hits, and guard hits OUTSIDE the front block cone.
-    // Each entry placed at the impacted object's position (hit.objectPosition).
+    // Each entry placed at the impacted object's position (SlotDetection::objectPosition).
     std::vector<ProjectileIndicator> hits;
     // T29/T30 — blocked hits: guard hits INSIDE the front block cone. Position is
     // the launch-ray vs inner-circle intersection facing the shooter (T30), not the
     // character root. Persisted across ticks (pruned by tickStamp), wire-free.
     std::vector<ProjectileIndicator> blocks;
+    // [og-netcode-v2-field-defects task 17] One entry per pool slot, indexed like
+    // State::slots. Written ONLY by brawlerHitDetection's projectile pass, which resets
+    // every entry at the top of every pass; read in the same step by hit routing
+    // (branches 3 and 4) and by integrate below, which ends the slot. Never on the wire:
+    // a resim replay recomputes it from the restored slot.
+    std::array<SlotDetection, kMaxProjectilePoolSize> detectedThisTick{};
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -285,18 +317,18 @@ public:
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
+// [og-netcode-v2-field-defects task 17] No query adapter: detection left this sub-simulation
+// for brawlerHitDetection::System, so integrate cannot query even by accident.
+template <typename PhysicsBodyAdapterType>
 class IntegrationUtils
 {
 public:
     IntegrationUtils(float deltaTime,
                      uint32_t currentTick,
-                     PhysicsBodyAdapterType& physicsBodyAdapter,
-                     SpatialQueryAdapterType& queryAdapter)
+                     PhysicsBodyAdapterType& physicsBodyAdapter)
         : m_deltaTime(deltaTime)
         , m_currentTick(currentTick)
         , m_physicsBodyAdapter(physicsBodyAdapter)
-        , m_queryAdapter(queryAdapter)
     {}
 
     float getDeltaTime() const { return m_deltaTime; }
@@ -305,17 +337,36 @@ public:
     // SimulationTimeStep at the SimulatableBrawler::integrate call site (T15).
     uint32_t getCurrentTick() const { return m_currentTick; }
     PhysicsBodyAdapterType& getPhysicsAdapter() const { return m_physicsBodyAdapter; }
-    SpatialQueryAdapterType& getQueryAdapter() const { return m_queryAdapter; }
 
 private:
     float m_deltaTime;
     uint32_t m_currentTick;
     PhysicsBodyAdapterType& m_physicsBodyAdapter;
-    SpatialQueryAdapterType& m_queryAdapter;
 };
 
-template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
-using AllInput = SimulationAllInput<PlayerInput, IntegrationUtils<PhysicsBodyAdapterType, SpatialQueryAdapterType>>;
+template <typename PhysicsBodyAdapterType>
+using AllInput = SimulationAllInput<PlayerInput, IntegrationUtils<PhysicsBodyAdapterType>>;
+
+// [og-netcode-v2-field-defects task 17] The closed-form position of a slot on `tick`,
+// shared by integrate (which snaps the body there) and the detector (which queries there),
+// so the two can never sample different points. For tick < slot.spawnTick the unsigned
+// difference WRAPS to an elapsed time far above maxLifetime; nothing clamps it here.
+// The detector never passes such a tick: it skips those slots explicitly and goes through
+// elapsedSecondsFromSpawn (BrawlerProjectileHitDetection.h), so its gate is not this wrap.
+// integrate CAN pass one (read, not measured): a resim NoSlot character keeps its
+// un-restored frontier state, and its first replayed integrate may precede a slot's spawn
+// tick. integrate then ends that slot as a lifetime expiry, as it did before task 17.
+inline float elapsedSecondsAt(const ProjectileSlot& slot, float dt, uint32_t tick)
+{
+    const uint32_t elapsedTicks = tick - slot.spawnTick;
+    return static_cast<float>(elapsedTicks) * dt;
+}
+
+inline glm::vec3 closedFormPosition(const ProjectileSlot& slot, const StaticData& sd, float elapsedSeconds)
+{
+    const glm::vec3 velocity = slot.spawnDir * sd.projectileSpeed;
+    return slot.spawnPos + velocity * elapsedSeconds;
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -387,9 +438,9 @@ void parkBody(PhysicsBodyAdapterType& physics, BodyId bodyId)
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
+template <typename PhysicsBodyAdapterType>
 void integrate(float dt,
-               const AllInput<PhysicsBodyAdapterType, SpatialQueryAdapterType>& input,
+               const AllInput<PhysicsBodyAdapterType>& input,
                const StaticData& sd,
                Dependencies deps,
                const std::array<RuntimeBindings, kMaxProjectilePoolSize>& bindings,
@@ -398,7 +449,6 @@ void integrate(float dt,
     InitialConditions& ic = deps.owned.edit<InitialConditions>();
     State& state = deps.owned.edit<State>();
     auto& physics = input.getIntegrationUtils().getPhysicsAdapter();
-    auto& queryAdapter = input.getIntegrationUtils().getQueryAdapter();
     const uint32_t currentTick = input.getIntegrationUtils().getCurrentTick();
 
     // T30 — prune expired indicator entries at the TOP of integrate. This replaces
@@ -442,10 +492,9 @@ void integrate(float dt,
             continue;
 
         // Closed form: pos(t) = spawnPos + spawnDir * speed * dt * (currentTick - spawnTick).
-        const uint32_t elapsedTicks   = currentTick - slot.spawnTick;
-        const float    elapsedSeconds = static_cast<float>(elapsedTicks) * dt;
+        const float    elapsedSeconds = elapsedSecondsAt(slot, dt, currentTick);
         const glm::vec3 velocity   = slot.spawnDir * sd.projectileSpeed;
-        const glm::vec3 derivedPos = slot.spawnPos + velocity * elapsedSeconds;
+        const glm::vec3 derivedPos = closedFormPosition(slot, sd, elapsedSeconds);
 
         snapBody(bindings[i], derivedPos, velocity);
         slot.bodyState.position = derivedPos;       // keep transient in sync for viz/capture
@@ -460,91 +509,54 @@ void integrate(float dt,
             continue;
         }
 
-        // Overlap query at the derived position — find first non-parent hit.
-        glm::mat4 derivedTransform(1.f);
-        derivedTransform[3] = glm::vec4(derivedPos, 1.f);
-        for (const auto& volumeId : bindings[i].queryVolumeIds)
-            queryAdapter.setVolumeParentTransform(volumeId, derivedTransform);
+        // [og-netcode-v2-field-defects task 17] DETECTION IS NOT HERE ANY MORE. The overlap,
+        // the projectile-vs-projectile cancel and the guard classification run in
+        // brawlerHitDetection::System's pre-integrate pass of THIS step
+        // (BrawlerProjectileHitDetection.h), at this same closed-form position
+        // (closedFormPosition above), over the state every character's previous integrate
+        // left; so no peer's outcome depends on which character integrated first. This
+        // integrate stays the ONLY writer of the wire slot: it reads the pass's outcome and
+        // ends the slot on this, the contact, tick. derivedPos above IS the contact position,
+        // not a step past it, and the viz draws no slot whose endTick is set.
+        const SlotDetection& detected = derived.detectedThisTick[i];
+        if (detected.outcome == SlotOutcome::None)
+            continue;
 
-        SpatialQueryReport report = queryAdapter.overlap(bindings[i].queryVolumeIds);
-        for (const auto& hit : report)
+        // [hit-resolution T13] Projectile-vs-projectile cancellation: ended WITHOUT a
+        // routable hit (routing branch 3 routes Hit only), so neither owning character
+        // enters HitFlinch. The pass cancels BOTH slots of an overlapping pair on the same
+        // tick, whichever character integrates first. parkBody + endTick=currentTick
+        // despawn the projectile the same way a regular hit does; the viz's
+        // spawnTick/endTick guard skips rendering. The slot recycles naturally on the next
+        // tick per isFree(currentTick) (endTick != 0 && currentTick >= endTick).
+        if (detected.outcome == SlotOutcome::CancelledByProjectile)
         {
-            // Parent-body filter runs first — the firing character never blocks or
-            // takes damage from its own projectile.
-            if (hit.bodyId == bindings[i].parentBodyId)
-                continue;
+            slot.endTick   = currentTick;
+            slot.endReason = static_cast<uint8_t>(detected.outcome);
+            OGBLOG_G("[Projectile.cancel] slot %u cancelled by opposing projectile", i);
+            parkBody(physics, bindings[i].ownBodyId);
+            continue;
+        }
 
-            // [hit-resolution T13] Projectile-vs-projectile cancellation. When the
-            // overlap returns another projectile (own or opposing), end this slot
-            // WITHOUT recording a routable hit: endReason=3 excludes the slot from
-            // T3's routing filter (which only routes endReason==2), so neither
-            // owning character enters HitFlinch. Both sides detect the collision
-            // independently on the same tick — each character's own projectile sim
-            // processes its own slot, so no cross-character mutation is needed.
-            // parkBody + endTick=currentTick despawn the projectile the same way a
-            // regular hit does; the viz's spawnTick/endTick guard skips rendering.
-            // The slot recycles naturally on the next tick per isFree(currentTick)
-            // (endTick != 0 && currentTick >= endTick).
-            if (hit.objectCategories.contains(collisionCategory::projectile))
-            {
-                slot.endTick       = currentTick;
-                slot.endReason     = 3;
-                slot.hitRootBodyId = BodyId{};   // clear defensively — routing filters on endReason==2 first
-                OGBLOG_G("[Projectile.cancel] slot %u cancelled by opposing projectile", i);
-                parkBody(physics, bindings[i].ownBodyId);
-                break;
-            }
-
-            // T29 — classify guard hits inside the front cone as BLOCKS; everything
-            // else (guard outside the cone, or a plain body hit) is a damage hit.
-            bool blocked = false;
-            glm::vec3 charPos(0.f);   // target character root (guard body translation)
-            if (hit.objectCategories.contains(collisionCategory::guard))
-            {
-                // The guard sim rotates the guard body so its forward axis (the first
-                // column of the rotation matrix) points along the target character's
-                // aim direction (see DAttackGuardSimulation.h). The guard body sits at
-                // the character root, so its translation IS the character position.
-                const glm::mat4 guardTransform = physics.getBodyTransform(hit.bodyId);
-                charPos = glm::vec3(guardTransform[3]);
-                glm::vec3 guardForward = glm::vec3(guardTransform[0]);
-                const float fwdLen = glm::length(guardForward);
-                if (fwdLen > 0.0001f)
-                    guardForward /= fwdLen;
-
-                // Direction the projectile is travelling INTO the guard is -spawnDir
-                // (spawnDir is the unit launch/travel direction). A guard facing the
-                // incoming projectile (forward ≈ -spawnDir) yields a near-zero angle.
-                const glm::vec3 incoming = -slot.spawnDir;
-                const float d     = glm::clamp(glm::dot(guardForward, incoming), -1.f, 1.f);
-                const float angle = glm::acos(d);
-                blocked = (angle <= sd.guardMiddleSectionHalfAngle);
-            }
+        {
+            const bool blocked = detected.outcome == SlotOutcome::BlockedByGuard;
+            // T29 — the pass classified guard hits inside the front cone as BLOCKS;
+            // everything else (guard outside the cone, or a plain body hit) is a hit.
+            const glm::vec3 charPos = detected.targetRootPosition;   // target character root
 
             slot.endTick        = currentTick;
             // [hit-resolution T14] Distinguish blocked vs unblocked at the endReason
-            // level so T3 routing (which filters on endReason==2) does NOT fire
-            // HitFlinch on a target whose guard successfully absorbed the projectile.
-            // Pre-T11 this was silently correct because the routing map was keyed on
-            // the radial hurtbox body UniqueIdx and the block path pushed the guard
-            // body's UniqueIdx into `hitObjectIndex` — different values, map lookup
-            // failed. T11's rootBodyId refactor made both bodies emit the target's
-            // capsule id as rootBodyId, so the routing map lookup started succeeding
-            // for guard blocks and fired HitFlinch on the guarding character. Split
-            // the endReason to fix.
-            slot.endReason      = blocked ? 4 /* blockedByGuard */ : 2 /* hit */;
-            // hitRootBodyId is meaningful only for endReason==2 (routing consumer).
-            // Clear it defensively on block so a future consumer that forgets the
-            // filter doesn't accidentally route a block to HitFlinch.
-            slot.hitRootBodyId  = blocked ? BodyId{} : hit.rootBodyId;
+            // level so T3 routing (which routes Hit only) does NOT fire HitFlinch on a
+            // target whose guard successfully absorbed the projectile.
+            slot.endReason      = static_cast<uint8_t>(detected.outcome);   // 4 blockedByGuard / 2 hit
             if (blocked)
             {
                 // T30 — place the block marker on the inner circle where the launch ray
                 // enters it (the edge facing the shooter), not at the character root.
                 // Solve |O + t*D - C|^2 = r^2 in the XY plane (O = spawnPos, D = spawnDir,
                 // C = charPos, r = innerCircleRadius). Pick the smaller positive root —
-                // the entry point. Fallback to hit.objectPosition if the ray misses.
-                glm::vec3 blockPos = hit.objectPosition;
+                // the entry point. Fallback to the struck shape's position if the ray misses.
+                glm::vec3 blockPos = detected.objectPosition;
                 bool foundIntersection = false;
                 const glm::vec2 rayO = glm::vec2(slot.spawnPos.x, slot.spawnPos.y);
                 const glm::vec2 rayD = glm::vec2(slot.spawnDir.x, slot.spawnDir.y);
@@ -570,16 +582,15 @@ void integrate(float dt,
                 if (!foundIntersection)
                     OGBLOG_G("[Projectile.block] ray missed inner circle, fallback to hit position");
 
-                derived.blocks.push_back({ blockPos, hit.rootBodyId, currentTick });
-                OGBLOG_G("[Projectile.block] slot %u blocked by rootBodyId=%u", i, hit.rootBodyId.value);
+                derived.blocks.push_back({ blockPos, detected.struckRootBodyId, currentTick });
+                OGBLOG_G("[Projectile.block] slot %u blocked by rootBodyId=%u", i, detected.struckRootBodyId.value);
             }
             else
             {
-                derived.hits.push_back({ hit.objectPosition, hit.rootBodyId, currentTick });
-                OGBLOG_G("[Projectile.hit] slot %u hit rootBodyId=%u", i, hit.rootBodyId.value);
+                derived.hits.push_back({ detected.objectPosition, detected.struckRootBodyId, currentTick });
+                OGBLOG_G("[Projectile.hit] slot %u hit rootBodyId=%u", i, detected.struckRootBodyId.value);
             }
             parkBody(physics, bindings[i].ownBodyId);
-            break;
         }
     }
 
@@ -600,7 +611,6 @@ void integrate(float dt,
             slot.spawnDir       = ic.spawnDir;
             slot.endTick        = 0;
             slot.endReason      = 0;
-            slot.hitRootBodyId  = BodyId{};   // no-hit sentinel (meaningful only when endReason == 2)
 
             // Snap the body to the launch pose so it is correctly placed on the
             // spawn tick (elapsed == 0 ⇒ derivedPos == spawnPos).
@@ -628,9 +638,9 @@ void integrate(float dt,
 // transient local-only field (recomputed each tick from the closed form) and is
 // deliberately EXCLUDED so it never hits the wire and never drives correction.
 // Per-slot wire size = 4 (spawnTick) + 12 (spawnPos) + 12 (spawnDir)
-//                    + 4 (endTick) + 1 (endReason) + 4 (hitRootBodyId) = 37 bytes.
-// hitRootBodyId is a BodyId (single uint32_t) so it serializes as 4 bytes exactly like
-// the int32_t it replaced — the wire footprint is unchanged (T11 is compile-time-only).
+//                    + 4 (endTick) + 1 (endReason) = 33 bytes.
+// [og-netcode-v2-field-defects task 17] 37 -> 33: hitRootBodyId (4 B) left the wire; the
+// struck character now travels in DerivedState::detectedThisTick, inside one step.
 template <>
 struct SerializableFields<brawlerProjectileSimulation::ProjectileSlot>
 {
@@ -642,8 +652,7 @@ struct SerializableFields<brawlerProjectileSimulation::ProjectileSlot>
             SIM_MEMBER(S, spawnPos),
             SIM_MEMBER(S, spawnDir),
             SIM_MEMBER(S, endTick),
-            SIM_MEMBER(S, endReason),
-            SIM_MEMBER(S, hitRootBodyId));
+            SIM_MEMBER(S, endReason));
     }
 };
 

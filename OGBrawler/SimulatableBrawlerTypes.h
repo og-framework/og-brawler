@@ -390,7 +390,7 @@ public:
         OG_CHECK(m_hitReactions.size() == m_attackSequences.size(),
             "simulatableBrawler::StaticData - m_hitReactions is INDEXED BY ATTACK SEQUENCE ID and "
             "must carry exactly one row per entry of m_attackSequences. A sequence with no row is "
-            "an out-of-range read in brawlerHitRouting::System::postIntegrate; a row with no "
+            "an out-of-range read in brawlerHitRouting::System::preIntegrate; a row with no "
             "sequence is a reaction nothing can ever deliver. The two lists are authored ADJACENT "
             "above for this reason - add the swing and its reaction in the same edit.");
     }

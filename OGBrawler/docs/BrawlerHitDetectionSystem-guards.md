@@ -1,8 +1,12 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
 # `BrawlerHitDetectionSystem.h` — guards
 
-Every prohibition for the melee hit detector. Each entry has an **opaque, stable id**; in the
-header a single line `// ⛔G-nn` sits exactly where the wrong edit would be typed.
+<!-- lint-external-ref: impl/review_defect_9_rw1.md -- the task-9 Rework (1) review, in the og-netcode-v2-field-defects initiative workspace; that workspace is not part of this repository -->
+
+Every prohibition for the hit detector: the melee pass in this header, and the call into the
+projectile pass (task 17), whose own prohibitions are in `BrawlerProjectileHitDetection-guards.md`.
+Each entry has an **opaque, stable id**; in the header a single line `// ⛔G-nn` sits exactly
+where the wrong edit would be typed.
 
 **If this file and `BrawlerHitDetectionSystem.h` disagree, the header is authoritative and this
 file is stale.** Fix this file; do not soften the header to match it.
@@ -22,14 +26,15 @@ line references to "below" and "above" describe that file, not this one.
 
 ---
 
-## G-01 — The swing gate is the post-integrate sequence PAIR, and it returns BEFORE anything asserts
+## G-01 — The swing gate is the sequence PAIR that `integrate` left, and it returns BEFORE anything asserts
 
 **Tag site:** `BrawlerHitDetectionSystem.h`, on the `if (state.currenSequenceId == InvalidAttackSequenceId || initialConditions.activeAttackSequence == InvalidAttackSequenceId || state.currenSequenceId != initialConditions.activeAttackSequence || state.currenSequenceId >= staticData.getAttackSequences().size()) return;`
 that opens the slice-level `detectRadialHits` (one statement over four lines), and the `OG_CHECK(state.attackTimer > 0.f, …)` beneath it.
 
-**The prohibition.** Detection runs after the radial's `integrate` has returned, so "was this a
-swing tick" must be read off the state that `integrate` LEFT. Post-integrate, the radial's
-`currenSequenceId` is valid if and only if `integrate` took its swing branch this tick, which is
+**The prohibition.** Detection runs after the radial's `integrate` has returned (since task 20, in
+`preIntegrate` of T+1, over the state `integrate(T)` left), so "was T a swing tick" must be read
+off the state that `integrate` LEFT. In that state the radial's
+`currenSequenceId` is valid if and only if `integrate` took its swing branch on T, which is
 exactly the branch that used to call `collisionCheck`: the Hadouken sentinel, the two
 `deactivate` exits and the idle pose all leave it `InvalidAttackSequenceId`. ⛔ Do not gate on
 `activeAttackSequence` alone, and do not re-derive the answer from `attackTimer`: a swing's first
@@ -38,14 +43,17 @@ semantic gate.
 
 ⛔ **Every condition is a `return`. Nothing is asserted until all of them have passed.** The
 detector walks EVERY character in storage, and not every character in storage has been
-integrated. A brawler added to storage whose first `firePostIntegrate` precedes its first
-`integrate` still carries the radial's default pair: State `currenSequenceId = 0`, InitialConditions
-`activeAttackSequence = InvalidAttackSequenceId`. It reaches the detector in two ways:
+integrated. A brawler that meets the detector before its first `integrate` still carries the
+radial's default pair: State `currenSequenceId = 0`, InitialConditions
+`activeAttackSequence = InvalidAttackSequenceId`. It reaches the detector in three ways:
+* ⭐ **(task 20) every newly registered character, on its first tick.** The pass runs in
+  `firePreIntegrate`, which precedes `integrateAll`, on a live tick and on a resim replay alike.
+  This is the common path now, not a race;
 * a client registers a pawn (the cache is created with NO slot) and the next physics frame opens
-  with a resim. Every replayed tick is NoSlot for the new id, `integrateAll` skips it, and
-  `firePostIntegrate` still runs;
-* the game-thread registration tear: `storage.add` lands between `integrateAll` and
-  `firePostIntegrate`, in any role.
+  with a resim. Every replayed tick is NoSlot for the new id, `integrateAll` skips it, and the
+  systems executor still walks it;
+* the game-thread registration tear: `storage.add` lands between two phases of one step, in any
+  role.
 
 ⛔ Do not "fix" this by changing `dAttackRadialSimulation::State`'s default `currenSequenceId = 0`.
 It is wire-visible initial state on both peers, so changing it is a separate decision, not part of
@@ -73,10 +81,31 @@ is stopped by the gate before the check. A correction restore writes an end-of-t
 InitialConditions, which is a state some `integrate` left, so it satisfies the same invariant.
 The check is still live: a mid-swing pair with `attackTimer` forced to 0 fires it.
 
+**Re-checked 2026-09-24 for task 20, the one new reading point.** At `preIntegrate(T+1)` the
+detector reads the end-of-T pair, which is exactly what the post-integrate pass of T read: nothing
+writes the radial `State` or `InitialConditions` between those two points (the systems write only
+`DerivedState`; the physics step writes bodies; `captureBodyStatesAll` writes `bodyState`, not the
+pair or the timer). The new case is the FIRST step of a replay, where the pair was not left by an
+`integrate` in this process but restored by `prepareResimAll`. It still holds, for the reason the
+task-9 Rework (1) review gave (`impl/review_defect_9_rw1.md` §2): the radial `InitialConditions` and
+`State` are both wire slices of the same composite (`SimulatableBrawlerTypes.h`), restored together
+from ONE authority tick; that tick's pair was left by the authority's `integrate`, so it obeys the
+invariant; and `attackTimer` travels as raw float bytes (no quantisation, `SimulationSerialization.h`
+Tier 3), so a restored `dt` cannot round to 0. A replay anchored on a tick where the authority had
+not yet integrated the character carries the default pair, which the gate returns on. The restore
+completes before `preIntegrate` of the first replayed step runs, so the detector never sees half
+of it. Pinned before `integrate` by
+`HitDetection.Behaviour.FreshCharacterMeetsTheDetectorBeforeItsFirstIntegrate` (live and resim).
+
 **What breaks if the edit is made.**
 * Gate on the InitialConditions sequence alone: an extra detection pass on each swing's last
   tick, against a weapon pose that is no longer the swing's. Nothing fails to compile and the
   existing hit tests mostly still pass, because their overlap schedules rarely reach the final tick.
+* Gate on `currenSequenceId != InvalidAttackSequenceId` alone, or on that plus `attackTimer > 0`
+  without the pair equality (task 20's spec step 1, superseded): the default `currenSequenceId = 0`
+  is not Invalid, so the first form lets the default pair through and fires the
+  `attackTimer > 0` check (a `checkf` in a UE Development build) on EVERY new character's first
+  `preIntegrate`; the second returns on it but drops the pair equality, which is the semantic gate.
 * Assert on the pair before the returns (the shape shipped in task 9): a **crash at join time**.
   The default pair fails `currenSequenceId == activeAttackSequence`, and `OG_CHECK` is a `checkf`
   in a UE Development build, so a client crashes when a pawn joins during a resim. Shipping
@@ -161,6 +190,10 @@ inside `integrate` BEFORE `state.attackTimer = state.attackTimer + deltaSeconds`
 runs after it. The pose it tests was produced at the pre-advance timer, so that is the timer the
 authored angular velocity must be read at.
 
+**Task 20.** The detector now runs in `preIntegrate(T+1)`, so `deltaSeconds` is T+1's step. The
+subtraction recovers T's pre-advance timer only because the step is fixed (the same
+`SimulationTimeStep` delta on every tick of a session); a variable step would need T's own delta.
+
 **What breaks if the edit is made.** The swing tangent's sign is read one tick into the future.
 It flips wherever the authored angular velocity changes sign between two consecutive ticks, which
 throws the target the wrong way on that tick.
@@ -204,7 +237,7 @@ the authored angular velocity. That was not surveyed across the shipped sequence
 ```
 
 ⚠ **R0, 2026-09-23.** "the sequence's angular velocity" is now sampled at `swingTimer`, not at
-`state.attackTimer`. See G-04 for why the two differ post-integrate.
+`state.attackTimer`. See G-04 for why the two differ once `integrate` has advanced the timer.
 
 ---
 
@@ -288,9 +321,9 @@ correction arrives, and a client's replay re-detects nothing either.
 **Tag site:** `BrawlerHitDetectionSystem.h`, on the `System` constructor.
 
 **The prohibition.** The system stores pointers to the body adapter and the query adapter it is
-constructed with, and both must be the objects the per-character integrate uses this tick: the
-body adapter that sees this tick's guard transform, and the query adapter whose shapes the guard
-sub-simulation toggled. ⛔ Never a game-thread reader. The UE composition root's version of this
+constructed with, and both must be the objects the per-character integrate uses: the body adapter
+that holds the guard transform the target's integrate wrote, and the query adapter whose shapes the
+guard sub-simulation toggled. ⛔ Never a game-thread reader. The UE composition root's version of this
 guard is `SimulationManagerUImpl-guards.md` G-75, which names the concrete wrong adapter.
 
 **What breaks if the edit is made.** The detector reads a DIFFERENT view of the target's guard
@@ -317,6 +350,12 @@ is here because the first cross-attacker effect makes it load-bearing without an
 Backlog task 17 moves projectile detection into this walk, including the
 projectile-versus-projectile cancel, in which two characters' slots decide each other's fate.
 
+**Re-read 2026-09-24, task 17 landed.** The projectile pass walks the shooters in this sorted
+order, but it was built so the order cannot matter: it queries every slot in flight first,
+writing nothing another query reads, then cancels a pair if EITHER query saw the other (a union),
+then classifies (`BrawlerProjectileHitDetection-rationale.md` ∴D-02). So the sort still decides
+no outcome. It stays, because the next cross-attacker effect may not be built that way.
+
 ---
 
 ## G-12 — Nothing in the walk logs without printing `id=` itself
@@ -325,15 +364,86 @@ projectile-versus-projectile cancel, in which two characters' slots decide each 
 
 **The prohibition.** The `id=` / `tick=` prefix on `OGBLOG_G` lines comes from
 `simulationLog::IntegrateScope`, which `SimulationIntegrationExecutor::integrateAll` sets around
-each character's `integrate` and around nothing else. This walk runs in `firePostIntegrate`,
-outside that scope. ⛔ A log line added here must print the character id (and the tick, from
+each character's `integrate` and around nothing else. This walk runs in `firePreIntegrate` (since
+task 20; `firePostIntegrate` before it), outside that scope. ⛔ A log line added here must print the character id (and the tick, from
 `step`) itself, as the routing system's lines are expected to.
 
 **What breaks if the edit is made.** The line is emitted with no id prefix, and the per-character
 greps every PIE capture in this initiative relies on silently lose it.
 
 **Verified 2026-09-23.** The old `collisionCheck` had zero log sites, so the move lost nothing. The
-detector has none either.
+detector has none either, and task 17's projectile pass (`BrawlerProjectileHitDetection.h`) added
+none: its `[Projectile.*]` lines stay in the projectile sub-simulation's `integrate`, which prints
+them when it ends the slot, inside the scope. ⚠ A line added here should print `step.getTick()` and
+say which half it belongs to: the melee pass reads the end state the previous `integrate` left, and
+the projectile pass tests each shot at its closed-form position on `step.getTick()` itself.
+
+⚠ **Retired from this entry, 2026-09-24 (task 17; task 20 review N1).** Task 20 Rework (1) put a
+per-step-kind table here: how far back routing branches 3 and 4 had to look for a projectile slot's
+`endTick` (a per-step-kind offset function in `BrawlerHitRoutingSystem.h`: Normal, Stall and a replay 1, a graduated Skip
+2, and a HardResync it could not see). The table was never this guard's subject; the task-20
+review found it under the wrong heading. Task 17 removed the lookup itself at the user's ruling
+("a system must not need to know which tick ran last"): branches 3 and 4 read the projectile
+outcome this detector produces in the same pass, so the table has no subject left and was deleted,
+not moved. Its pins were retired or re-homed with it (the routing table case retired, the Skip
+cases re-homed onto the detector, a HardResync case added); see `BrawlerHitRoutingTest.cpp` and
+`BrawlerProjectileHitDetection-rationale.md` §3. This entry keeps only its own rule, above.
+
+---
+
+## G-13 — The detector clears its own per-tick outputs FIRST, before any return
+
+**Tag site:** `BrawlerHitDetectionSystem.h`, on the three clears (`hitsThisTick`,
+`guardBlockedThisTick`, `guardHits`) that open the slice-level `detectRadialHits`, above G-01.
+
+**The prohibition.** ⛔ Do not move these below G-01 or any other `return`, and do not delete them
+on the ground that the radial's `integrate` already clears two of them
+(`DAttackRadialSimulation-guards.md` G-04, G-05). Every pass must publish exactly what it detected
+for its character, and nothing left from an earlier pass.
+
+**Why the detector must own them (task 20, 2026-09-24).** The pass runs in `preIntegrate(T+1)` and
+the signals must live from there to the next pass:
+* `guardHits` is what the visualization draws (the blue guard-hit sphere). The snapshot
+  (`updateVisualizationAll`) is taken after T+1's physics step. A guard block makes the machine go
+  `GuardFlinch` on T+1, and the radial's `deactivate` on T+1 used to clear `guardHits`, so after
+  the move the sphere would have been erased before any snapshot saw it. `deactivate` no longer
+  clears it; this clear is its only one.
+* A character the replay does not integrate (the resim NoSlot row, task 9 behaviour review F9)
+  never runs the radial's top-of-`integrate` clears, so its `hitsThisTick` from the previous pass
+  would be routed a second time.
+
+**What breaks if the edit is made.** Both measured by poison (task 20): with the three clears
+removed, `HitDetection.Behaviour.TheDetectorOwnsThePerTickSignalsItWrites` fails both sections —
+`guardHits` stays 1 forever, and the un-integrated attacker's hit reaches the target's slice again
+(`wasHit=1`). With `deactivate` still clearing `guardHits`, its first section fails instead
+(`guardHits after integrate(T+1)=0`). The whole `[@og]` suite was green without the clears before
+that case was written.
+
+**The projectile outcome follows the same rule (task 17, 2026-09-24).** The projectile pass writes
+each shooter's `brawlerProjectileSimulation::DerivedState::detectedThisTick`, and it resets every
+shooter's entries before it queries anything. That reset has its own site and id in the other
+header: `BrawlerProjectileHitDetection-guards.md` G-01 (it is a separate statement in a separate
+file, so it cannot share this tag).
+
+---
+
+## G-14 — The projectile pass is handed the step's OWN tick
+
+**Tag site:** `BrawlerHitDetectionSystem.h`, on the `detectProjectileHits(step.getDeltaSeconds(), step.getTick(), ...)`
+call at the end of `preIntegrate`.
+
+**The prohibition.** ⛔ Do not pass anything but `step.getTick()`: not `step.getTick() - 1`, not a
+tick adjusted by the step kind, not a "last integrated" tick kept anywhere. The pass tests each
+shot at its closed-form position on that tick, which is the position this step's `integrate` snaps
+it to and ends it at. User ruling 2026-09-24 (task 17): a system must not need to know which tick
+ran last, and the reaction lands in this step (`BrawlerProjectileHitDetection-rationale.md` §3).
+
+**What breaks if the edit is made.** With `step.getTick() - 1` the pass tests where the shot was
+one tick ago while `integrate` ends it where it is now; on a graduated Skip it tests a tick
+`integrate` never visits. Measured by poison (task 17): only
+`HitDetection.Projectile.CancelEndsBothShotsOnTheSameTickInBothOrders` fails (12 assertions). ⚠ The
+other projectile cases schedule their contact rather than place it, so they cannot see the
+position move; this is a weak pin.
 
 ---
 

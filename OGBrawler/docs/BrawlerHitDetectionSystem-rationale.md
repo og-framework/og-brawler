@@ -2,6 +2,7 @@
 # `BrawlerHitDetectionSystem.h` — rationale
 
 <!-- lint-external-ref: impl/design_hit_detection_system.md -- the task-9 design document, in the og-netcode-v2-field-defects initiative workspace; that workspace is not part of this repository -->
+<!-- lint-external-ref: ActorInstanceHandle.cpp -- Unreal Engine 5.6 source (Engine/Source/Runtime/Engine/Private/Engine/), outside every scan root; read with gh api at commit cdda65ce -->
 <!-- lint-external-ref: dAttackRadialSimulation::collisionCheck -- RETIRED by og-netcode-v2-field-defects task 9: the function this header's detectRadialHits replaces. It must NOT resolve; the day it does, detection has grown back into the radial's integrate -->
 
 The law, the provenance and the derivations. The **prohibitions** are in
@@ -37,6 +38,9 @@ guard transform and weapon pose for tick T are written on every peer, so both re
 thing everywhere. The guard is queryable on T on every peer; that was the authority's behaviour
 before, and it is now everyone's. Hit timing to the machine is unchanged: detected and routed on
 T, consumed on T+1.
+
+⭐ **Task 20 (2026-09-24) moved the pass to `preIntegrate` of T+1** (§7). The read-order argument
+above is unchanged: `preIntegrate(T+1)` also runs after every character's `integrate(T)`.
 
 **Measured.** `HitDetection.StunExitTickOutcomeIsIndependentOfIntegrateOrder` (read a) and
 `HitDetection.DetectionSeesThisTicksGuardTransform` (read b) were RED on the pre-move tree
@@ -146,7 +150,8 @@ adapter by the hit's own body id, which is read (b) of §1:
 
 * **Firing order.** `SimulationSystemsExecutor` fires systems in template order. The manager's
   `BrawlerSystemsExec` lists this system FIRST, before `brawlerHitRouting::System`, whose branch 2
-  reads the `hitsThisTick` written here and whose branch 5 reads `guardBlockedThisTick`.
+  reads the `hitsThisTick` written here and whose branch 5 reads `guardBlockedThisTick`. Both
+  fire in `preIntegrate` since task 20, so the order holds in that pass.
   `SimulationManagerUImpl.h` pins the order with a `static_assert` on `firesBefore` (§6), and that
   assert was seen to FAIL on a swapped order.
 * **Roles.** `AllRoles`, see G-09.
@@ -157,8 +162,9 @@ adapter by the hit's own body id, which is read (b) of §1:
   `SimulationManagerUImpl-guards.md`). The system holds POINTERS rather than references so it
   stays copy- and move-assignable inside the executor's tuple.
 * **Lifecycle hooks** are empty. Detection keeps no per-character bookkeeping: the per-swing ledger
-  stays in the radial `DerivedState`, which the visualisation reads, and the radial's `deactivate`
-  still clears it.
+  (`attackHits`) stays in the radial `DerivedState`, and the radial's `deactivate` still clears it.
+  ⚠ R0 (task 20): the visualisation reads `guardHits`, not the ledger; `guardHits` is per-tick since
+  task 20 and cleared here (G-13).
 * **What the radial is after this.** The radial poses its own weapon (task 2 will make that pose a
   closed-form function of wire state), does the attachment math and runs `deactivate`. It no longer
   takes a query adapter at all: `dAttackRadialSimulation::IntegrationUtils` lost its
@@ -174,3 +180,99 @@ og-simulation edit (the wire-format version), so the trait lives beside its only
 pattern-matches the executor's template arguments and never instantiates the executor. Both arms
 are proved in `HitDetection.FiresBeforeTraitSeesTheExecutorOrder`: the shipped order reads true,
 the reversed and the missing orders read false.
+
+---
+
+## 7. The pass runs in `preIntegrate` of T+1 (og-netcode-v2-field-defects task 20)
+
+```
+before:  integrate(T) -> postIntegrate(T): detect+route -> [physics step T] -> integrate(T+1): machine reacts
+after:   integrate(T) -> [physics step T] -> preIntegrate(T+1): detect+route -> integrate(T+1): machine reacts
+```
+
+**Why.** Every inbound-slice bit was written in the post-integrate pass of T and read by
+`integrate(T+1)`: state carried across a tick boundary off the wire. A resim replay starts at T+1,
+so a replay anchored at the end of T never re-ran T's pass and read the frontier's stale slice (the
+task 9 behaviour review's F7 for the guard block; the same hole in `wasHitThisTick` since T3 and in
+`wasProjectileBlockedThisTick` since T15). After the move the signal is produced and consumed inside
+T+1 and is recomputed from the restored end-of-T state. The machine reacts on the same tick as
+before: no added latency. og-simulation fires `preIntegrate` before `integrateAll` on the
+prediction, authority and resim step functions alike (`SimulationManager.h`), so it needed no edit.
+Measured RED -> GREEN: `HitDetection.Behaviour.ReplayAnchoredAtTheEndOfThe{Block,BodyHit,ProjectileBlock}Tick…`.
+
+**What the gate reads.** The pair `integrate(T)` left, the same values the post-integrate pass read
+(G-01, with the check for the correction-restored first replay step).
+
+**What the reads sample.**
+* LLT rigs: body transforms and query answers are fakes written by the sub-simulations during
+  `integrate`. Identical at both points; the rigs schedule contact, so they cannot show a
+  physics-step difference.
+* UE (code read, not measured in PIE). `ChaosPhysicsBodyAdapter::getBodyTransform` reads the
+  physics-thread handle's `GetX()`/`GetR()`. At `postIntegrate(T)` that was the weapon pose
+  `integrate(T)` wrote: translation re-attached to the capsule, rotation as physics step T-1
+  committed it. At `preIntegrate(T+1)` it is the pose physics step T committed. Until task 2 poses
+  the weapon closed-form it is TORQUE-driven, so its rotation is one step further along, and a
+  contact first reached during step T is detected one pass earlier: reacted to on T+1 instead of
+  T+2. That is earlier, never later, relative to the swing edge, and it is the same on every peer.
+  The weapon's translation is whatever step T left, which can trail the capsule by one step of the
+  capsule's own motion.
+* UE, the candidate set and target positions: `ChaosSpatialQueryAdapter::overlap` sweeps
+  `FPhysicsInterface::GeomSweepMulti` against the world's scene-query structure, which the game
+  thread updates, and takes `objectPosition` from `FHitResult::HitObjectHandle.GetLocation()`,
+  which is `AActor::GetActorLocation()` (UE 5.6 `ActorInstanceHandle.cpp`, lines 220-231 at
+  commit `cdda65ce`). Neither sees a physics-thread write made mid-frame, at either point. On a resim
+  every replayed step runs inside one physics-thread burst, so the query answers from the same
+  frontier-era game-thread view in both designs, while the weapon pose is the Chaos-rewound one
+  (task 10: UE rewinds its own recording; OG's anchor push is not read). The move changes neither
+  source's staleness.
+
+**Timing, measured in the LLT rigs** (the contact tick is scheduled in both, so these pin that the
+move shifted nothing in the rig; the UE shift above is not visible to them):
+
+| rig | swing edge | contact | reaction | before | after |
+|---|---|---|---|---|---|
+| order-swap (`StunExitTickOutcomeIsIndependentOfIntegrateOrder`) | 15 | 39 (swing tick 24) | `GuardFlinch` 40 | same | same |
+| task 86 follow-up (`HitRouting.StunHitFiresOnce`) | 0 | 18 | `HitFlinch` 19 → 58; follow-up damaging 52; slack 6 | same | same |
+| task 87 projectile (`HitRouting.ProjectilePointBlankFollowUpWindow`) | fire 1 | 2 | follow-up damaging 38; stun ends 42; slack 4 | same | same |
+
+**Which tick the pass reduces.** The melee pass reads whatever end state the timeline holds,
+whatever the step kind. ⚠ Task 20 Rework (1) made routing branches 3 and 4 match a projectile slot's
+`endTick` against the tick integrated last (`step.getTick() - 1`, or `- 2` on a graduated Skip);
+task 17 removed that at the user's ruling, and no system in this pass uses tick arithmetic any more
+(§8).
+
+**Where the per-tick signals live.** Cleared and filled by the detector (G-13), read by routing in
+the same pass, visible until the next pass. The radial still clears `hitsThisTick` and
+`guardBlockedThisTick` at the top of `integrate` (its G-04, G-05), after routing has read them.
+
+**What it did not fix.** A BODY hit on the anchor tick is re-detected on the replay only when the
+attacker's frontier ledger (`attackHits`, derived, not restored) does not hold the target. That
+means the swing ended before the correction landed, and no later swing of the same attacker that
+hit the same target is in progress at the frontier (the ledger is cleared only in `deactivate`).
+Mid-swing, the stale ledger suppresses it.
+Pinned in `…BodyHitTickFlinchesTheTarget`, section "frontier mid-swing"; Backlog task 21 puts the
+ledger on the wire. The guard block is not affected: a blocked swing never ledgers the target
+(the G-08 `break` precedes `registerAttackHit`).
+
+---
+
+## 8. The projectile pass (og-netcode-v2-field-defects task 17)
+
+`preIntegrate` calls `detectProjectileHits` (`BrawlerProjectileHitDetection.h`) after the melee
+loop, over the same sorted `ordered` walk. One system, two passes: the lead's recommendation,
+discussed with the user. The two passes write disjoint `DerivedState` slices (radial and
+projectile), so their order decides nothing today; melee first keeps the existing pass unchanged.
+
+* **What it is.** The projectile's per-slot overlap, projectile-vs-projectile cancel and guard
+  classification, moved out of the SHOOTER's `integrate`, where they read the target's guard and
+  the other shots mid-tick (the same class as the melee phantom). Its law, timing and limits are in
+  `BrawlerProjectileHitDetection-rationale.md`.
+* **Its tick.** The step's own tick (guards G-14). The shot is tested where this step's `integrate`
+  puts it, and the reaction lands in this step: one tick earlier than when the shooter's
+  `integrate` detected it, which aligns the projectile with melee's latency.
+* **What it hands on.** Each shooter's `brawlerProjectileSimulation::DerivedState::detectedThisTick`.
+  Routing branches 3 and 4 read it in the same pass (`firesBefore` still pins detection before
+  routing), and the shooter's `integrate` ends the slot from it. The sub-simulation stays the only
+  writer of its wire slot (user ruling R1 (b)).
+* **Adapters.** The same two this system was constructed with (G-10). The pass reads the guard
+  transform through the read-only body adapter and parents only the projectile's own query volumes.

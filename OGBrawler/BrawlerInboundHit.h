@@ -7,22 +7,30 @@
 namespace brawlerInboundHit
 {
     // Per-character inbound-signal slice for cross-character combat events.
-    // Populated once per tick by SimulationManagerUImpl's post-integrate routing
-    // pass (T3, T15); consumed the following tick by dAttackMachineSimulation::
-    // integrate3 as a plain by-ref parameter (NOT an ExternalDep — see
-    // current_state.md §D7).
+    // Populated once per tick by brawlerHitRouting::System::preIntegrate (T3, T15,
+    // og-netcode-v2-field-defects task 9) from what brawlerHitDetection::System
+    // found earlier in the same pass (the previous tick's end state; for a
+    // projectile, its closed-form position on this tick, task 17), and
+    // consumed in the SAME tick by dAttackMachineSimulation::integrate3 as a plain
+    // by-ref parameter (NOT an ExternalDep — see current_state.md §D7). Produced
+    // and consumed inside one tick (task 20), so a resim replay recomputes it on
+    // its first replayed tick from the restored state; nothing about it crosses a
+    // tick boundary off the wire.
     //
     // Three signals, one slice — same routing shape, different transitions:
     //
     //   wasHitThisTick               (T3)  — this character was struck by an
     //                                        opposing attacker's damaging hit
-    //                                        (radial attackHits[] or projectile
-    //                                        slot with endReason=2). Drives the
+    //                                        (radial hitsThisTick[], or a projectile
+    //                                        slot the detector found Hit this
+    //                                        step, og-netcode-v2-field-defects
+    //                                        task 17). Drives the
     //                                        Idle/Attacking/GuardFlinch ->
     //                                        HitFlinch transition.
     //   wasProjectileBlockedThisTick (T15) — this character owns a projectile
-    //                                        slot that just ended with
-    //                                        endReason=4 (blockedByGuard).
+    //                                        slot the detector found blocked by a
+    //                                        guard this step (BlockedByGuard; the
+    //                                        slot ends with endReason=4).
     //                                        Drives any-state -> GuardFlinch,
     //                                        mirroring the radial swing's
     //                                        attacker-side guard-block recoil
@@ -34,7 +42,7 @@ namespace brawlerInboundHit
     //   wasGuardBlockedThisTick (og-netcode-v2-field-defects task 9)
     //                                      — this character's radial swing was
     //                                        blocked by another character's
-    //                                        guard this tick. Set by routing
+    //                                        guard in the previous tick. Set by routing
     //                                        from the radial DerivedState's
     //                                        guardBlockedThisTick, which
     //                                        brawlerHitDetection::System wrote.

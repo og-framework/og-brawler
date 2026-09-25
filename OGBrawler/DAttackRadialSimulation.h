@@ -389,7 +389,6 @@ void deactivate(float deltaSeconds,
 	state.currenSequenceId = InvalidAttackSequenceId;
 
 	derivedState.editAttackHits().clear();
-	derivedState.editGuardHits().clear();
 }
 
 

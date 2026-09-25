@@ -192,8 +192,14 @@ produces no recoil at all.
 
 **R0 (verified 2026-09-23).** The signal is set by `brawlerHitRouting::System::postIntegrate`, branch
 4, on the prior tick, for any of the shooter's projectile slots that ended that tick with
-`endReason == 4` (blocked by guard). That is the systems executor's routing system, not "the manager
-routing pass" the quote names. ⚠ **A same-tick interaction the quote does not state:** the inbound-hit
+`endReason == 4` (blocked by guard). ⚠ **Since og-netcode-v2-field-defects task 20** it is set by
+`preIntegrate` of the consuming tick, for slots whose `endTick` is the tick integrated last
+(task 20 Rework (1)). ⚠ **Since og-netcode-v2-field-defects task 17** no slot `endTick` is matched
+at all: `brawlerHitDetection::System`'s projectile pass finds the slot `BlockedByGuard` at its
+closed-form position on the step's own tick, routing branch 4 copies that onto this slice in the
+same `preIntegrate`, and the machine reads it in that same step's `integrate`, the tick the shot
+reaches the guard, while the projectile sub-simulation ends the slot with `endReason` 4. That is
+the systems executor's routing system, not "the manager routing pass" the quote names. ⚠ **A same-tick interaction the quote does not state:** the inbound-hit
 veto runs first. When `wasHitThisTick` and `wasProjectileBlockedThisTick` are both set on one tick,
 the veto moves the machine to `HitFlinch`, and this block then moves it on to `GuardFlinch` (the
 `!= GuardFlinch` test passes). The hit's `m_hitReaction` and `m_flinchDuration` stay written. That is

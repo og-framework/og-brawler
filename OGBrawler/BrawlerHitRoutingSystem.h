@@ -5,11 +5,16 @@
 // cross-character combat-event routing pass (formerly a free function in an
 // engine-adapter-owned routing wrapper, since removed). A system is a
 // cross-simulatable coordinator: it observes
-// the whole SimulatableBrawler population once per tick — AFTER every per-
-// character integrate has run — and fans out combat signals (target-side
-// HitFlinch, shooter-side GuardFlinch on a blocked projectile) via the
-// brawlerInboundHit::DerivedState slice on each character's DerivedState
-// composite (see current_state.md §D1 for the off-wire discipline).
+// the whole SimulatableBrawler population once per tick — in preIntegrate of
+// T+1, a pre-integrate reduction over the previous tick's end state (T's
+// integrate and physics step have run, T+1's integrate has not) — and fans out
+// combat signals (target-side HitFlinch, shooter-side GuardFlinch on a blocked
+// projectile) via the brawlerInboundHit::DerivedState slice on each
+// character's DerivedState composite (see current_state.md §D1 for the
+// off-wire discipline). The slice is produced and consumed inside T+1, so a
+// resim replay of T+1 recomputes it from the restored end-of-T state
+// [og-netcode-v2-field-defects task 20; it was a post-integrate pass of T,
+// consumed by T+1, which a replay starting at T+1 never re-ran].
 //
 // This class satisfies the engine-core `SimulationSystem<T, StaticDataT>`
 // concept (Plugins/OGSimulation/.../SystemsExecutor.h) with
@@ -64,9 +69,17 @@
 
 namespace brawlerHitRouting
 {
+    // [og-netcode-v2-field-defects task 17] No tick arithmetic lives in this system. Task 20
+    // Rework (1) kept a per-step-kind tick offset here so branches 3 and 4 could match a
+    // projectile slot's endTick against the tick the timeline integrated last; the user ruled
+    // that a system must not need to know which tick ran last. Branches 3 and 4 now read the
+    // projectile outcome brawlerHitDetection::System produced in this same pass, exactly as
+    // branch 5 reads guardBlockedThisTick, so every step kind (Normal, Skip, Stall, HardResync,
+    // a resim replay) routes what this pass detected and nothing else.
+
     // The hit-routing system. Owns the actor-level root-body-id -> registered
     // brawler map (moved here from the engine adapter): the per-character routing
-    // table the postIntegrate pass keys inbound hits against. Populate/erase is
+    // table the preIntegrate pass keys inbound hits against. Populate/erase is
     // driven by the onCharacterRegistered / onCharacterUnregistered lifecycle
     // hooks; per-machine-local ids make the map correctly system-owned (§3.9,
     // parent-initiative D8 — non-rollback-affecting, per-machine).
@@ -80,29 +93,31 @@ namespace brawlerHitRouting
 
         static constexpr SystemRoleAffinity kRoleAffinity = SystemRoleAffinity::AllRoles;
 
-        // preIntegrate — no work in v1. Routing is a post-integrate reduction
-        // (it reads each character's just-produced hitsThisTick[] / projectile slot
-        // state), so nothing needs to run before integrateAll. Present to satisfy
-        // the four-hook SimulationSystem concept.
-        void preIntegrate(const SimulationTimeStep& /*step*/,
-                          StorageView<SimulatableBrawler> /*view*/,
-                          const simulatableBrawler::StaticData& /*staticData*/)
+        // postIntegrate — no work. Routing is a PRE-integrate reduction over the
+        // previous tick's end state (see preIntegrate). Present to satisfy the
+        // four-hook SimulationSystem concept.
+        void postIntegrate(const SimulationTimeStep& /*step*/,
+                           StorageView<SimulatableBrawler> /*view*/,
+                           const simulatableBrawler::StaticData& /*staticData*/)
         {
         }
 
-        // postIntegrate — the per-tick routing pass (T16 logic, relocated). Four
-        // branches:
+        // preIntegrate — the per-tick routing pass (T16 logic, relocated; moved from
+        // postIntegrate of T to preIntegrate of T+1 by og-netcode-v2-field-defects
+        // task 20). It routes what brawlerHitDetection::System detected earlier in THIS
+        // pass onto the slice that this step's integrate reads. Five branches:
         //   1. Reset every character's whole inboundHit slice — the two one-shot
         //      bools and the resolved reaction beside them are owned here.
         //   2. Radial swing hits (T3): route HitFlinch to the struck character.
         //      [movement-sim task 83] Fires exactly once per hit — the per-TICK
         //      hitsThisTick[], never the per-SWING attackHits[] ledger.
-        //   3. Projectile damage hits (T3, endReason==2): route HitFlinch to the
-        //      struck character (endTick guard makes it fire exactly once).
-        //   4. Projectile guard-blocks (T15, endReason==4): route GuardFlinch to
-        //      the shooter (self-flag; no map lookup).
+        //   3. Projectile damage hits (T3; SlotOutcome::Hit): route HitFlinch to the
+        //      struck character. Fires once: the detector resets the outcome every
+        //      pass, and the shooter's integrate ends the slot in the same step.
+        //   4. Projectile guard-blocks (T15; SlotOutcome::BlockedByGuard): route
+        //      GuardFlinch to the shooter (self-flag; no map lookup).
         //   5. Radial guard-blocks (og-netcode-v2-field-defects task 9): route
-        //      GuardFlinch to the attacker whose swing was blocked this tick
+        //      GuardFlinch to the attacker whose swing was blocked in the produced tick
         //      (self-flag; no map lookup). The block itself is DETECTED by
         //      brawlerHitDetection::System, which fires before this system.
         //
@@ -110,17 +125,20 @@ namespace brawlerHitRouting
         // rootBodyId) applies on the target-routing branches (2, 3) only; branches 4
         // and 5 are inherently self-directed.
         //
-        // [og-netcode-v2-field-defects task 9] Branch 2 reads hitsThisTick, which is now
+        // [og-netcode-v2-field-defects task 9] Branch 2 reads hitsThisTick, which is
         // written by brawlerHitDetection::System (BrawlerHitDetectionSystem.h) in the SAME
-        // post-integrate phase, before this system — firing order is template order in
+        // pass, before this system — firing order is template order in
         // SimulationSystemsExecutor, and the manager's BrawlerSystemsExec lists detection
-        // first. Timing to the machine is unchanged: detected and routed on T, consumed on T+1.
-        void postIntegrate(const SimulationTimeStep& step,
-                           StorageView<SimulatableBrawler> view,
-                           const simulatableBrawler::StaticData& staticData)
+        // first. [task 20] Both run in preIntegrate(T+1) over the end state of T, so the
+        // machine still reacts on T+1 — no added latency — and the signal never crosses a
+        // tick boundary off the wire. [task 17] Branches 3 and 4 read the projectile
+        // DerivedState's detectedThisTick, written by the same detector in the same pass at
+        // the slot's closed-form position on THIS step's tick, so the reaction lands in this
+        // step's integrate: the tick the shot reaches the target.
+        void preIntegrate(const SimulationTimeStep& /*step*/,
+                          StorageView<SimulatableBrawler> view,
+                          const simulatableBrawler::StaticData& staticData)
         {
-            const uint32_t currentTick = step.getTick();
-
             // Deterministic walk order (D4): StorageView iteration order is
             // unspecified; sort by ascending id for cross-machine reproducibility.
             // This sort — not the hash-map iteration — is the authoritative per-
@@ -148,9 +166,10 @@ namespace brawlerHitRouting
                 slice = brawlerInboundHit::DerivedState{};
             }
 
-            // 2. Radial swing hits — each attacker's post-integrate hitsThisTick[]
-            //    carries the stable root body id of every character its weapon
-            //    registered a hit on THIS TICK, and the direction the weapon was
+            // 2. Radial swing hits — each attacker's hitsThisTick[] (written by the
+            //    detector earlier in this pass) carries the stable root body id of
+            //    every character its weapon registered a hit on in the PRODUCED
+            //    tick, and the direction the weapon was
             //    travelling through each of those hits.
             //
             // ⭐⭐ [movement-sim task 83] hitsThisTick, NOT attackHits, AND THE
@@ -166,9 +185,9 @@ namespace brawlerHitRouting
             //    ⛔ The bug was not that the container was wrong; it was that the
             //    per-SWING container was being read as a per-TICK signal. Both still
             //    exist and both are still needed.
-            //    ⭐ Branch 3 below already had the right shape — a projectile slot
-            //    keeps endReason==2 until it recycles, so it fires on
-            //    slot.endTick == currentTick and nowhere else. This is that idiom.
+            //    ⭐ Branch 3 below has the same shape since og-netcode-v2-field-defects
+            //    task 17: a per-pass outcome the detector resets, never the slot's
+            //    persistent endReason.
             for (const auto& [attackerId, attackerPtr] : ordered)
             {
                 const auto& radialDerived =
@@ -182,7 +201,7 @@ namespace brawlerHitRouting
                         .get<dAttackRadialSimulation::State>().currenSequenceId;
                 OG_CHECK(isRealAttackSequence(sequenceId)
                       && sequenceId < staticData.m_hitReactions.size(),
-                    "brawlerHitRouting::System::postIntegrate - a radial DAMAGING hit was "
+                    "brawlerHitRouting::System::preIntegrate - a radial DAMAGING hit was "
                     "registered while the attacker's wire currenSequenceId is not a row of "
                     "m_hitReactions. The reaction table is indexed by sequence id and the "
                     "constructor asserts it covers m_attackSequences, so this is either a hit "
@@ -221,20 +240,26 @@ namespace brawlerHitRouting
                 }
             }
 
-            // 3. Projectile damage hits — a slot that ENDED this exact tick with
-            //    endReason==2 (hit) routes a one-shot inbound hit to the struck
-            //    character. The endTick guard makes it fire once: a hit slot keeps
-            //    endReason==2 until it recycles, so without this the target would
-            //    re-flinch every tick until then.
+            // 3. Projectile damage hits — a slot the detector found HIT in this pass
+            //    routes a one-shot inbound hit to the struck character. One-shot
+            //    because the detector resets detectedThisTick at the top of every pass
+            //    and the shooter's integrate ends the slot in this same step.
+            //    [og-netcode-v2-field-defects task 17] It used to match the wire slot's
+            //    endTick (and endReason 2) against the tick integrated last.
             for (const auto& [attackerId, attackerPtr] : ordered)
             {
                 const auto& projState =
                     attackerPtr->getAllState().getState().get<brawlerProjectileSimulation::State>();
-                for (const auto& slot : projState.slots)
+                const auto& projDetected =
+                    attackerPtr->getAllState().getDerivedState()
+                        .get<brawlerProjectileSimulation::DerivedState>().detectedThisTick;
+                for (std::size_t slotIndex = 0; slotIndex < projDetected.size(); ++slotIndex)
                 {
-                    if (slot.endTick != currentTick || slot.endReason != 2)
+                    const auto& detected = projDetected[slotIndex];
+                    if (detected.outcome != brawlerProjectileSimulation::SlotOutcome::Hit)
                         continue;
-                    auto found = this->m_byRootBodyId.find(slot.hitRootBodyId.value);
+                    const auto& slot = projState.slots[slotIndex];
+                    auto found = this->m_byRootBodyId.find(detected.struckRootBodyId.value);
                     if (found == this->m_byRootBodyId.end())
                         continue;
                     SimulatableBrawler* target = found->second;
@@ -249,18 +274,19 @@ namespace brawlerHitRouting
             }
 
             // 4. [T15] Shooter-side projectile-blocked routing — any projectile
-            //    slot that ended this exact tick with endReason==4 (blockedByGuard,
-            //    per T14) routes a GuardFlinch trigger to the slot's OWNING
+            //    slot the detector found BLOCKED by a guard in this pass (T14's
+            //    blockedByGuard) routes a GuardFlinch trigger to the slot's OWNING
             //    character (the shooter). No map lookup — the shooter IS the
             //    attacker whose sim is being iterated. No self-hit filter: self is
             //    exactly the right target here.
             for (const auto& [attackerId, attackerPtr] : ordered)
             {
-                const auto& projState =
-                    attackerPtr->getAllState().getState().get<brawlerProjectileSimulation::State>();
-                for (const auto& slot : projState.slots)
+                const auto& projDetected =
+                    attackerPtr->getAllState().getDerivedState()
+                        .get<brawlerProjectileSimulation::DerivedState>().detectedThisTick;
+                for (const auto& detected : projDetected)
                 {
-                    if (slot.endTick != currentTick || slot.endReason != 4)
+                    if (detected.outcome != brawlerProjectileSimulation::SlotOutcome::BlockedByGuard)
                         continue;
                     attackerPtr->editAllState().editDerivedState()
                         .edit<brawlerInboundHit::DerivedState>().wasProjectileBlockedThisTick = true;
@@ -268,12 +294,13 @@ namespace brawlerHitRouting
             }
 
             // 5. [og-netcode-v2-field-defects task 9] Radial guard-blocks — an attacker whose
-            //    swing brawlerHitDetection::System found blocked by a guard THIS tick (the
+            //    swing brawlerHitDetection::System found blocked by a guard in the produced tick (the
             //    radial DerivedState's per-tick guardBlockedThisTick) gets GuardFlinch routed
             //    to itself, exactly as branch 4 does for a blocked projectile. Self-directed,
             //    so no map lookup and no self-hit filter. The flag it copies is derived and
-            //    is recomputed on every replayed tick; the radial State's hasHitGuard, which
-            //    this replaces, rode the wire.
+            //    is recomputed on every replayed tick — including the first one after a
+            //    restore, since task 20 put this pass inside the consuming tick; the radial
+            //    State's hasHitGuard, which this replaces, rode the wire.
             //    ⛔ It must be COPIED here, not written onto the slice by the detector: branch
             //    1 above resets the whole slice every tick, and detection fires before routing,
             //    so a bit the detector set on the slice would be wiped before anyone read it.
@@ -293,7 +320,8 @@ namespace brawlerHitRouting
         // view resolves it. Key = the character's CAPSULE (root) body id — the
         // value the query adapter emits as SpatialQueryHit::rootBodyId for hits on
         // ANY of the character's shapes (hurtbox or guard), hence carried by radial
-        // attackHits[].hitRootBodyId / projectile slot.hitRootBodyId. Value = the
+        // attackHits[].hitRootBodyId / the projectile DerivedState's
+        // detectedThisTick[].struckRootBodyId. Value = the
         // storage-stable pointer to the SimulatableBrawler (unique_ptr-backed, so
         // its address is stable for the registered lifetime).
         void onCharacterRegistered(unsigned int id,

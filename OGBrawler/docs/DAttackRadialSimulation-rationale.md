@@ -101,13 +101,19 @@ data only". **Half of it is per-SWING.** It is off-wire (derived) state holding 
 | member | lifetime | cleared by | filled by |
 |---|---|---|---|
 | `attackHits` | **the swing**. It is the dedup ledger ("have I already hit this character?") and what the four-target cap counts. | `deactivate()` only | the detector, per registered hit |
-| `guardHits` | **the swing**. Positions where the weapon met another character's guard. The visualization draws them as 15 cm blue (colorId 2) spheres. | `deactivate()` only | the detector, beside `guardBlockedThisTick` |
-| `hitsThisTick` | **one tick**: the signal routing consumes | the top of `integrate` (G-04) | the detector (`registerAttackHit`) |
-| `guardBlockedThisTick` | **one tick** | the top of `integrate` (G-05) | the detector, on a block |
+| `guardHits` | **one detection pass** (task 20; was the swing). Positions where the weapon met another character's guard. The visualization draws them as 15 cm blue (colorId 2) spheres. | the detector, first thing in each pass (`BrawlerHitDetectionSystem-guards.md` G-13); `deactivate()` no longer clears it | the detector, beside `guardBlockedThisTick` |
+| `hitsThisTick` | **one tick**: the signal routing consumes | the detector (G-13 there) and the top of `integrate` (G-04) | the detector (`registerAttackHit`) |
+| `guardBlockedThisTick` | **one tick** | the detector (G-13 there) and the top of `integrate` (G-05) | the detector, on a block |
 
 In production the detector is `brawlerHitDetection::detectRadialHits`, called from
-`brawlerHitDetection::System::postIntegrate`, which fires after every character's `integrate`. So
-each tick runs the clear, then the fill, then routing.
+`brawlerHitDetection::System::preIntegrate` (task 20; `postIntegrate` before it), which fires after
+every character's `integrate(T)` and physics step T, before `integrate(T+1)`. So each tick runs the
+detector's clear, its fill, routing, and then the radial's own clear at the top of `integrate`.
+
+⚠ **R0 (task 20).** `guardHits` was per-SWING only in name: a block ends the swing on the next tick,
+so a swing holds at most one entry. It is per-pass now, because `deactivate` ran on the recoil tick
+T+1 before the visualization snapshot of T+1 and would have erased the entry the pass had just
+written for T.
 
 ### 4.1 Why reserve, and why a check rather than a comment (movement-sim task 34)
 
@@ -154,13 +160,15 @@ positions that had moved, so the throw curved.
 (`brawlerInboundHit::DerivedState::wasGuardBlockedThisTick`), and the machine recoils into
 `GuardFlinch` on the next tick. A derived signal is recomputed on every replayed tick, so it never
 needs restoring. The limit on that is in task 9's notes: a replay anchored AFTER the detection tick
-does not recompute it.
+does not recompute it. ⭐ **Closed by task 20:** the pass now runs in `preIntegrate` of the consuming
+tick, so a replay anchored at the end of the detection tick re-runs it on its first step.
 
 **Where the clear sits.** It is the first thing `integrate` does after reading its dependencies. It
 runs ahead of the Hadouken return, both `deactivate` exits and the idle branch, because every one of
 those is a path out of the function, and a tick that leaves by any of them registers no hits (the
-detector's gate reads the post-integrate `currenSequenceId`, which each of them leaves Invalid). So
-the tick must publish none. This is the only production clear site. Test rigs also clear by hand
+detector's gate reads the `currenSequenceId` `integrate` left, which each of them leaves Invalid). So
+the tick must publish none. Until task 20 this was the only production clear site; the detector now
+clears the same two signals first thing in each pass (its G-13). Test rigs also clear by hand
 (`BrawlerHitRoutingTest.cpp`). The tags are G-04 and G-05.
 
 ### 4.3 ⛔ `attackHits` is NOT cleared in `integrate` (untagged)
