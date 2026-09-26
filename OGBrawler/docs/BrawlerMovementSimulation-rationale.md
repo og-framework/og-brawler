@@ -2070,7 +2070,11 @@ them *at the field*, which is where a person adding a field looks.
 **Where the formula comes from, and why the obvious alternative is wrong.**
 
 `hitDirectionXY` is a **world XY unit vector**, resolved once by `brawlerHitRouting::System` as
-`normalise(XY(target position − attacker position))`. `velocityUV` is a pair of **tangent-frame
+`normalise(XY(target position − attacker position))`. *(⚠ R0, og-netcode-v2-field-defects task 29:
+that was task 27's rule. Since movement-sim task 83 a melee knockback's direction is the swing
+tangent's XY, with this rule as the fallback, and a projectile's is its `spawnDir`
+(`BrawlerHitRoutingSystem-rationale.md` §4). It is still a world XY unit vector, which is all this
+derivation uses.)* `velocityUV` is a pair of **tangent-frame
 channels**, `(a, b)` such that step 5 composes `a·u + b·v + c·up`. Writing `d.x` into `a` and
 `d.y` into `b` therefore looks like a type error, and it is not — it is exact, and it is exact
 because of what `buildTangentFrame` produces.

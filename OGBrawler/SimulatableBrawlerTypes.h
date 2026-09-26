@@ -127,8 +127,8 @@ using DerivedState = SimulationDerivedComposite<
     brawlerMovementSimulation::DerivedState,
     // [hit-resolution T2] Per-tick inbound-hit signal, and the one element below that is
     // NOT a sub-simulation's own scratch. Reset + populated by brawlerHitRouting::System::
-    // postIntegrate; read the FOLLOWING tick by the machine sim's integrate3 to drive the
-    // HitFlinch transition. That system-owned lifecycle is why it is passed to integrate3
+    // preIntegrate; read in the SAME tick by the machine sim's integrate3 (and the movement
+    // sub-sim) to drive the HitFlinch transition [og-netcode-v2-field-defects task 20]. That system-owned lifecycle is why it is passed to integrate3
     // as a plain by-ref parameter and not as an ExternalDep — see D7, and follow-on F3.
     // Off-wire (see D1) — no SerializableFields entry, and the alias above now enforces it.
     brawlerInboundHit::DerivedState,
@@ -284,8 +284,8 @@ public:
         , m_projectileHitReaction{ HitReactionKind::Stun, 0.f, 0.65f }
         // [movement-sim task 88] A projectile that hits a target ALREADY in HitFlinch (either
         // reaction kind — user ruling 2026-09-21) launches it instead of stunning it. HAND-AUTHORED:
-        // speed 2000 is the melee knockback's (2000^2 / (2 * 4000) = 500 cm), and the dwell resolves
-        // to max(0, 2000 / launchDecel) = 0.5 s exactly as melee does. Selected in
+        // speed 1789, the user's re-tune of task 88's 2000 (the melee knockback's): 1789^2 / (2 * 4000)
+        // = 400 cm, and the dwell resolves to max(0, 1789 / launchDecel) = 0.44725 s. Selected in
         // brawlerHitRouting::System branch 3; pinned absolutely in BrawlerHitRoutingTest.cpp.
         , m_projectileHitOnFlinchReaction{ HitReactionKind::Knockback, 1789.f, 0.f }
         , m_attackSimulationStaticData(m_attackSequences, m_attackCircle)

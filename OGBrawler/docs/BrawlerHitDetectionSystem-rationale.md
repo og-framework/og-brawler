@@ -31,16 +31,18 @@ that integrated the target first saw this tick's. On a target's first `Idle` tic
 that is the difference between the attacker recoiling (`GuardFlinch`) and the target being thrown
 (`Knockback`). The field capture showed it tick-exact on 7 of 7 phantoms.
 
-**The fix.** Detection runs in `brawlerHitDetection::System::postIntegrate`, which the systems
-executor fires after EVERY character's integrate and before the physics step, on the prediction
-path and on the resim replay path alike. By then every character's machine state, guard toggle,
-guard transform and weapon pose for tick T are written on every peer, so both reads see the same
-thing everywhere. The guard is queryable on T on every peer; that was the authority's behaviour
-before, and it is now everyone's. Hit timing to the machine is unchanged: detected and routed on
+**The fix (task 9).** Detection ran in `brawlerHitDetection::System::postIntegrate`, which the
+systems executor fires after EVERY character's integrate and before the physics step, on the
+prediction path and on the resim replay path alike. By then every character's machine state, guard
+toggle, guard transform and weapon pose for tick T are written on every peer, so both reads see the
+same thing everywhere. The guard is queryable on T on every peer; that was the authority's behaviour
+before, and it is now everyone's. Hit timing to the machine did not change: detected and routed on
 T, consumed on T+1.
 
-⭐ **Task 20 (2026-09-24) moved the pass to `preIntegrate` of T+1** (§7). The read-order argument
-above is unchanged: `preIntegrate(T+1)` also runs after every character's `integrate(T)`.
+⭐ **Task 20 (2026-09-24) moved the pass to `preIntegrate` of T+1** (§7), where it runs now: detected
+and routed at the start of T+1, over the end state of T, and consumed by `integrate(T+1)`. The
+read-order argument above is unchanged: `preIntegrate(T+1)` also runs after every character's
+`integrate(T)`. *(R0, task 29: this paragraph pair was written in the present tense of task 9.)*
 
 **Measured.** `HitDetection.StunExitTickOutcomeIsIndependentOfIntegrateOrder` (read a) and
 `HitDetection.DetectionSeesThisTicksGuardTransform` (read b) were RED on the pre-move tree
@@ -240,6 +242,14 @@ move shifted nothing in the rig; the UE shift above is not visible to them):
 | task 86 follow-up (`HitRouting.StunHitFiresOnce`) | 0 | 18 | `HitFlinch` 19 → 58; follow-up damaging 52; slack 6 | same | same |
 | task 87 projectile (`HitRouting.ProjectilePointBlankFollowUpWindow`) | fire 1 | 2 | follow-up damaging 38; stun ends 42; slack 4 | same | same |
 
+⚠ **R0, task 29: both rows are the values on the day of task 20, and both have since moved.**
+Re-measured 2026-09-26 (`-s` on the committed tree): the stun follow-up now reads `HitFlinch` 19 → 63,
+follow-up damaging 52, slack 11, because the user re-tuned the forward/overhead stun from 0.65 to
+0.72 s (og-brawler `b8f6086`, re-pinned by task 28). The projectile row now reads stun ends 41, slack
+3, because task 17 moved the projectile's reaction one tick earlier
+(`BrawlerProjectileHitDetection-rationale.md` §3). "Same | same" still holds for what the table was
+built to show: task 20's move shifted nothing in the rigs.
+
 **Which tick the pass reduces.** The melee pass reads whatever end state the timeline holds,
 whatever the step kind. ⚠ Task 20 Rework (1) made routing branches 3 and 4 match a projectile slot's
 `endTick` against the tick integrated last (`step.getTick() - 1`, or `- 2` on a graduated Skip);
@@ -301,5 +311,6 @@ the swing. Drop the signal push and routing never sees the hit. Route from the l
 one hit re-fires on every remaining tick (the 13 m knockback of movement-sim task 83)."*
 
 What is still true, and where it went: the ledger push left this header, because the ledger is
-synced and its writer is the radial's `integrate` (radial G-07). "Drop the signal push" and "route
-from the ledger" are G-17. The dedup key is G-16 and the cap is G-15.
+synced and its writer is the radial's `integrate` (radial G-07). "Drop the signal push" is G-17.
+"Route from the ledger" was G-17 until task 29 moved it to routing's branch 2, where the edit is
+typed (`BrawlerHitRoutingSystem-guards.md` G-04). The dedup key is G-16 and the cap is G-15.

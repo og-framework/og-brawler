@@ -35,7 +35,8 @@ silently joins a new character to an old one's leftovers:
   credited to the new one.
 * **every `id=%u` log line.** Log joins across peers are a plain equality since task 25, and a
   reused id makes one number name two fighters in the same log.
-* **the attacker-side hit ledger (netcode task 27, planned).** It stores target ids on the wire
+* **the attacker-side hit ledger (netcode task 27, shipped 2026-09-26: the radial
+  `dAttackRadialSimulation::State::hitTargets`).** It stores target ids on the wire
   across ticks, so a reused id would make a new character un-hittable by a swing that hit the old
   one.
 

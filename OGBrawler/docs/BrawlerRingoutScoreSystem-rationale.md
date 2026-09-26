@@ -31,7 +31,9 @@ re-measured on 2026-09-13; where it lives in code, the code wins.
 
 ✅ **R0 — verified 2026-09-13.** `brawlerHitRouting::System` does have an empty
 `preIntegrate` and a `postIntegrate` that collects into a vector and sorts by id
-(`BrawlerHitRoutingSystem.h`, the `std::sort` on `ordered`).
+(`BrawlerHitRoutingSystem.h`, the `std::sort` on `ordered`). ⚠ **Since og-netcode-v2-field-defects
+task 20 (2026-09-24) the two hooks are the other way round:** routing's `postIntegrate` is empty and
+its `preIntegrate` collects, sorts and applies. This system's own shape is unaffected.
 
 <!-- header lines 58-58 -->
 ```

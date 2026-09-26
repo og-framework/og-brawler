@@ -167,7 +167,7 @@ pwsh tools/lint/visualization_hitbox_isolation.ps1
 ```
 
 Fails the build (exit 1) if any scanned visualization translation unit `#include`s a
-hitbox-**resolution** header — currently `BrawlerHitRouting*.h` (owns `routeInbound`,
+hitbox-**resolution** header — currently `BrawlerHitRouting*.h` (`brawlerHitRouting::System`,
 writes `wasHitThisTick`) and `BrawlerInboundHit.h` (the derived-state payload hit
 resolution produces). Matching is on the include's leaf filename, so every path
 spelling is caught; comments are stripped, so a commented-out include is not a

@@ -53,7 +53,7 @@ OGBrawlerHadouken T34**, the bindings migration, and is written with its initiat
 physics capsule. It is **consumed by four places** — `dAttackMachineSimulation::integrate3`
 (`DAttackMachineSimulation.h` :: `integrate3`), the `SimulatableBrawler` composite that owns it
 (`SimulatableBrawler.h:42-43`, `:62`), the hit-routing system through the composite's accessor
-(`BrawlerHitRoutingSystem.h:202`), and the tests — and **written in exactly one**, the registration
+(`BrawlerHitRoutingSystem.h` :: `onCharacterRegistered`), and the tests — and **written in exactly one**, the registration
 path in `SimulationManagerUImpl.cpp` (§5).
 
 A file this small exists for a reason that has nothing to do with the struct: **it is a leaf, and
@@ -179,7 +179,7 @@ and the true picture is the stronger argument:
 |---|---|
 | `integrate3` | `dAttackMachineSimulation` (`DAttackMachineSimulation.h`) |
 | the `SimulatableBrawler` composite | **the global namespace** — `SimulatableBrawler.h` declares none, which is why `:62` must spell `simulatableBrawler::CharacterBindings` |
-| the hit-routing read | `brawlerHitRouting` (`BrawlerHitRoutingSystem.h:55`, use at `:202`) |
+| the hit-routing read | `brawlerHitRouting` (`BrawlerHitRoutingSystem.h` :: `onCharacterRegistered`) |
 | the tests | global scope |
 
 They are spread across three namespaces and the global scope. **No one sub-simulation's namespace

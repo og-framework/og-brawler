@@ -257,11 +257,10 @@ the authored angular velocity. That was not surveyed across the shipped sequence
 **What breaks if the edit is made.** `DAttackHit::swingTangent`'s declaration promises the field
 is never a NaN, and its one reader (routing branch 2) relies on that promise.
 
-⚠ **R0, 2026-09-23, read from `BrawlerHitRoutingSystem.h`.** Routing would survive a NaN TODAY,
-by accident: `normalisedXY` returns its fallback unless `lengthSq > 0.f`, and that comparison is
-false for a NaN. The equivalent rewrite `lengthSq <= 0.f ? fallback : ...` would not fall back,
-and the NaN would reach the target's knockback velocity. The fence is what keeps routing's
-comparison direction from mattering.
+⚠ **R0, 2026-09-23, read from `BrawlerHitRoutingSystem.h`.** Routing would survive a NaN today,
+because of how its comparison is written, and the fence is what keeps that comparison's direction
+from mattering. The note describes routing's code, so task 29 moved it, verbatim, to
+`BrawlerHitRoutingSystem-rationale.md` §4.3.
 
 ---
 
@@ -492,9 +491,11 @@ retired G-07 at the same site).
 **The prohibition.** The lambda pushes to `hitsThisTick` and nothing else. ⛔ Do not add a write to
 the radial's `State::hitTargets` here, or to any other ledger. A system never writes wire state.
 The ledger's only writer is the radial's own `integrate` (`DAttackRadialSimulation-guards.md` G-07),
-which records `hitsThisTick[].targetId` on the attacker's next integrate. ⛔ Do not route from the
-ledger either: routing reads the per-tick signal. Reading the per-swing record instead re-fires one
-hit on every remaining tick (movement-sim task 83's 13 m knockback).
+which records `hitsThisTick[].targetId` on the attacker's next integrate.
+
+⚠ **Moved by task 29.** This entry also said "⛔ Do not route from the ledger either". That edit is
+typed in routing's branch 2, not at this tag (§9.1 `no (elsewhere)`), so it is now
+`BrawlerHitRoutingSystem-guards.md` G-04, at the loop it forbids. This id keeps its own edit.
 
 **What breaks if the edit is made.** A second writer here would record the target a tick early and
 twice. The radial's `recordHitTargets` would then `OG_CHECK` on the duplicate ("the detector
@@ -538,6 +539,7 @@ that the key fits in the 1-byte id.
 **Why retired.** Its subject is gone. The derived ledger was deleted, and the per-swing record is the
 synced `State::hitTargets`, written by the radial's `integrate`. The lambda now records once. Its
 remaining prohibitions moved to new ids with a different subject: **G-17** (the lambda writes the
-per-tick signal only; do not route from the ledger), **G-15** (the cap), **G-16** (the dedup key),
+per-tick signal only; "do not route from the ledger" moved on to `BrawlerHitRoutingSystem-guards.md`
+G-04 in task 29), **G-15** (the cap), **G-16** (the dedup key),
 and the radial's **G-07** (the ledger's writer). The shipped fence text and the rest of the entry are
 kept in `BrawlerHitDetectionSystem-rationale.md` §9. ⛔ The number 7 is spent.

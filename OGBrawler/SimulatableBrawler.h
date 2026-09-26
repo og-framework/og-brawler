@@ -119,7 +119,7 @@ void SimulatableBrawler::integrate(
                 input.get<dAttackMachineSimulation::PlayerInput>(), machineUtils),
             deps, m_characterBindings,
             // [hit-resolution T2] Plain by-ref inbound-hit slice (mirrors CharacterBindings).
-            // Populated by the manager routing pass (T3); read here to drive HitFlinch.
+            // Populated by brawlerHitRouting::System::preIntegrate this step (T3); read here to drive HitFlinch.
             derivedState.edit<brawlerInboundHit::DerivedState>());
     }
 
