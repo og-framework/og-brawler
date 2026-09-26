@@ -145,7 +145,6 @@ void setRadialSimulationInitialConditions(float deltaTime,
 	State& state)
 {
 	attackIntialConditions.activeAttackSequence = state.m_activeAttackSequence;
-	attackIntialConditions.activeRootBodyId = 0;
 
 	const glm::vec3 aimDirection = glm::normalize(glm::vec3(input.getPlayerInput().aimDirection.x, input.getPlayerInput().aimDirection.y, 0.f));
 	const glm::vec3 defaultForward(1.f, 0.f, 0.f);

@@ -161,10 +161,15 @@ adapter by the hit's own body id, which is read (b) of §1:
   They are `std::optional`s emplaced per role, so the executor is too (G-10 here, G-75 in
   `SimulationManagerUImpl-guards.md`). The system holds POINTERS rather than references so it
   stays copy- and move-assignable inside the executor's tuple.
-* **Lifecycle hooks** are empty. Detection keeps no per-character bookkeeping: the per-swing ledger
-  (`attackHits`) stays in the radial `DerivedState`, and the radial's `deactivate` still clears it.
-  ⚠ R0 (task 20): the visualisation reads `guardHits`, not the ledger; `guardHits` is per-tick since
-  task 20 and cleared here (G-13).
+* **Lifecycle hooks** fill and drain one map (task 27): `m_targetIdByRootBodyId`, the capsule
+  `BodyId` of every registered character to its `SimCharacterId` (the storage key, G-18). It is the
+  same shape as routing's `m_byRootBodyId`. The detector resolves each report hit's root through it,
+  and `DAttackHit::targetId` carries the result. Unregistration erases by value. The map is
+  per-process and never on the wire; only the id it yields is. Until task 27 the hooks were empty
+  and the per-swing ledger was the radial's derived vector, keyed by `BodyId`. The ledger is now the
+  radial's synced `State::hitTargets` (`DAttackRadialSimulation-rationale.md` §4.4), which this
+  system only reads. ⚠ R0 (task 20): the visualisation reads `guardHits`, not the ledger;
+  `guardHits` is per-tick since task 20 and cleared here (G-13).
 * **What the radial is after this.** The radial poses its own weapon (task 2 will make that pose a
   closed-form function of wire state), does the attachment math and runs `deactivate`. It no longer
   takes a query adapter at all: `dAttackRadialSimulation::IntegrationUtils` lost its
@@ -245,14 +250,14 @@ task 17 removed that at the user's ruling, and no system in this pass uses tick 
 the same pass, visible until the next pass. The radial still clears `hitsThisTick` and
 `guardBlockedThisTick` at the top of `integrate` (its G-04, G-05), after routing has read them.
 
-**What it did not fix.** A BODY hit on the anchor tick is re-detected on the replay only when the
-attacker's frontier ledger (`attackHits`, derived, not restored) does not hold the target. That
-means the swing ended before the correction landed, and no later swing of the same attacker that
-hit the same target is in progress at the frontier (the ledger is cleared only in `deactivate`).
-Mid-swing, the stale ledger suppresses it.
-Pinned in `…BodyHitTickFlinchesTheTarget`, section "frontier mid-swing"; Backlog task 21 puts the
-ledger on the wire. The guard block is not affected: a blocked swing never ledgers the target
-(the G-08 `break` precedes `registerAttackHit`).
+**What it did not fix, and task 27 did.** A BODY hit on the anchor tick was re-detected on the
+replay only when the attacker's frontier ledger (then derived, not restored) did not hold the
+target. Mid-swing, the stale ledger suppressed it, and `…BodyHitTickFlinchesTheTarget`, section
+"frontier mid-swing", pinned the target `Idle`. Task 27 (candidate A of the initiative's hit-dedup
+design) put the ledger on the wire: the restore brings back end-of-T's empty ledger, and the
+section now reads `HitFlinch`, equal to live (RED on the tree before task 27, GREEN after). The
+guard block is not affected: a blocked swing never records the target (the G-08 `break` precedes
+`registerAttackHit`), and it ends the swing anyway.
 
 ---
 
@@ -276,3 +281,25 @@ projectile), so their order decides nothing today; melee first keeps the existin
   writer of its wire slot (user ruling R1 (b)).
 * **Adapters.** The same two this system was constructed with (G-10). The pass reads the guard
   transform through the read-only body adapter and parents only the projectile's own query volumes.
+
+---
+
+## 9. The retired G-07, kept (og-netcode-v2-field-defects task 27)
+
+G-07 of the guards document read "Every accepted hit is recorded TWICE: the per-swing ledger AND
+the per-tick signal", tagged on the `registerAttackHit` lambda. Its fence, verbatim:
+
+<!-- DAttackRadialSimulation.h lines 642-644 at b572456 -->
+```
+	// [movement-sim task 83] Every accepted hit is recorded TWICE, and the two containers mean
+	// different things: attackHits is the per-swing dedup ledger the loop above reads back,
+	// hitsThisTick is the one-tick signal hit routing consumes. See DerivedState.
+```
+
+Its "what breaks" read: *"Drop the ledger push and the same target is hit on every Damaging tick of
+the swing. Drop the signal push and routing never sees the hit. Route from the ledger instead and
+one hit re-fires on every remaining tick (the 13 m knockback of movement-sim task 83)."*
+
+What is still true, and where it went: the ledger push left this header, because the ledger is
+synced and its writer is the radial's `integrate` (radial G-07). "Drop the signal push" and "route
+from the ledger" are G-17. The dedup key is G-16 and the cap is G-15.

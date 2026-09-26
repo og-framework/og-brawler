@@ -5,6 +5,9 @@
 <!-- lint-external-ref: hasHitGuard -- RETIRED by og-netcode-v2-field-defects task 9: the radial State's wire flag, replaced by DerivedState::guardBlockedThisTick. It must NOT resolve -->
 <!-- lint-external-ref: updateLinearAttachmentToOwner -- RETIRED by NP-6: replaced by the explicit attachment block in integrate. It must NOT resolve -->
 <!-- lint-external-ref: getInitialRotation -- RETIRED by task 45: inlined at its call sites. It must NOT resolve -->
+<!-- lint-external-ref: attackHits -- RETIRED by og-netcode-v2-field-defects task 27: the derived per-swing ledger, replaced by the synced State::hitTargets. It must NOT resolve -->
+<!-- lint-external-ref: activeRootBodyId -- RETIRED by og-netcode-v2-field-defects task 27: the dead radial InitialConditions field (written 0, never read). It must NOT resolve -->
+<!-- lint-external-ref: editAttackHits -- RETIRED by og-netcode-v2-field-defects task 27 with attackHits. It must NOT resolve -->
 <!-- lint-external-ref: glm/common.hpp -- third-party glm header, shipped under og-simulation's glm/ directory, outside every doc_anchor_lint scan root -->
 
 The law, the provenance and the history of the radial (weapon-swing) sub-simulation. The
@@ -77,7 +80,15 @@ trailing `// shapes`.
 ## 3. `DAttackHit`
 
 `hitRootBodyId` is the struck character's actor-level id, `SpatialQueryHit::rootBodyId`. The body
-and guard shapes of one character report the same root id, so it is also the dedup key.
+and guard shapes of one character report the same root id. Routing resolves the target from it. It
+is a per-process engine handle, so it is **not** the dedup key any more (task 27).
+
+`targetId` (og-netcode-v2-field-defects task 27) is the struck character's peer-stable
+`SimCharacterId`. The detector resolves it from `hitRootBodyId` through its own registration map, and
+`integrate` records it in the synced ledger `State::hitTargets` (§4.4). It defaults to
+`SimCharacterId::None`, which is also the ledger's empty entry, so a hit that names no character
+cannot be recorded (an `OG_CHECK` in `recordHitTargets`). Guard hits leave it at `None`: they are
+never recorded.
 
 `swingTangent` (movement-sim task 83) is the direction the weapon was travelling through the hit
 point. It is the swing plane's tangent at the hit radius, signed by the sequence's AUTHORED angular
@@ -93,17 +104,22 @@ contract, and it is enforced where the tangent is built: `BrawlerHitDetectionSys
 `swingTangentAt`, under that file's guard G-06. It is not a consequence routing depends on, and no
 edit to this header can break it.
 
-## 4. `DerivedState` — two per-swing ledgers and two per-tick signals
+## 4. `DerivedState` — the per-pass and per-tick hit signals, and the synced per-swing ledger
 
 ⛔ **Corrected at task 19.** The shipped comment called `DerivedState` "Mutable per-tick scratch
 data only". **Half of it is per-SWING.** It is off-wire (derived) state holding two kinds of thing:
 
 | member | lifetime | cleared by | filled by |
 |---|---|---|---|
-| `attackHits` | **the swing**. It is the dedup ledger ("have I already hit this character?") and what the four-target cap counts. | `deactivate()` only | the detector, per registered hit |
 | `guardHits` | **one detection pass** (task 20; was the swing). Positions where the weapon met another character's guard. The visualization draws them as 15 cm blue (colorId 2) spheres. | the detector, first thing in each pass (`BrawlerHitDetectionSystem-guards.md` G-13); `deactivate()` no longer clears it | the detector, beside `guardBlockedThisTick` |
 | `hitsThisTick` | **one tick**: the signal routing consumes | the detector (G-13 there) and the top of `integrate` (G-04) | the detector (`registerAttackHit`) |
 | `guardBlockedThisTick` | **one tick** | the detector (G-13 there) and the top of `integrate` (G-05) | the detector, on a block |
+
+⭐ **Task 27.** The table once had a fourth row, the per-SWING dedup ledger (a `std::vector<DAttackHit>`,
+cleared only in `deactivate()`, filled by the detector). It was derived, so a correction neither
+restored it nor adopted the authority's copy: a replay anchored mid-swing and an adopted phantom both
+kept a stale ledger that suppressed real hits (the "frontier mid-swing" pin, and capture 3's three
+missed stuns). It left `DerivedState` and is now `State::hitTargets` on the wire (§4.4).
 
 In production the detector is `brawlerHitDetection::detectRadialHits`, called from
 `brawlerHitDetection::System::preIntegrate` (task 20; `postIntegrate` before it), which fires after
@@ -131,7 +147,12 @@ duration.
 
 Reserving makes `size()` mean "hits recorded during the current swing" at every moment of the
 object's life. ⭐ **Task 19 turned the fence into an `OG_CHECK`** at the end of the constructor:
-all three containers must be empty. It fires on BOTH realizations of the bad edit, a body
+all three containers must be empty. ⚠ **Task 27:** the derived ledger left the type, so the check
+now covers `guardHits` and `hitsThisTick` (reserved to `kMaxHitTargetsPerSwing`, 3). Its message
+now names what a phantom entry would break today: `integrate` records every `hitsThisTick` entry in
+the synced ledger, so on any path that integrates before the detector's own clear, a phantom would
+be routed and recorded. (A phantom has `targetId == None`, so `recordHitTargets`'s own check would
+also fire.) It fires on BOTH realizations of the bad edit, a body
 `resize` and a member-init `attackHits(4)`. A tag could not cover both, because the member-init is
 typed on the constructor head and the reserve in its body (§9.1 clause C). Seen to fire
 (standalone build, `assert` form) on both a body resize and a member-init `guardHits(4)`; the
@@ -142,6 +163,8 @@ control passes. It is also pinned by `DAttackRadial.FreshDerivedStateIsEmptyButR
   at the top of each detection pass. A pass that starts below four can register several hits, so
   `attackHits` can exceed four within one swing. It is "no new detection once four are recorded".
   The same overstatement stood in the `hitsThisTick` note ("the <= 4 distinct targets cap").
+  ⭐ **Superseded by task 27 (user ruling R3):** the cap is now EXACTLY at most 3 per swing,
+  including within one pass (§4.4).
 * *"Pinned by DAttackRadialFirstTickCollisionTest.cpp — four cases walking the machine->radial
   tick-1 path end to end"* is false. Three cases walk the path: `FirstTickSwingRegistersHits`,
   `…ForwardSequence` and `FirstSwingKeepsRegisteringForItsWholeDuration`. The fourth,
@@ -171,14 +194,80 @@ the tick must publish none. Until task 20 this was the only production clear sit
 clears the same two signals first thing in each pass (its G-13). Test rigs also clear by hand
 (`BrawlerHitRoutingTest.cpp`). The tags are G-04 and G-05.
 
-### 4.3 ⛔ `attackHits` is NOT cleared in `integrate` (untagged)
+### 4.3 ⛔ The ledger is NOT cleared in `integrate` or `setInitialConditions` (untagged)
 
-Adding a clear of `attackHits` beside the two per-tick clears would destroy the per-swing dedup,
-and the same target would be registered on every Damaging tick. `deactivate()` stays its only
-clear site. **No tag carries this.** The edit adds a new statement, and a tag covers only the
-statement it precedes (§9.1 clause B). There is no existing line to tag, so §9.3 files it here,
-untagged. The end-to-end pin is `HitRouting.RadialHitFiresOnceAcrossTheSwing`. That was derived
-from the test, not run as a mutation.
+Rewritten by task 27 around the synced ledger (it named the derived one). Adding a clear of
+`State::hitTargets` beside the two per-tick clears would destroy the per-swing dedup, and the same
+target would be registered on every Damaging tick. `deactivate()` stays its only clear site
+(`state.hitTargets = {}`). `setInitialConditions` does not clear it either: a chained swing enters
+through `deactivate` first, so it starts empty, which is what
+`DAttackRadial.ChainedSwingCanHitTheSameTargetAgain` pins. **No tag carries this.** The edit adds a
+new statement, and a tag covers only the statement it precedes (§9.1 clause B). There is no
+existing line to tag, so §9.3 files it here, untagged. The end-to-end pins are
+`HitRouting.RadialHitFiresOnceAcrossTheSwing` (the ledger holds one entry for the rest of the
+swing) and `HitDedup.ASwingHitsAtMostThreeDistinctTargets`.
+
+### 4.4 The synced per-swing hit ledger `State::hitTargets` (og-netcode-v2-field-defects task 27)
+
+**What it is.** `std::array<SimCharacterId, kMaxHitTargetsPerSwing>`, 3 entries of 1 B, 0-filled
+(`SimCharacterId::None`) = empty. It is the swing's answer to "have I already hit this
+character?", and what the cap counts. It is **Synced**: it rides the correction wire with the rest
+of the radial `State`, so a replay restores it and an adoption brings the authority's copy. The
+entries are peer-stable ids (task 25), never a `BodyId` or any other per-process handle (guard
+G-06). A `static_assert` beside the type pins its size to 3 × 1 B, because a wider element or a
+different count is a wire and gameplay change.
+
+**Who writes it, and when.**
+* **Reader:** the detector, at `preIntegrate(t+1)`, off the `State` that `integrate(t)` left
+  (Synced(t)). It is the same read point as the sequence pair (`BrawlerHitDetectionSystem-guards.md`
+  G-15, G-16).
+* **Writer:** only the radial's own `integrate`. Its first statement, `recordHitTargets`, appends
+  each `hitsThisTick[].targetId` into the first free entry. That statement comes BEFORE the G-04
+  clear, which would otherwise empty the list it reads (guard G-07; user ruling R5). Systems never
+  write wire state. `recordHitTargets` `OG_CHECK`s three things: the id is not `None`, it is not
+  already recorded, and a free entry exists. The detector guarantees all three, and the third is
+  what makes the cap structural. With the detector's in-pass cap removed, the four-targets-in-one-pass
+  case aborts on it (measured, task 27).
+* **Clear:** `deactivate()` only (§4.3).
+
+**The timing, and why it is unchanged.** Until task 27 the detector appended in `preIntegrate(t)`
+and read in `preIntegrate(t+1)`. Now `integrate(t)` appends, and `preIntegrate(t+1)` reads. The read
+is the same, and every read is now of synced state. A hit detected by the reduction over tick T is
+therefore in the ledger from the end of T+1. That is why a replay anchored at the end of T holds
+an EMPTY ledger and re-detects on the replayed T+1
+(`HitDetection.Behaviour.ReplayAnchoredAtTheEndOfTheBodyHitTickFlinchesTheTarget`, section
+"frontier mid-swing": `Idle` before task 27, `HitFlinch` after).
+
+**The cap is exact (user ruling R3).** A swing registers at most 3 distinct targets, including
+within one detection pass: the detector counts the ledger plus this pass's registrations. Until
+task 27 it was "no new pass once four are recorded", so a pass that started at three could register
+several. Once the cap is reached, the rest of the pass is not evaluated, including a guard block
+from a later actor. That matches the top-of-pass return, which skips a capped swing's block test
+too.
+
+**A guard block** puts nothing in `hitsThisTick`, so nothing reaches the ledger. The swing also
+ends: routing recoils the attacker into `GuardFlinch` on the next tick and the radial deactivates
+(`HitDedup.GuardBlockEndsTheSwingAndTheTargetIsNotHitLaterInIt`). So "a blocked target stays
+hittable later in the swing" is not a rule of this game, and nothing here relies on it.
+
+**NoSlot (user ruling 2026-09-26: accepted).** A character the step does not integrate (no resolved
+input on a replayed tick) keeps its frozen `State`, and its ledger with it. If it is frozen
+mid-swing and overlapping a target, the detector re-detects that target on every such pass, and
+routing delivers it again, because only `integrate` records it. The derived ledger used to
+suppress that. The case needs a mid-swing character with no replay slot, i.e. a correction anchored
+before a just-registered character's first slot. The user accepted it rather than reintroduce a
+derived value read across a tick boundary. Pinned as measured: one registration per skipped pass,
+never two (`HitDetection.Behaviour.TheDetectorOwnsThePerTickSignalsItWrites`, second section).
+
+**Adoption.** A correction replaces the whole `State`. After a phantom, the authority's swing has
+ended in `deactivate`, so the adopted ledger is empty and the next swing registers
+(`HitDedup.AdoptingAnIdleAttackerMidSwingLetsTheNextSwingHit`). Before task 27 the derived ledger
+survived the adoption and the swing whiffed: capture 3's three missed stuns.
+
+**Identity across peers.** `HitDedup.SyncedBytesMatchAcrossPeersWhoseEngineHandlesDiffer` compares
+two rigs whose engine handles differ byte for byte. Planting the per-process root `BodyId` in
+`hitTargets[0]` made it RED: 19 mismatch ticks, the first on the hit tick at byte 80, which is
+`hitTargets[0]` (radial IC 20 B + `attackTimer` 4 + `currenSequenceId` 4 + `bodyState` 52).
 
 ## 5. Inputs, state, dependencies and serialization
 
@@ -199,10 +288,14 @@ from the test, not run as a mutation.
   body and nothing else. Detection, the only thing here that ever queried, moved to
   `brawlerHitDetection::System`, which holds its own adapters.
 * **`InitialConditions`** is a plain aggregate (task 45). The `m_` prefix was dropped and
-  `getInitialRotation()` was inlined at its call sites.
+  `getInitialRotation()` was inlined at its call sites. Task 27 retired `activeRootBodyId` (4 B):
+  the machine wrote it as 0 and nothing read it. It was the composite's first slice, so the
+  removal moved every later offset (`kWireFormatVersion` 5 -> 6). The slice is 20 B.
 * **`State`** is a plain aggregate (task 44). `hasHitGuard` stood between `currenSequenceId` and
   `bodyState` and rode the wire (1 B). Removing it (task 9) moved every later offset, so
-  `correctionStateBuffer::kWireFormatVersion` went 3 -> 4.
+  `correctionStateBuffer::kWireFormatVersion` went 3 -> 4. Task 27 appended `hitTargets` (3 B,
+  §4.4): 60 -> 63 B. The composite went 326 -> 325 B (−4 + 3), which was measured by the pins in
+  `SimulatableBrawlerTest.cpp`.
 * **`Dependencies`** uses the `OwnedDeps`/`ExternalDeps` layout (task 62).
 * **`network()`** has no callers (grep, task 19). `State` is a plain aggregate, so no getter/setter
   registration is needed (task 44).
@@ -260,6 +353,9 @@ Between that and `outerShieldAngle = pi/2`, the sign of the cross product's z pi
 
 ## 8. `integrate`
 
+**The ledger append** (task 27) is `integrate`'s first statement, ahead of the G-04/G-05 clears
+(§4.4, guard G-07).
+
 **The attachment block** (NP-6) replaced `updateLinearAttachmentToOwner()`. It re-parents the
 weapon to the parent's position plus `bindings.attachmentOffset` every tick. It writes translation
 only, and the rotation it reads back is the weapon's own.
@@ -288,7 +384,7 @@ pinned by `DAttackRadialAimLogTest.cpp`.
 |---|---|---|---|
 | 1 | 86-87 | body descriptors are "compile-time constants" | dynamic-init `static inline const`, C2131 (§2) |
 | 2 | 134 | `DerivedState` is "per-tick scratch data only" | two members are per-swing ledgers (§4) |
-| 3 | 145-146, 191 | "at most four distinct targets per swing" / "the <= 4 distinct targets cap" | the cap is tested once per pass, so a pass can overshoot four (§4.1) |
+| 3 | 145-146, 191 | "at most four distinct targets per swing" / "the <= 4 distinct targets cap" | the cap is tested once per pass, so a pass can overshoot four (§4.1). Since task 27 it is exactly ≤ 3 (§4.4) |
 | 4 | 169-170 | "four cases walking the machine->radial tick-1 path" | three walk it, and one is on the type (§4.1) |
 | 5 | 205 | the detector "returns early PER ATTACKER exactly as this header's detector did" | ⚠ task-9 wording: the detector has two early returns `collisionCheck` never had (guard G-04) |
 | 6 | 203-207, 539-542 | "a clear there would leave the last Damaging tick's entries live" | true only after the detector's first return (guard G-04) |

@@ -699,6 +699,12 @@ with its value before and after the edit and the two lists diffed byte-identical
 > the last two opening *"⛔⛔ 42 / 96 IS A CONTRACT"*. Two carry the stale line number and
 > two do not.
 
+**Update (netcode task 25, 2026-09-26).** `OGBrawlerUECharacter.{h,cpp}` were converted. The header
+copy of the contract is gone, and the `.cpp` statement is now guard G-01 of
+`OGBrawlerUECharacter-guards.md` (Unreal module docs), tagged at the `InitCapsuleSize(42.f, 96.0f)`
+call. After the conversion that call happens to sit at `OGBrawlerUECharacter.cpp:69`, so
+`SimulatableBrawlerTypes.h`'s `:69` is correct again, by coincidence. Cite G-01, not a line.
+
 
 <!-- header lines 485-487 -->
 > MUST equal the ACharacter's authored capsule (OGBrawlerUECharacter.cpp:69

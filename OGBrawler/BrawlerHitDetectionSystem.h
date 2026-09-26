@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstddef>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -23,6 +24,7 @@
 #include "OGBrawler/DAttackRadialSequence.h"
 #include "OGBrawler/DAttackSequenceId.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
+#include "OGBrawler/SimCharacterId.h"
 #include "glm/vec2.hpp"
 #include "glm/vec3.hpp"
 #include "glm/mat4x4.hpp"
@@ -37,7 +39,7 @@ namespace brawlerHitDetection
 {
 
 // ∴D-01  docs/BrawlerHitDetectionSystem-rationale.md
-template <typename PhysicsReaderType, typename SpatialQueryAdapterType>
+template <typename PhysicsReaderType, typename SpatialQueryAdapterType, typename TargetIdResolverType>
 void detectRadialHits(float deltaSeconds,
 	const dAttackRadialSimulation::StaticData& staticData,
 	const dAttackRadialSimulation::InitialConditions& initialConditions,
@@ -45,7 +47,8 @@ void detectRadialHits(float deltaSeconds,
 	const dAttackRadialSimulation::RuntimeBindings& bindings,
 	dAttackRadialSimulation::DerivedState& derivedState,
 	const PhysicsReaderType& physics,
-	SpatialQueryAdapterType& queryAdapter)
+	SpatialQueryAdapterType& queryAdapter,
+	const TargetIdResolverType& resolveTargetId)
 {
 	using namespace dAttackRadialSimulation;
 
@@ -65,7 +68,14 @@ void detectRadialHits(float deltaSeconds,
 		"same valid sequence but attackTimer is not positive. The previous tick's swing branch "
 		"leaves attackTimer >= deltaSeconds for this preIntegrate to read; see G-01.");
 
-	if (derivedState.editAttackHits().size() >= 4)
+	const auto isRecorded = [&state](SimCharacterId id) {
+		return std::find(state.hitTargets.begin(), state.hitTargets.end(), id) != state.hitTargets.end();
+	};
+	const std::size_t recordedTargets = static_cast<std::size_t>(std::count_if(
+		state.hitTargets.begin(), state.hitTargets.end(),
+		[](SimCharacterId id) { return id != SimCharacterId::None; }));
+	// ⛔G-15  docs/BrawlerHitDetectionSystem-guards.md
+	if (recordedTargets >= kMaxHitTargetsPerSwing)
 		return;
 
 	const auto& activeAttackSequence = staticData.getAttackSequences()[initialConditions.activeAttackSequence];
@@ -94,6 +104,7 @@ void detectRadialHits(float deltaSeconds,
 	struct RootHitData
 	{
 		BodyId rootBodyId;
+		SimCharacterId targetId = SimCharacterId::None;
 		unsigned int guardHitIndex = 1337;
 		unsigned int bodyHitIndex = 1337;
 	};
@@ -103,12 +114,10 @@ void detectRadialHits(float deltaSeconds,
 	{
 		const auto& hit = queryReport[i];
 
-		if (std::find_if(derivedState.editAttackHits().begin(), derivedState.editAttackHits().end(), [&hit](const DAttackHit& hitIteratorValue) {
-			return hitIteratorValue.hitRootBodyId == hit.rootBodyId;
-			}) != derivedState.editAttackHits().end())
-		{
+		const SimCharacterId targetId = resolveTargetId(hit.rootBodyId);
+		// ⛔G-16  docs/BrawlerHitDetectionSystem-guards.md
+		if (targetId == SimCharacterId::None || isRecorded(targetId))
 			continue;
-		}
 
 		const glm::vec3 hitDirection = hit.objectPosition - rootTranslation;
 
@@ -140,7 +149,7 @@ void detectRadialHits(float deltaSeconds,
 			if (findIt == actorHits.end())
 			{
 				// ∴D-02  docs/BrawlerHitDetectionSystem-rationale.md
-				actorHits.push_back({ hit.rootBodyId, 1337, 1337 });
+				actorHits.push_back({ hit.rootBodyId, targetId, 1337, 1337 });
 				findIt = actorHits.end() - 1;
 			}
 
@@ -168,15 +177,17 @@ void detectRadialHits(float deltaSeconds,
 		return authoredAngularVelocity < 0.f ? -tangent : tangent;
 	};
 
-	// ⛔G-07  docs/BrawlerHitDetectionSystem-guards.md
+	// ⛔G-17  docs/BrawlerHitDetectionSystem-guards.md
 	auto registerAttackHit = [&derivedState](const DAttackHit& registered)
 	{
-		derivedState.editAttackHits().push_back(registered);
 		derivedState.editHitsThisTick().push_back(registered);
 	};
 
 	for (const auto& actorHit : actorHits)
 	{
+		if (recordedTargets + derivedState.getHitsThisTick().size() >= kMaxHitTargetsPerSwing)
+			break;
+
 		if (actorHit.bodyHitIndex == 1337)
 			continue;
 
@@ -184,7 +195,7 @@ void detectRadialHits(float deltaSeconds,
 		{
 			const auto& hit = queryReport[actorHit.bodyHitIndex];
 			registerAttackHit({ hit.objectPosition, hit.rootBodyId,
-				swingTangentAt(hit.objectPosition) });
+				swingTangentAt(hit.objectPosition), actorHit.targetId });
 		}
 		else
 		{
@@ -221,18 +232,19 @@ void detectRadialHits(float deltaSeconds,
 			}
 
 			registerAttackHit({ hit.objectPosition, hit.rootBodyId,
-				swingTangentAt(hit.objectPosition) });
+				swingTangentAt(hit.objectPosition), actorHit.targetId });
 		}
 	}
 }
 
 // One character's melee detection for the previous tick, read off the state its integrate left.
-template <typename PhysicsReaderType, typename SpatialQueryAdapterType>
+template <typename PhysicsReaderType, typename SpatialQueryAdapterType, typename TargetIdResolverType>
 void detectRadialHits(float deltaSeconds,
 	SimulatableBrawler& attacker,
 	const simulatableBrawler::StaticData& staticData,
 	const PhysicsReaderType& physics,
-	SpatialQueryAdapterType& queryAdapter)
+	SpatialQueryAdapterType& queryAdapter,
+	const TargetIdResolverType& resolveTargetId)
 {
 	auto& allState = attacker.editAllState();
 	const auto& state = allState.getState();
@@ -242,7 +254,7 @@ void detectRadialHits(float deltaSeconds,
 		state.get<dAttackRadialSimulation::State>(),
 		attacker.getPhysicsComposite().get<dAttackRadialSimulation::PhysicsDeclaration>().bindings,
 		allState.editDerivedState().edit<dAttackRadialSimulation::DerivedState>(),
-		physics, queryAdapter);
+		physics, queryAdapter, resolveTargetId);
 }
 
 // ∴D-05  docs/BrawlerHitDetectionSystem-rationale.md
@@ -279,8 +291,13 @@ public:
 			[](const auto& a, const auto& b) { return a.first < b.first; });
 
 		// ⛔G-12  docs/BrawlerHitDetectionSystem-guards.md
+		const auto resolveTargetId = [this](BodyId rootBodyId) {
+			const auto found = m_targetIdByRootBodyId.find(rootBodyId.value);
+			return found == m_targetIdByRootBodyId.end() ? SimCharacterId::None : found->second;
+		};
 		for (const auto& [id, attacker] : ordered)
-			detectRadialHits(step.getDeltaSeconds(), *attacker, staticData, *m_physics, *m_queryAdapter);
+			detectRadialHits(step.getDeltaSeconds(), *attacker, staticData, *m_physics, *m_queryAdapter,
+				resolveTargetId);
 
 		std::vector<ProjectileShooter> shooters;
 		shooters.reserve(ordered.size());
@@ -297,21 +314,35 @@ public:
 	{
 	}
 
-	void onCharacterRegistered(unsigned int /*id*/,
-	                           StorageView<SimulatableBrawler> /*view*/,
+	void onCharacterRegistered(unsigned int id,
+	                           StorageView<SimulatableBrawler> view,
 	                           const simulatableBrawler::StaticData& /*staticData*/)
 	{
+		OG_CHECK(id <= SimCharacterIdAllocator::kLastAssignable,
+			"brawlerHitDetection::System::onCharacterRegistered - the storage key is not a SimCharacterId. "
+			"The hit ledger records this key as a 1-byte peer-stable id (og-netcode-v2-field-defects task 27).");
+		const std::uint32_t rootBodyId = view.get<SimulatableBrawler>(id).getCharacterBindings().capsuleBodyId.value;
+		// ⛔G-18  docs/BrawlerHitDetectionSystem-guards.md
+		m_targetIdByRootBodyId[rootBodyId] = static_cast<SimCharacterId>(id);
 	}
 
-	void onCharacterUnregistered(unsigned int /*id*/,
+	void onCharacterUnregistered(unsigned int id,
 	                             StorageView<SimulatableBrawler> /*view*/,
 	                             const simulatableBrawler::StaticData& /*staticData*/)
 	{
+		for (auto it = m_targetIdByRootBodyId.begin(); it != m_targetIdByRootBodyId.end(); )
+		{
+			if (it->second == static_cast<SimCharacterId>(id))
+				it = m_targetIdByRootBodyId.erase(it);
+			else
+				++it;
+		}
 	}
 
 private:
 	const PhysicsReaderType* m_physics;
 	SpatialQueryAdapterType* m_queryAdapter;
+	std::unordered_map<std::uint32_t, SimCharacterId> m_targetIdByRootBodyId;
 };
 
 // ∴D-06  docs/BrawlerHitDetectionSystem-rationale.md

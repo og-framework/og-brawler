@@ -101,6 +101,8 @@ in the header; the engine channels live in `SimulationManagerUImpl.cpp` and
 
 **What breaks if it moves.** Names the rejected alternative (register the capsule as `body`) and its consequence (a SECOND hit per swing carrying the same `rootBodyId`, changing `attackHits[]` and the block-vs-hit classification). At the site it stops the merge; in a document it is read *after* the merge.
 
+⚠ **R0, og-netcode-v2-field-defects task 27 (2026-09-26).** The derived `attackHits[]` ledger no longer exists (the per-swing ledger is the radial's synced `State::hitTargets` of `SimCharacterId`s). The `static_assert` message that replaced this guard now names the consequence that is still true: the melee detector merges report hits by `rootBodyId` and the LAST `body` hit of a root supplies the registered position (`BrawlerHitDetectionSystem.h`, the `actorHits` loop), so a capsule registered as `body` changes the position a merged radial hit reports. The ledger itself would not change: both hits resolve to the same character.
+
 ---
 
 ## G-06 — Only ch1 and ch6 are declared in the ini

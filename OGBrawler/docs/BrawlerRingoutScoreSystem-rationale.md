@@ -209,8 +209,9 @@ noisy, and still running, and this walk still has to be correct for it. The abse
 `int32 RingoutScore` — **signed** (`OGBrawlerUECharacter.h`, `UPROPERTY(ReplicatedUsing =
 OnRep_RingoutScore)`), because a `UPROPERTY` cannot be `uint32_t`. The **width** matches
 at 32 bits; the **signedness** does not, and the push converts with an explicit
-`static_cast<int32>`. `OGBrawlerUECharacter.h` already carries that correction next to the
-property, under its own `⚠ SIGNEDNESS` note; this is the other copy of the pair.
+`static_cast<int32>`. The host pawn's own rationale (`OGBrawlerUECharacter-rationale.md` §6.1, in the
+Unreal module's docs; the header comment was moved there by netcode task 25) carries that
+correction; this is the other copy of the pair.
 
 <!-- header lines 286-289 -->
 ```

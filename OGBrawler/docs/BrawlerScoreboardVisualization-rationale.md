@@ -38,7 +38,8 @@ draw calls.
 
 ⛔ **The clamps live here, not at the console.** The UE accessor calls
 `clampScoreboardScale` and `clampScoreboardBackgroundAlpha`; it does not re-implement
-either. That is the existing discipline in `InputHistoryVisualizationUImpl.h`, and it is the
+either. That is the existing discipline of the input-history display (its Unreal-module rationale,
+`InputHistoryDisplay-rationale.md` §8.2), and it is the
 only reason the clamps are testable at all.
 
 ### 1.1 The shape is borrowed, not invented
@@ -237,7 +238,8 @@ three characters of arithmetic are typed.
 ### 5.1 `characterId`
 
 It matches its source exactly: it is the `unsigned int` every `StorageView` sweep hands out,
-and the same `unsigned int` `AOGBrawlerUECharacter::GetSimCharacterId` returns at the gather.
+and the same value the gather reads from the host pawn's `SimCharacterId`, converted with
+`toStorageKey` (`SimCharacterId.h`) since task 25.
 
 ### 5.2 `score` — and the mismatch the gather absorbs
 

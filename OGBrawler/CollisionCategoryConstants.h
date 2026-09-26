@@ -26,7 +26,7 @@ namespace collisionCategory
 	static_assert(!bodyAndGuard.contains(character) && !bodyGuardProjectile.contains(character),
 		"collisionCategory: `character` must stay OUT of the attack masks. Folding it in puts "
 		"the movement capsule in every radial swing and projectile query, emitting a SECOND hit "
-		"per swing with the same rootBodyId - which changes attackHits[] and the block-vs-hit "
+		"per swing with the same rootBodyId - which changes the position a root-merged radial hit reports and the block-vs-hit "
 		"classification in the projectile sim. Was fence T2a-2, guard G-04, now retired.");
 
 	constexpr CollisionCategories worldOnly = CollisionCategories::single(world);

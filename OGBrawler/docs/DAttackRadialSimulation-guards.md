@@ -119,8 +119,11 @@ change, and no test pins this case.
 
 ## G-04 — The per-tick hit signal is cleared at the TOP of `integrate`, not in the detector
 
-**Tag site:** `DAttackRadialSimulation.h`, on `derivedState.editHitsThisTick().clear();`, the first
-statement of `integrate` after the two dependency reads.
+**Tag site:** `DAttackRadialSimulation.h`, on `derivedState.editHitsThisTick().clear();`, the
+statement of `integrate` right after the G-07 ledger append (`recordHitTargets`), which is the first
+statement after the two dependency reads. ⚠ **Site amended by og-netcode-v2-field-defects task 27
+(user ruling R5), id kept.** Until then this clear was itself the first statement. The append must
+read `hitsThisTick` before this clear empties it, so the clear moved down one statement.
 
 **The fence, verbatim** <!-- pristine lines 203-207 and 539-542 -->:
 ```
@@ -174,7 +177,11 @@ skips. Consequences for this entry, stated plainly:
 **Score (§9.1): the move names a destination ("into the detector"), not a statement to cross, so
 by clause E it is a cut at the tag, scored as deletion → `yes`.** The same entry's *"attackHits is
 deliberately NOT cleared here"* is an addition of a new statement, which no tag can cover
-(clause B). It lives in rationale §4, untagged.
+(clause B). It lives in rationale §4.3, untagged, rewritten by task 27 around the synced ledger.
+
+**R0, og-netcode-v2-field-defects task 27 (2026-09-26).** The "four-target cap" in the verbatim
+fence above is now an exact cap of three, counted from the synced `State::hitTargets` (rationale
+§4.4). The clear this guard protects is still the same statement, and the reason is unchanged.
 
 ---
 
@@ -203,6 +210,58 @@ branch 5. ⚠ Since task 20, branch 5 runs in `preIntegrate` of T+1 and the reco
 tick after the block; the detector also clears the flag itself (G-04's R0 note applies here too).
 
 **Score (§9.1): cut at the tag (clause E, destination) → `yes`.**
+
+---
+
+## G-06 — `hitTargets` holds peer-stable `SimCharacterId`s, never an engine handle
+
+**Tag site:** `DAttackRadialSimulation.h`, on the `State::hitTargets` declaration.
+
+**The prohibition.** Do not change the element type of `hitTargets` to `BodyId`, `uint32_t`, or any
+other type that can hold a per-process engine handle (a root body id, a shape id, a query-volume id,
+a registration index). Do not fill it from `DAttackHit::hitRootBodyId`. The only value it records
+is `DAttackHit::targetId`, the struck character's peer-stable `SimCharacterId` (task 25).
+
+**Why.** The ledger rides the correction wire, and the correction gate compares integral fields
+exactly. A per-process value differs between peers for the same character, so every correction of
+a mid-swing attacker would compare unequal: a permanent resim storm. Keying by `BodyId` is the
+tempting edit, because `hitRootBodyId` is already in `DAttackHit` and the ledger used to be keyed by
+it while it was derived.
+
+**What breaks if the edit is made.** `HitDedup.SyncedBytesMatchAcrossPeersWhoseEngineHandlesDiffer`
+goes RED. Measured by planting the root `BodyId` in `hitTargets[0]`: 19 attacker mismatch ticks,
+the first on tick 40 at byte 80, which is `hitTargets[0]`. The `static_assert` beside the type
+catches a widened element (it pins 3 × 1 B), but not a 1-byte handle.
+
+**Score (§9.1):** substitution on the tagged token → `yes`.
+
+---
+
+## G-07 — The ledger append is `integrate`'s first statement, and `integrate` is its only writer
+
+**Tag site:** `DAttackRadialSimulation.h`, on `recordHitTargets(state, derivedState.getHitsThisTick());`.
+
+**The prohibition.** Do not delete this statement, and do not move the write into
+`brawlerHitDetection` (a system) or into routing. Systems never write wire state. The radial's own
+`integrate` is the ledger's only writer, and `deactivate` its only clear.
+
+**What breaks if the edit is made.**
+* Deleted: the ledger never fills, so the swing re-hits the same target on every Damaging tick,
+  which is task 83's repeated knockback, and the cap never engages.
+  `HitRouting.RadialHitFiresOnceAcrossTheSwing` (ledger premise) and
+  `HitDedup.ASwingHitsAtMostThreeDistinctTargets` go RED.
+* Moved into the detector: the detector would write synced state from a system, on every peer and
+  every path, including characters the step does not integrate. That breaks the "only integrate
+  writes State" contract, and it would change the NoSlot behaviour the user ruled on
+  (rationale §4.4).
+
+**Not in the tag's reach: the ORDER against the G-04 clear.** The append reads `hitsThisTick`, and
+G-04 empties it. Moved after the clear, the append reads an empty list, and the same two tests go
+RED. That is a reorder (§9.1 clause E, `no (ordering)`), so it is test-held, not tag-held, and it
+is recorded in rationale §4.4.
+
+**Score (§9.1):** deletion → `yes`; move into a system → a cut at the tag (clause E, destination) →
+`yes`.
 
 ---
 

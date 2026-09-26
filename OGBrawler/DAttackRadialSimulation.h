@@ -4,6 +4,8 @@
 
 #include "OGSimulation/OGExport.h"
 #include <algorithm>
+#include <array>
+#include <cstddef>
 #include <vector>
 #include <limits>
 #include <type_traits>
@@ -22,6 +24,7 @@
 #include "OGSimulation/SpatialQueryResult.h"
 #include "OGSimulation/SpatialQueryAdapter.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
+#include "OGBrawler/SimCharacterId.h"
 #include "OGBrawlerLog.h"
 #include "OGSimulation/OGAssert.h"
 
@@ -67,11 +70,15 @@ static_assert(!std::is_copy_constructible_v<StaticData> && !std::is_move_constru
 	"non-copyable comment on these declarations (og-netcode-v2-field-defects task 19).");
 
 
+inline constexpr std::size_t kMaxHitTargetsPerSwing = 3u;
+
+
 struct DAttackHit
 {
 	glm::vec3 position;
 	BodyId hitRootBodyId;
 	glm::vec3 swingTangent{ 0.f };
+	SimCharacterId targetId = SimCharacterId::None;
 };
 
 
@@ -119,25 +126,22 @@ class DerivedState
 public:
 	DerivedState()
 	{
-		attackHits.reserve(4);
-		guardHits.reserve(4);
-		hitsThisTick.reserve(4);
-		OG_CHECK(attackHits.empty() && guardHits.empty() && hitsThisTick.empty(),
+		guardHits.reserve(kMaxHitTargetsPerSwing);
+		hitsThisTick.reserve(kMaxHitTargetsPerSwing);
+		OG_CHECK(guardHits.empty() && hitsThisTick.empty(),
 			"dAttackRadialSimulation::DerivedState - a fresh DerivedState must hold NO hits: RESERVE, "
-			"never resize (a member-init `attackHits(4)` is a resize). The detector's four-target cap "
-			"reads size(), so four phantom entries make every swing register nothing. Was the "
-			"RESERVE-NOT-RESIZE comment of movement-sim task 34 (og-netcode-v2-field-defects task 19).");
+			"never resize (a member-init `hitsThisTick(3)` is a resize). integrate appends every "
+			"hitsThisTick entry to the synced hitTargets ledger, so on any path that integrates before "
+			"the detector's own clear, phantom entries would be routed and recorded as hits. Was the "
+			"RESERVE-NOT-RESIZE comment of movement-sim task 34 "
+			"(og-netcode-v2-field-defects tasks 19 and 27).");
 	}
 
 	DerivedState(const DerivedState& other)
-		: attackHits(other.attackHits)
-		, guardHits(other.guardHits)
+		: guardHits(other.guardHits)
 		, hitsThisTick(other.hitsThisTick)
 		, guardBlockedThisTick(other.guardBlockedThisTick)
 	{}
-
-	const std::vector<DAttackHit>& getAttackHits() const { return attackHits; }
-	std::vector<DAttackHit>& editAttackHits() { return attackHits; }
 
 	const std::vector<DAttackHit>& getHitsThisTick() const { return hitsThisTick; }
 	std::vector<DAttackHit>& editHitsThisTick() { return hitsThisTick; }
@@ -149,7 +153,6 @@ public:
 	std::vector<DAttackHit>& editGuardHits() { return guardHits; }
 
 private:
-	std::vector<DAttackHit> attackHits;
 	std::vector<DAttackHit> guardHits;
 	std::vector<DAttackHit> hitsThisTick;
 	bool guardBlockedThisTick = false;
@@ -197,7 +200,6 @@ public:
 	float initialAimAngle = 0.f;
 	glm::vec3 initialAimRotationAxis{0.f, 0.f, 0.f};
 	unsigned int activeAttackSequence = InvalidAttackSequenceId;
-	unsigned int activeRootBodyId = 0;
 };
 
 
@@ -207,7 +209,15 @@ public:
 	float attackTimer = 0.f;
 	unsigned int currenSequenceId = 0;
 	PhysicsBodyState bodyState;
+	// ⛔G-06  docs/DAttackRadialSimulation-guards.md
+	std::array<SimCharacterId, kMaxHitTargetsPerSwing> hitTargets{};
 };
+
+static_assert(sizeof(State::hitTargets) == kMaxHitTargetsPerSwing * sizeof(SimCharacterId),
+	"dAttackRadialSimulation::State::hitTargets is the per-swing hit ledger on the correction wire: "
+	"exactly kMaxHitTargetsPerSwing peer-stable SimCharacterIds, 1 B each. A wider element or a "
+	"different count is a kWireFormatVersion bump and a gameplay ruling (og-netcode-v2-field-defects "
+	"task 27, R2/R3).");
 
 
 struct PhysicsDeclaration
@@ -375,8 +385,7 @@ void deactivate(float deltaSeconds,
 	const InitialConditions& initialConditions,
 	const StaticData& staticData,
 	State& state,
-	const RuntimeBindings& bindings,
-	DerivedState& derivedState)
+	const RuntimeBindings& bindings)
 {
 	OGBLOG_G("[Radial.deactivate] was seq=%u timer=%.4f",
 		state.currenSequenceId, state.attackTimer);
@@ -388,7 +397,28 @@ void deactivate(float deltaSeconds,
 	state.attackTimer = 0.f;
 	state.currenSequenceId = InvalidAttackSequenceId;
 
-	derivedState.editAttackHits().clear();
+	state.hitTargets = {};
+}
+
+
+inline void recordHitTargets(State& state, const std::vector<DAttackHit>& hitsThisTick)
+{
+	for (const DAttackHit& hit : hitsThisTick)
+	{
+		OG_CHECK(hit.targetId != SimCharacterId::None,
+			"dAttackRadialSimulation::recordHitTargets - a registered hit names no character. The "
+			"ledger's empty entry is SimCharacterId::None, so recording it would free a slot the cap "
+			"counts (og-netcode-v2-field-defects task 27).");
+		OG_CHECK(std::find(state.hitTargets.begin(), state.hitTargets.end(), hit.targetId) == state.hitTargets.end(),
+			"dAttackRadialSimulation::recordHitTargets - the detector registered a target the ledger "
+			"already holds. It must skip every target in hitTargets (og-netcode-v2-field-defects task 27).");
+		const auto freeEntry = std::find(state.hitTargets.begin(), state.hitTargets.end(), SimCharacterId::None);
+		OG_CHECK(freeEntry != state.hitTargets.end(),
+			"dAttackRadialSimulation::recordHitTargets - more hits than the ledger holds. The detector's "
+			"cap counts the ledger plus this pass's registrations, so a swing records at most "
+			"kMaxHitTargetsPerSwing targets (og-netcode-v2-field-defects task 27, R3).");
+		*freeEntry = hit.targetId;
+	}
 }
 
 
@@ -405,6 +435,8 @@ void integrate(float deltaSeconds,
 	const InitialConditions& initialConditions = deps.owned.get<InitialConditions>();
 	State& state = deps.owned.edit<State>();
 
+	// ⛔G-07  docs/DAttackRadialSimulation-guards.md
+	recordHitTargets(state, derivedState.getHitsThisTick());
 	// ⛔G-04  docs/DAttackRadialSimulation-guards.md
 	derivedState.editHitsThisTick().clear();
 	// ⛔G-05  docs/DAttackRadialSimulation-guards.md
@@ -432,7 +464,7 @@ void integrate(float deltaSeconds,
 	if (initialConditions.activeAttackSequence == InvalidAttackSequenceId && state.currenSequenceId != InvalidAttackSequenceId)
 	{
 		OGBLOG_G("[Verbose][Radial.branch] deactivate (ic invalid, state active)");
-		deactivate(deltaSeconds, input, initialConditions, staticData, state, bindings, derivedState);
+		deactivate(deltaSeconds, input, initialConditions, staticData, state, bindings);
 		return;
 	}
 
@@ -466,7 +498,7 @@ void integrate(float deltaSeconds,
 	{
 		OGBLOG_G("[Verbose][Radial.branch] deactivate (timer>=duration: %.4f >= %.4f)",
 			state.attackTimer, activeAttackSequence.getDuration());
-		deactivate(deltaSeconds, input, initialConditions, staticData, state, bindings, derivedState);
+		deactivate(deltaSeconds, input, initialConditions, staticData, state, bindings);
 	}
 }
 
@@ -487,8 +519,7 @@ struct SerializableFields<dAttackRadialSimulation::InitialConditions>
 		return std::make_tuple(
 			SIM_MEMBER(IC, initialAimAngle),
 			SIM_MEMBER(IC, initialAimRotationAxis),
-			SIM_MEMBER(IC, activeAttackSequence),
-			SIM_MEMBER(IC, activeRootBodyId));
+			SIM_MEMBER(IC, activeAttackSequence));
 	}
 };
 
@@ -501,7 +532,8 @@ struct SerializableFields<dAttackRadialSimulation::State>
 		return std::make_tuple(
 			SIM_MEMBER(S, attackTimer),
 			SIM_MEMBER(S, currenSequenceId),
-			SIM_MEMBER(S, bodyState));
+			SIM_MEMBER(S, bodyState),
+			SIM_MEMBER(S, hitTargets));
 	}
 };
 

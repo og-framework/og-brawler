@@ -265,25 +265,6 @@ comparison direction from mattering.
 
 ---
 
-## G-07 — Every accepted hit is recorded TWICE: the per-swing ledger AND the per-tick signal
-
-**Tag site:** `BrawlerHitDetectionSystem.h`, on the `registerAttackHit` lambda.
-
-**The fence, verbatim:**
-
-<!-- DAttackRadialSimulation.h lines 642-644 at b572456 -->
-```
-	// [movement-sim task 83] Every accepted hit is recorded TWICE, and the two containers mean
-	// different things: attackHits is the per-swing dedup ledger the loop above reads back,
-	// hitsThisTick is the one-tick signal hit routing consumes. See DerivedState.
-```
-
-**What breaks if the edit is made.** Drop the ledger push and the same target is hit on every
-Damaging tick of the swing. Drop the signal push and routing never sees the hit. Route from the
-ledger instead and one hit re-fires on every remaining tick (the 13 m knockback of movement-sim
-task 83). The other half is `DAttackRadialSimulation-guards.md` G-04 and `DAttackRadialSimulation-rationale.md` §4.
-
----
 
 ## G-08 — The `break` after a guard block is preserved AS-IS
 
@@ -411,11 +392,16 @@ the signals must live from there to the next pass:
 * A character the replay does not integrate (the resim NoSlot row, task 9 behaviour review F9)
   never runs the radial's top-of-`integrate` clears, so its `hitsThisTick` from the previous pass
   would be routed a second time.
+  ⚠ **R0, task 27 (user ruling 2026-09-26).** Since the ledger is synced and recorded only by
+  `integrate`, a mid-swing NoSlot attacker RE-DETECTS its target on the next pass and routes it
+  again anyway (`DAttackRadialSimulation-rationale.md` §4.4). What this clear still guarantees is
+  ONE entry per pass instead of the stale one plus the new one.
 
 **What breaks if the edit is made.** Both measured by poison (task 20): with the three clears
 removed, `HitDetection.Behaviour.TheDetectorOwnsThePerTickSignalsItWrites` fails both sections —
 `guardHits` stays 1 forever, and the un-integrated attacker's hit reaches the target's slice again
-(`wasHit=1`). With `deactivate` still clearing `guardHits`, its first section fails instead
+(`wasHit=1`). Re-measured after task 27, where the second section is re-pinned: `guardHits` 1, and
+`hitsThisTick` holds 2 entries instead of 1. With `deactivate` still clearing `guardHits`, its first section fails instead
 (`guardHits after integrate(T+1)=0`). The whole `[@og]` suite was green without the clears before
 that case was written.
 
@@ -447,6 +433,111 @@ position move; this is a weak pin.
 
 ---
 
+## G-15 — The cap reads the SYNCED ledger, and the pass stops at three
+
+**Tag site:** `BrawlerHitDetectionSystem.h`, on `if (recordedTargets >= kMaxHitTargetsPerSwing) return;`
+(og-netcode-v2-field-defects task 27).
+
+**The prohibition.** The swing's hit count is the number of non-`None` entries in the radial's
+synced `State::hitTargets`, read off the `State` that `integrate` left (the same read point as the
+G-01 pair). Do not count anything derived instead: not `hitsThisTick`, not `guardHits`, and not a
+per-character container kept in this system. A derived count is not restored by a correction or
+adopted from the authority, which is the defect task 27 removed. Do not relax the comparison to `>`
+and do not raise it: the cap is **exactly at most `kMaxHitTargetsPerSwing` (3) per swing, including
+within one pass** (user ruling R3). The pass loop's `recordedTargets + hitsThisTick.size() >= kMaxHitTargetsPerSwing`
+`break` is the in-pass half of the same rule.
+
+**What breaks if the edit is made.** A wider cap, or dropping the in-pass `break`, makes the fourth
+target of `HitDedup.ASwingHitsAtMostThreeDistinctTargets` register. Without the in-pass `break`, the
+radial's `recordHitTargets` `OG_CHECK` ("more hits than the ledger holds") aborts on the
+four-in-one-pass section (measured, task 27). A derived count brings back the replay and adoption
+misses that `…BodyHitTickFlinchesTheTarget` ("frontier mid-swing") and
+`HitDedup.AdoptingAnIdleAttackerMidSwingLetsTheNextSwingHit` pin.
+
+**Score (§9.1):** substitution on the tagged comparison → `yes`. The in-pass `break` is a separate
+statement, not covered (clause B). It is held by the test and the `OG_CHECK`, not by this tag.
+
+---
+
+## G-16 — Dedup is by the peer-stable `SimCharacterId`, and an unresolved root is not a character
+
+**Tag site:** `BrawlerHitDetectionSystem.h`, on
+`if (targetId == SimCharacterId::None || isRecorded(targetId)) continue;` in the report loop.
+
+**The prohibition.** Skip a report hit whose root resolves to a target already in `hitTargets`, and
+skip one whose root resolves to no registered character. ⛔ Do not dedup by `rootBodyId` (a
+per-process engine handle; it is the pre-task-27 key), and do not register a hit with
+`targetId == None`. Routing cannot deliver it (routing's own map has no entry for it), and the
+radial's `recordHitTargets` `OG_CHECK`s that every recorded id is real.
+
+**Behaviour change, recorded (task 27).** Before task 27 a hit on a body that was not a registered
+character's capsule was still registered: it went into the derived ledger (using up a cap slot) and
+into `hitsThisTick`, and routing then dropped it. It is now skipped here. Routing never delivered
+it, so a target sees no difference, but it no longer consumes one of the swing's three slots.
+
+**What breaks if the edit is made.** Dedup by `rootBodyId` against a ledger of ids compares
+unrelated numbers, so the same target would be registered on every Damaging tick, and the radial's
+duplicate check would abort (derived, not run). Letting `None` through aborts on the radial's
+`None` check (derived, not run).
+
+**Score (§9.1):** substitution on the tagged condition → `yes`.
+
+---
+
+## G-17 — `registerAttackHit` writes the per-tick signal ONLY
+
+**Tag site:** `BrawlerHitDetectionSystem.h`, on the `registerAttackHit` lambda (task 27; it replaces
+retired G-07 at the same site).
+
+**The prohibition.** The lambda pushes to `hitsThisTick` and nothing else. ⛔ Do not add a write to
+the radial's `State::hitTargets` here, or to any other ledger. A system never writes wire state.
+The ledger's only writer is the radial's own `integrate` (`DAttackRadialSimulation-guards.md` G-07),
+which records `hitsThisTick[].targetId` on the attacker's next integrate. ⛔ Do not route from the
+ledger either: routing reads the per-tick signal. Reading the per-swing record instead re-fires one
+hit on every remaining tick (movement-sim task 83's 13 m knockback).
+
+**What breaks if the edit is made.** A second writer here would record the target a tick early and
+twice. The radial's `recordHitTargets` would then `OG_CHECK` on the duplicate ("the detector
+registered a target the ledger already holds"; derived, not run). It would also change the NoSlot behaviour the user
+ruled on (`DAttackRadialSimulation-rationale.md` §4.4): an attacker the step does not integrate
+would record its hits.
+
+**Score (§9.1):** addition on the tagged statement → `yes`.
+
+---
+
+## G-18 — The target-id map is keyed by the capsule `BodyId`, and its value is the STORAGE KEY
+
+**Tag site:** `BrawlerHitDetectionSystem.h`, on `m_targetIdByRootBodyId[rootBodyId] = static_cast<SimCharacterId>(id);`
+in `onCharacterRegistered`.
+
+**The prohibition.** The value is the character's storage key, which is its peer-stable
+`SimCharacterId` since task 25. ⛔ Do not store a registration counter, a storage index, a pointer,
+or any other number that depends on the order this process registered characters in. Two peers
+register in different orders (task 26's two-rig pin reverses it), so such a value would differ
+between them and reach the wire through the ledger. The key is the capsule `BodyId`, which is what
+the query adapter reports as `rootBodyId` for every shape of the character. Routing's
+`m_byRootBodyId` uses the same key.
+
+**What breaks if the edit is made.** `HitDedup.SyncedBytesMatchAcrossPeersWhoseEngineHandlesDiffer`
+would go RED, because its peer B registers the target first (derived, not run). The `OG_CHECK` above the tag enforces only
+that the key fits in the 1-byte id.
+
+**Score (§9.1):** substitution on the tagged token → `yes`.
+
+---
+
 ## §R — Retired ids
 
-*(None.)*
+### G-07 — RETIRED by og-netcode-v2-field-defects task 27 (2026-09-26)
+
+**Was:** "Every accepted hit is recorded TWICE: the per-swing ledger AND the per-tick signal", on the
+`registerAttackHit` lambda. The lambda pushed to the radial's derived per-swing ledger and to
+`hitsThisTick`.
+
+**Why retired.** Its subject is gone. The derived ledger was deleted, and the per-swing record is the
+synced `State::hitTargets`, written by the radial's `integrate`. The lambda now records once. Its
+remaining prohibitions moved to new ids with a different subject: **G-17** (the lambda writes the
+per-tick signal only; do not route from the ledger), **G-15** (the cap), **G-16** (the dedup key),
+and the radial's **G-07** (the ledger's writer). The shipped fence text and the rest of the entry are
+kept in `BrawlerHitDetectionSystem-rationale.md` §9. ⛔ The number 7 is spent.

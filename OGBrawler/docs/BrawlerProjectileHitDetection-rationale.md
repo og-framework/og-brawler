@@ -199,8 +199,11 @@ shooter is EITHER from a later tick than the step OR was restored from a server 
   there, because detection needed the shooter's own `integrate`.
   **Status.** Accepted by the user on 2026-09-25 as a documented residual. It is the projectile
   analogue of melee's F9 (the task 9 behaviour review: a mid-swing brawler with NoSlot on a replay),
-  which melee bounds with its `attackHits` ledger; projectiles have no equivalent. The gate is
-  deferred as Backlog task 23. Section 2 of the same case pins the shape: 3 routed hits, one per
+  which melee used to bound with its derived per-swing ledger; projectiles have no equivalent.
+  ⚠ Since og-netcode-v2-field-defects task 27 melee has the same residual: its ledger is the synced
+  `State::hitTargets`, recorded only by the attacker's own `integrate`, so a NoSlot mid-swing
+  attacker re-routes once per skipped pass too (accepted by the user on 2026-09-26;
+  `DAttackRadialSimulation-rationale.md` §4.4). The gate is deferred as Backlog task 23. Section 2 of the same case pins the shape: 3 routed hits, one per
   NoSlot replay tick and one on the proxy's first `integrate`, which ends the slot on R.
 
 ---

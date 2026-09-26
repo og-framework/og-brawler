@@ -110,7 +110,7 @@ namespace brawlerHitRouting
         //      bools and the resolved reaction beside them are owned here.
         //   2. Radial swing hits (T3): route HitFlinch to the struck character.
         //      [movement-sim task 83] Fires exactly once per hit — the per-TICK
-        //      hitsThisTick[], never the per-SWING attackHits[] ledger.
+        //      hitsThisTick[], never the per-SWING hit ledger.
         //   3. Projectile damage hits (T3; SlotOutcome::Hit): route HitFlinch to the
         //      struck character. Fires once: the detector resets the outcome every
         //      pass, and the shooter's integrate ends the slot in the same step.
@@ -174,10 +174,11 @@ namespace brawlerHitRouting
             //    tick, and the direction the weapon was
             //    travelling through each of those hits.
             //
-            // ⭐⭐ [movement-sim task 83] hitsThisTick, NOT attackHits, AND THE
-            //    DIFFERENCE IS THE WHOLE OF THE USER'S 12 METRES. attackHits is the
-            //    radial sim's per-SWING DEDUP LEDGER: it accumulates for the whole
-            //    swing and is cleared only in deactivate(). Iterating it here meant
+            // ⭐⭐ [movement-sim task 83] hitsThisTick, NOT THE PER-SWING LEDGER, AND
+            //    THE DIFFERENCE IS THE WHOLE OF THE USER'S 12 METRES. The ledger (a
+            //    derived vector then; the synced State::hitTargets of target ids since
+            //    og-netcode-v2-field-defects task 27) accumulates for the whole swing
+            //    and is cleared only in deactivate(). Iterating it here meant
             //    ONE hit re-fired on EVERY remaining tick of the swing — the target's
             //    velocity was re-assigned at full launch speed with no decay for the
             //    ~0.4 s the swing had left (8.0 m of constant travel, then 5.17 m of
@@ -340,7 +341,7 @@ namespace brawlerHitRouting
         // view resolves it. Key = the character's CAPSULE (root) body id — the
         // value the query adapter emits as SpatialQueryHit::rootBodyId for hits on
         // ANY of the character's shapes (hurtbox or guard), hence carried by radial
-        // attackHits[].hitRootBodyId / the projectile DerivedState's
+        // hitsThisTick[].hitRootBodyId / the projectile DerivedState's
         // detectedThisTick[].struckRootBodyId. Value = the
         // storage-stable pointer to the SimulatableBrawler (unique_ptr-backed, so
         // its address is stable for the registered lifetime).
