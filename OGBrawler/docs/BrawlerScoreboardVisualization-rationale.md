@@ -389,8 +389,9 @@ assert: an over-cap session still RUNS - report, do not crash"*, so a fifth char
 registers today, and `brawlerRingout::ScoreSystem`'s `onCharacterRegistered` gives it a
 roster row without consulting the spawn table.
 
-That 4 is **already** mirrored in this directory as `brawlerRingout::kMaxSpawnPoints`, and in
-the packet-budget test besides. Another mirror here would be a draw cap that silently
+That 4 was mirrored in this directory as `brawlerRingout::kMaxSpawnPoints` until
+og-brawler-uploadtosteam T18 (2026-09-29) raised the spawn table to 8, the same as this bound.
+It is still mirrored in the packet-budget test. Another mirror here would be a draw cap that silently
 **hides** a fighter — not on the day the wire diet lifts the cap, but in any over-cap
 session, which can happen **now** — and a hidden fighter on a scoreboard is worse than a
 board that runs off the screen, because nothing about it looks wrong.

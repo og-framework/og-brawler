@@ -20,18 +20,23 @@ OGSIM_OPTIMIZE_OFF
 namespace brawlerRingout
 {
 
-inline constexpr uint32_t kMaxSpawnPoints = 4u;
+inline constexpr uint32_t kMaxSpawnPoints = 8u;
 
 class StaticData
 {
 public:
     StaticData(float killPlaneZ = -500.f,
                uint32_t respawnDelayTicks = 120u,
+               // ∴D-02  docs/BrawlerRingoutSimulation-rationale.md
                std::array<glm::vec3, kMaxSpawnPoints> spawnPoints = {
                    glm::vec3(-200.f, -200.f, 200.f),
                    glm::vec3( 200.f, -200.f, 200.f),
                    glm::vec3(-200.f,  200.f, 200.f),
-                   glm::vec3( 200.f,  200.f, 200.f)
+                   glm::vec3( 200.f,  200.f, 200.f),
+                   glm::vec3(2200.f, 1150.f, 120.f),
+                   glm::vec3(2200.f, 1800.f, 120.f),
+                   glm::vec3(2500.f, 1450.f, 120.f),
+                   glm::vec3(1450.f, 1950.f, 120.f)
                })
         : killPlaneZ(killPlaneZ)
         , respawnDelayTicks(respawnDelayTicks)

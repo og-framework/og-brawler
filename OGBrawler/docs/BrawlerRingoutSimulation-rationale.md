@@ -72,7 +72,8 @@ movement-before-ringout does **not**, and a runnable case re-quotes both.
 * **`kMaxSpawnPoints` cannot be pinned to the packet-budget cap from here.** The derivation lives
   in a file-local `constexpr` function in `RoundVsPacketBudgetTest.cpp` and the runtime constant is
   a member of a `UCLASS`. An engine-free header can reach neither, and the low-level-test target
-  cannot reach the UE module file either. The mirror stays a documented mirror — §2.
+  cannot reach the UE module file either. (Since T18 the table is no longer a mirror of the cap: the
+  UE header asserts `kPreDietCharacterCap <= kMaxSpawnPoints` from its side — §2.)
 * **The comparator's TOTALITY does not convert.** `spawnOrderBits` is a `std::memcpy`, so it is not
   usable in a constant expression, and the position type is not constexpr-readable either. A
   runtime check that no two adjacent elements compare equivalent would false-fire on a level that
@@ -126,9 +127,11 @@ the same defect.
 > does not define it). A table with fewer entries than the cap would hand two characters the
 > same spawn point at a legal player count; more would be entries nothing can ever index.
 
-✅ The first sentence is verified: the constant is 4, the derivation is
-`largestFittingCharacterCountUnderJoin()`, and that file states in its own words that the runtime
-fence mirrors it rather than defining it.
+⛔ **Superseded 2026-09-29 (og-brawler-uploadtosteam T18): the constant is now 8, and it is no
+longer a mirror of the cap.** What the quotation says about `kPreDietCharacterCap` is still true
+(it is 4, it mirrors `largestFittingCharacterCountUnderJoin()`), but the table stopped being sized
+by it. Why it changed and what it is sized by now is below the two R0 corrections, which are
+kept because they are what made the change safe.
 
 ⛔ **R0-1 — "more would be entries nothing can ever index" is FALSE.** `kPreDietCharacterCap` is
 **ADVISORY**. Its runtime fence logs a `Warning` and lets the session continue — its own comment
@@ -143,14 +146,20 @@ FALSE for this design.** `acquire` returns the lowest index no live character ho
 the same point is the failure mode of the *rejected* per-wire derivation (§7), and the sentence
 imported that symptom onto a design that cannot produce it.
 
-⚠ **The count of mirrors is deliberately not restated here.** The header said *"THIS IS THE THIRD
-MIRROR OF THAT 4"* and that was true when it was written, but a number that has to be incremented
-every time someone adds a mirror is a sentence scheduled to become wrong. What is load-bearing is
-the shape: this constant is a **mirror**, the thing it mirrors lives in files an engine-free
-header cannot reach (a `UCLASS` member and a test), and when the wire diet deletes
-`kPreDietCharacterCap` this constant does **not** die with it — it becomes sized by the supported
-player count directly, and this section is what has to be rewritten rather than the number
-silently kept.
+**Why 8 — the 5th character's death loop (T10 spike flag 1; user ruling 2026-09-29).**
+- R0-2 describes what the short table did to a 5th character.
+  1. `acquire` handed it `kNoFreeSlot`.
+  2. Its first respawn cleared the dead bit and wrote **no** teleport seed.
+  3. The body was still below the kill plane, so the death arm fired again on the next tick.
+  4. That repeated every `respawnDelayTicks`, and every death paid every other player a point.
+- The playtest rules forbid refusing a player for numbers (NO HARD PLAYER CAP). Two clients × three local players (6 characters) is an ordinary local playtest.
+- So the user ruled: size the table for **8** characters. Above the tested 3 is accepted as "may run degraded", not refused.
+- 8 is a playtest-size ruling, not a derivation: it is the scoreboard's row count (`kScoreboardMaxRows = 8u`) and two full local-co-op clients.
+- The engine allows more: 4 local players per client and 16 players per server. The 9th concurrent character still gets `kNoFreeSlot` and the loop above, which is why the next raise is a ruling, not a bug fix.
+
+**How it is tied to the cap now.** `ASimulationManagerUImpl::kPreDietCharacterCap` stays **4**, because it is the packet-budget number. `SimulationManagerUImpl.h` asserts `kPreDietCharacterCap <= kMaxSpawnPoints`, so the cap can never exceed the table. Characters 5-8 register, get real slots, and trigger the cap's advisory `Warning`, which is the truthful "above the tested size" signal. When the wire diet deletes the cap, this constant stays sized by the playtest ruling.
+
+**Not on the wire.** The table (`StaticData::spawnPoints`) is not serialized, and the slot rides as a `uint32_t` whose size does not change. So the raise moves no byte and no offset, and `correctionStateBuffer::kWireFormatVersion` was not bumped. What did change is the MEANING of the values 4-7 (and `kNoFreeSlot`'s value, 4 → 8). With five or more characters, a mixed old/new pair disagrees about where the 5th+ respawns: a correction snap, not a crash, and the old build death-loops there anyway.
 
 ---
 
@@ -187,6 +196,10 @@ somewhere else entirely, and a respawn dropped fighters off the map. And since t
 table is **overwritten** at level load by `spawnPointsFromLevelPlacements`, so changing these
 literals changes only the fallback for a level that has not been dressed. The authored values are
 a FALLBACK; the level is the source of truth.
+
+⚠ **"Only the fallback" became false in one place with T18.** ThirdPersonMap carries four player
+starts and the table now has eight entries, so slots 4-7 there ARE the authored entries 4-7, and
+they are placed on that arena — §5d, `∴D-02`.
 
 ---
 
@@ -258,7 +271,7 @@ already listed correctly — so only the summary spelling was wrong. It is corre
 
 ⚠ **Byte-lexicographic, not numeric:** `PlayerStart_10` sorts BEFORE `PlayerStart_2`. That is
 deterministic and identical on every peer, which is the property that matters — but a level
-carrying more than `kMaxSpawnPoints` player starts keeps the first four IN THAT ORDER, so name them
+carrying more than `kMaxSpawnPoints` player starts keeps the first `kMaxSpawnPoints` (8) IN THAT ORDER, so name them
 such that the order you want is also the order you read.
 
 ⚠ **Place them in the persistent level.** A player start inside a STREAMED sublevel may not be
@@ -324,6 +337,36 @@ scratch by construction, and nothing upstream wants it back. `authoredFallback` 
 keep wherever the level says nothing; in production it is `StaticData::spawnPoints` exactly as the
 defaults left it, so "leave the rest authored" is literally "leave the rest alone". ⭐ This needs no
 fence: taking the list by const reference does not compile — see §1d.
+
+### 5d. The authored entries 4-7 are placed on ThirdPersonMap's arena ∴D-02
+
+**Why these four are not placeholders.**
+- Entries 0-3 are the original placeholder authoring at (±200, ±200, 200), which is OFF the arena (§3, R0-4). They still stand because ThirdPersonMap's four player starts overwrite them.
+- ThirdPersonMap has **four** player starts and the table has eight, so slots 4-7 on that map are these authored entries.
+- A 5th character respawning off the arena would fall through the kill plane on every respawn: the same death loop §2 removes, only slower.
+
+**The arena, measured 2026-09-29 (og-brawler-uploadtosteam T18).** Source: headless `-game -nullrhi` with `getall StaticMeshComponent RelativeLocation/RelativeScale3D/RelativeRotation/StaticMesh` and `getall StaticMesh ExtendedBounds`.
+- **Floor.** Four `SM_QuarterCylinder`s. The mesh is x,y 0..50, z 0..100, pivot at the corner. Each is scaled (20, 20, 7.5) at z = -750, which gives radius **1000** and a top surface at **z = 0**.
+  - The pair at (1600, 1450), yaw 180 and yaw 90, forms the half-disc x ≤ 1600.
+  - The pair at (1900, 1450), yaw 270 and yaw 0, forms the half-disc x ≥ 1900.
+- **Bridge.** An `SM_Cube` (0..100) scaled (3, 3, 1) at (1600, 1310, -100) joins the two halves: x 1600..1900, y 1310..1610.
+- **Player starts** (the `[Ringout.spawnPoints]` seed log): (1018.65, 1185.53, 71.95), (1378.60, 1164.88, 118.73), (1308.60, 1684.88, 118.73), (2148.60, 1494.88, 118.73). Three are on the left half, one on the right.
+
+**The placement rule** — the one to re-apply if the arena changes:
+- each point lies on a half-disc, at most **600** from its centre (≥ 400 inside the rim, a knock-back margin);
+- never on the 300-wide bridge;
+- at least **300** from every other slot, player starts included;
+- the under-used right half is filled first;
+- z = **120**, like the level's 118.73: the capsule (half-height 96) settles about 24 onto the z = 0 top.
+
+| slot | point | distance to its half-disc centre | nearest other slot |
+|---|---|---|---|
+| 4 | (2200, 1150, 120) | 424 | 349 |
+| 5 | (2200, 1800, 120) | 461 | 309 |
+| 6 | (2500, 1450, 120) | 600 | 354 |
+| 7 | (1450, 1950, 120) | 522 | 300 |
+
+⚠ These coordinates belong to ThirdPersonMap's arena. On any map that places eight or more player starts they are never used. On a map with fewer than eight and a different arena, re-derive them by the rule above, or place more player starts, which is the better fix (§5).
 
 ---
 
@@ -555,7 +598,7 @@ symptom until the table ran dry. Machine-checked by
 `Ringout.SpawnSlots.AcquireIsIdempotentAndDoesNotConsumeASecondEntry`.
 
 ⛔ **`release` is the other half of the contract, and it is not optional.** Without it a session
-that churns characters exhausts a four-entry table and every later join respawns nowhere. It is a
+that churns characters exhausts the table and every later join respawns nowhere. It is a
 NO-OP for an id holding nothing, and that is load-bearing: the UE unregister path runs on BOTH
 roles, and on a client nothing ever acquired. That is the same shape as the ungated erase it sits
 beside — an ungated call whose emptiness on the non-authority role is a property of the inserts,
