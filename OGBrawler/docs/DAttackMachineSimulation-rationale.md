@@ -6,7 +6,7 @@
 # `DAttackMachineSimulation.h` — rationale
 
 The narrative, the derivations and the provenance for the attack state machine: `DAttackState`,
-`dAttackMachineSimulation::PlayerInput`, `IntegrationUtils`, `swingTickCount`, `State`,
+`dAttackMachineSimulation::PlayerInputView`, `IntegrationUtils`, `swingTickCount`, `State`,
 `Dependencies`, the three `integrate` variants and `dAttackStateName`. The **prohibitions** are in
 `DAttackMachineSimulation-guards.md`; nothing here is a fence. Two sections carry a derivation id
 (`∴D-nn`) because a tag in the header points at them.
@@ -36,8 +36,9 @@ quoted sentence is false, the **R0** note under it says what is true, and §13 l
 
 The machine header includes the **leaf** `BrawlerCharacterBindings.h`, not
 `BrawlerMovementSimulation.h`. The movement sub-simulation reads this header's `State` (the flinch
-freeze and the attack end tick) and its `PlayerInput` (the move stick is packed onto the machine
-slice), so movement includes this header. The dependency points one way: movement → machine.
+freeze and the attack end tick), so movement includes this header. The dependency points one way:
+movement → machine. Until og-syncedInput-rework task 3 movement also read this header's
+`PlayerInput`, where the move stick was packed; it now reads the stick from its own `PlayerInputView`.
 
 <!-- header lines 14-17 -->
 > [movement-sim task 62] The LEAF header, NOT `BrawlerMovementSimulation.h`. Everything this
@@ -129,6 +130,18 @@ includes directly (and which the radial header includes too). It is not declared
 
 ## 3. `PlayerInput`
 
+⚠ **This section is history since og-syncedInput-rework task 4 (2026-10-03).** Task 3 replaced the
+machine's input slice on the wire with `simulatableBrawler::SyncedPlayerInput`, and the machine now
+reads its input through its own `PlayerInputView` (six fields, filled by `PlayerInputView::from`). Task 4 deleted
+`class PlayerInput`, its `zero()`, its `SerializableFields` specialization and its `SimulationInput`
+assertion, and retired guard G-01 (guards §R). What the quotes below say about the type, and the
+measurements under them, describe it as it stood. Their live successors:
+* the input the codecs deserialize is `SyncedPlayerInput`, whose fields are not `const` either;
+* its field order is held by the descriptor-tuple `static_assert` in `BrawlerSyncedPlayerInput.h`,
+  not by an initializer's argument count;
+* the neutral input's `(0,0,1)` aim, and its difference from the value-initialised aim, are
+  `static_assert`s in the same header (`BrawlerSyncedPlayerInput-rationale.md` §5).
+
 <!-- header lines 73 -->
 > [Task 43] Plain aggregate — const dropped so MemberFieldDesc::write() can assign.
 
@@ -159,8 +172,8 @@ anywhere but last breaks `zero()`'s five-argument initializer (`C2440`, measured
 > triggeredActionId is left to its default member initialiser (0) by C++20
 > parenthesized aggregate init, exactly as the pre-fold call site did.
 
-The prohibition in that block is guard **G-01**, with its R0: `(0,0,1)` is `defaultUp`, and for this
-slice the normalize argument does not separate the two values.
+The prohibition in that block was guard **G-01** (retired by task 4), with its R0: `(0,0,1)` is
+`defaultUp`, and for this slice the normalize argument does not separate the two values.
 
 ---
 

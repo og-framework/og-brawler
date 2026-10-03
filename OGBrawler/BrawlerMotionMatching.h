@@ -30,7 +30,7 @@
 // THE `History` SHAPE (structural, deliberately not a C++ concept — matching the
 // readContinuousInputFields precedent):
 //
-//     const dAttackMachineSimulation::PlayerInput* at(uint32_t tick) const;
+//     const simulatableBrawler::PlayerInput* at(uint32_t tick) const;
 //
 // It MUST return nullptr for any tick outside the retained window. That is
 // matchSequence's contract (InputSequence.h), and it is why the production
@@ -139,7 +139,7 @@ uint8_t motionButtonEdge(const History& history, uint32_t currentTick, uint8_t c
         return currentButtonsHeld;
     }
 
-    const dAttackMachineSimulation::PlayerInput* prev = history.at(currentTick - 1u);
+    const PlayerInput* prev = history.at(currentTick - 1u);
     if (prev == nullptr)
     {
         return currentButtonsHeld;
@@ -182,19 +182,15 @@ uint32_t resolveTriggeredActionId(const History&                             his
 // ---------------------------------------------------------------------------
 // DelayLineMotionHistory — THE production History adapter (T15 / AM-4).
 //
-// Two things it does that a bare forward would not:
+// One thing it does that a bare forward would not:
 //
-//  1. IT IS has()-GATED. LocalInputCache::at() answers with the NEUTRAL
+//  IT IS has()-GATED. LocalInputCache::at() answers with the NEUTRAL
 //     input for a tick that was never captured — it never returns null. Handing
 //     that straight to matchSequence would put a fabricated entry in the history
 //     for every absent tick. Behaviourally the two are near-equivalent today
 //     (the neutral's (0,0,1) aim makes aimRelativeAngle return nullopt, so the
 //     matcher skips it anyway), but "absent" and "neutral capture" are different
 //     facts and only the gate keeps them different in the data.
-//
-//  2. IT UNWRAPS THE COMPOSITE. The line stores the composite
-//     simulatableBrawler::PlayerInput; matchSequence is specified over the
-//     machine sub-input.
 //
 // TICK DOMAIN. matchSequence walks its search range as a signed int and casts to
 // uint32_t at the call, so a range that runs below tick 0 arrives here as a very
@@ -212,14 +208,14 @@ public:
     {
     }
 
-    const dAttackMachineSimulation::PlayerInput* at(uint32_t tick) const
+    const PlayerInput* at(uint32_t tick) const
     {
         const std::int32_t signedTick = static_cast<std::int32_t>(tick);
         if (!m_line->has(signedTick))
         {
             return nullptr;
         }
-        return &m_line->at(signedTick).get<dAttackMachineSimulation::PlayerInput>();
+        return &m_line->at(signedTick);
     }
 
 private:

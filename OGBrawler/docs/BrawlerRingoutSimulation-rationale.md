@@ -36,7 +36,7 @@ better assertion message.
 | `State::flags` bit 0 is `kFlagDead`, and the assignment is on the wire | `static_assert(kFlagDead == (1u << 0))` |
 | `State` and `InitialConditions` are APPEND ONLY — the wire layout is positional | two `std::is_same_v` assertions on the `SerializableFields` tuples |
 | the two wire slices are 4 B and 5 B | two `syncSize` assertions |
-| `PlayerInput` costs nothing | `syncSize<PlayerInput>() == 0u` |
+| ~~`PlayerInput` costs nothing~~ (history) | was `syncSize<PlayerInput>() == 0u`, deleted with the type by og-syncedInput-rework task 4. Ring-out's input is an empty `PlayerInputView`; the `BrawlerInputView` fold in `SimulatableBrawlerTypes.h` keeps it off the wire (a view must not be `Serializable`) |
 | ring-out declares valid, owned dependencies | `ValidDependencies<Dependencies>` |
 
 ### 1b. NEWLY enforced by this conversion — four prohibitions the compiler took
@@ -216,7 +216,7 @@ beside guard **G-02** uses a local probe type: no other `IntegrationUtils` in th
 named without instantiating it against adapters ring-out is deliberately not handed.
 
 The shape of the file is borrowed, not invented: `StaticData` / `InitialConditions` / `State` /
-`DerivedState` / `PlayerInput` / `Dependencies` / `integrate`, then the `SerializableFields`
+`DerivedState` / `PlayerInputView` / `Dependencies` / `integrate`, then the `SerializableFields`
 specializations and the role assertions at the bottom, exactly as
 `BrawlerProjectileSimulation.h` lays them out.
 
@@ -411,13 +411,16 @@ afterwards. This is the EDGE the authority-side score system consumes (ruling 5:
 the authority tick that detects the death, because the authority never rewinds). The prohibition
 half of this is now an assertion — §1b and retired id **G-03**.
 
-**`PlayerInput` is empty — zero serialized fields, zero wire bytes**, mirroring
-`dAttackGuardSimulation::InitialConditions`'s empty specialization. It exists because
+**`PlayerInputView` is empty — it reads no input field and is not on the wire.** Until
+og-syncedInput-rework task 3 this was an empty `PlayerInput` slice with zero serialized fields,
+mirroring `dAttackGuardSimulation::InitialConditions`'s empty specialization; task 4 deleted that
+type. The view exists because
 `ValidDependencies` requires `Dependencies::InputType` and the ownership validator treats that type
 as OWNED by this sub-sim: naming any other sub-sim's input here would report an ownership overlap.
 It does NOT exist because ring-out wants a per-tick signal — death is positional and respawn is a
-tick countdown, so there is nothing for a player to press. The arithmetic for why an input byte is
-expensive is in that line's own assertion message.
+tick countdown, so there is nothing for a player to press. Why an input byte is expensive is in
+`BrawlerSyncedPlayerInput-rationale.md` §7; the deleted `syncSize` assertion's message carried the
+same argument.
 
 ---
 

@@ -208,7 +208,13 @@ retired into a build break (§R, G-16 and G-17).
 
 ## G-05 — A bit constant must be READ, not only written
 
-**Tag site:** `BrawlerMovementSimulation.h`, immediately above `class PlayerInput`.
+**Tag site:** `BrawlerMovementSimulation.h`, immediately above `inline constexpr uint8_t kInputFlagHoldGuard`.
+
+⚠ **Re-sited by og-syncedInput-rework task 4 (2026-10-03).** The tag stood immediately above
+`class PlayerInput`, the movement input slice whose `flags` byte held the bit. Task 4 deleted that
+class (the byte is `simulatableBrawler::SyncedPlayerInput::flags` since task 3) and moved the tag to
+the input bit constant, where the next one will be typed (comment rule §9.3: move a tag to the site
+where its edit is typed). The prohibition is unchanged.
 
 **Was must-never-move:** `T3-14`. **Taxonomy clause:** F1a + F5c.
 

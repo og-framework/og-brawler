@@ -114,9 +114,10 @@ void SimulatableBrawler::integrate(
 
     {
         auto deps = makeDependencies<dAttackMachineSimulation::Dependencies>(state);
+        const dAttackMachineSimulation::PlayerInputView machineInput = dAttackMachineSimulation::PlayerInputView::from(input);
         dAttackMachineSimulation::integrate3(dt,
             dAttackMachineSimulation::AllInput<PhysAdapterT>(
-                input.get<dAttackMachineSimulation::PlayerInput>(), machineUtils),
+                machineInput, machineUtils),
             deps, m_characterBindings,
             // [hit-resolution T2] Plain by-ref inbound-hit slice (mirrors CharacterBindings).
             // Populated by brawlerHitRouting::System::preIntegrate this step (T3); read here to drive HitFlinch.
@@ -125,15 +126,17 @@ void SimulatableBrawler::integrate(
 
     {
         auto deps = makeDependencies<dAttackGuardSimulation::Dependencies>(state);
+        const dAttackGuardSimulation::PlayerInputView guardInput = dAttackGuardSimulation::PlayerInputView::from(input);
         dAttackGuardSimulation::integrate(dt,
             dAttackGuardSimulation::AllInput<PhysAdapterT, QueryAdapterT>(
-                input.get<dAttackGuardSimulation::PlayerInput>(), guardUtils),
+                guardInput, guardUtils),
             staticData.m_guardSimulationStaticData, deps,
             guardBindings, derivedState.edit<dAttackGuardSimulation::DerivedState>());
     }
     
     {
         auto deps = makeDependencies<brawlerProjectileSimulation::Dependencies>(state);
+        const brawlerProjectileSimulation::PlayerInputView projectileInput = brawlerProjectileSimulation::PlayerInputView::from(input);
         const std::array<brawlerProjectileSimulation::RuntimeBindings, brawlerProjectileSimulation::kMaxProjectilePoolSize> projectileBindings = {
             m_physics.get<brawlerProjectileSimulation::PhysicsDeclaration<0>>().bindings,
             m_physics.get<brawlerProjectileSimulation::PhysicsDeclaration<1>>().bindings,
@@ -141,16 +144,17 @@ void SimulatableBrawler::integrate(
         };
         brawlerProjectileSimulation::integrate(dt,
             brawlerProjectileSimulation::AllInput<PhysAdapterT>(
-                input.get<brawlerProjectileSimulation::PlayerInput>(), projectileUtils),
+                projectileInput, projectileUtils),
             staticData.m_projectileStaticData, deps,
             projectileBindings, derivedState.edit<brawlerProjectileSimulation::DerivedState>());
     }
 
     {
         auto deps = makeDependencies<dAttackRadialSimulation::Dependencies>(state);
+        const dAttackRadialSimulation::PlayerInputView radialInput = dAttackRadialSimulation::PlayerInputView::from(input);
         dAttackRadialSimulation::integrate(dt,
             dAttackRadialSimulation::AllInput<PhysAdapterT>(
-                input.get<dAttackRadialSimulation::PlayerInput>(), radialUtils),
+                radialInput, radialUtils),
             staticData.m_attackSimulationStaticData, deps,
             attackBindings, derivedState.edit<dAttackRadialSimulation::DerivedState>());
     }
@@ -187,9 +191,10 @@ void SimulatableBrawler::integrate(
     // the adapter.
     {
         auto deps = makeDependencies<brawlerRingout::Dependencies>(state);
+        const brawlerRingout::PlayerInputView ringoutInput = brawlerRingout::PlayerInputView::from(input);
         brawlerRingout::integrate(
             brawlerRingout::AllInput(
-                input.get<brawlerRingout::PlayerInput>(),
+                ringoutInput,
                 brawlerRingout::IntegrationUtils(currentTick)),
             staticData.m_ringoutStaticData, deps,
             derivedState.edit<brawlerRingout::DerivedState>());
@@ -200,22 +205,12 @@ void SimulatableBrawler::integrate(
     // State&>` to read the flinch (and, from tasks 27/31, the committed Dashing/Launched
     // states), so the machine sub-sim MUST integrate first. That edge is declared, so
     // `findFirstViolation` above enforces it rather than this comment.
-    //
-    // ⚠ THE SECOND ARGUMENT IS THE MACHINE'S PlayerInput, and this is the ONE PLACE the
-    // movement sub-sim can get it: the stick (`moveDirectionWorld`) is packed onto the machine
-    // slice, and the framework hands no sub-sim another sub-sim's input.
-    // [movement-sim task 62] `brawlerMovementSimulation::integrate` now SPELLS
-    // `const dAttackMachineSimulation::PlayerInput&`. It used to be a DEDUCED template
-    // parameter, because the movement header could not name that type while
-    // `DAttackMachineSimulation.h` included IT for `CharacterBindings` — an include cycle. The
-    // cycle is gone (the struct moved to `BrawlerCharacterBindings.h`), so this argument is
-    // type-checked at the call rather than deduced to whatever it is handed.
     {
         auto deps = makeDependencies<brawlerMovementSimulation::Dependencies>(state);
+        const brawlerMovementSimulation::PlayerInputView movementInput = brawlerMovementSimulation::PlayerInputView::from(input);
         brawlerMovementSimulation::integrate(dt,
             brawlerMovementSimulation::AllInput<PhysAdapterT, QueryAdapterT>(
-                input.get<brawlerMovementSimulation::PlayerInput>(), movementUtils),
-            input.get<dAttackMachineSimulation::PlayerInput>(),
+                movementInput, movementUtils),
             staticData.m_movementStaticData, deps,
             movementBindings, derivedState.edit<brawlerMovementSimulation::DerivedState>(),
             derivedState.get<brawlerInboundHit::DerivedState>());

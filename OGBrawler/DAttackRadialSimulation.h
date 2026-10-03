@@ -25,6 +25,7 @@
 #include "OGSimulation/SpatialQueryAdapter.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
 #include "OGBrawler/SimCharacterId.h"
+#include "OGBrawler/BrawlerSyncedPlayerInput.h"
 #include "OGBrawlerLog.h"
 #include "OGSimulation/OGAssert.h"
 
@@ -159,16 +160,12 @@ private:
 };
 
 
-class PlayerInput
+struct PlayerInputView
 {
-public:
-	// ⛔G-02  docs/DAttackRadialSimulation-guards.md
-	glm::vec3 aimDirection{};
-	bool attackLeft = false;
-	bool attackRight = false;
-
-	// ⛔G-01  docs/DAttackRadialSimulation-guards.md
-	static PlayerInput zero() { return PlayerInput(glm::vec3(0.f, 0.f, 1.f), false, false); }
+	static PlayerInputView from(const simulatableBrawler::SyncedPlayerInput&)
+	{
+		return {};
+	}
 };
 
 
@@ -191,7 +188,7 @@ private:
 };
 
 template <typename PhysicsBodyAdapterType>
-using AllInput = SimulationAllInput<PlayerInput, IntegrationUtils<PhysicsBodyAdapterType>>;
+using AllInput = SimulationAllInput<PlayerInputView, IntegrationUtils<PhysicsBodyAdapterType>>;
 
 
 class InitialConditions
@@ -249,7 +246,7 @@ struct Dependencies {
 		dAttackRadialSimulation::InitialConditions,
 		dAttackRadialSimulation::State>;
 	using External = ExternalDeps<>;
-	using InputType = dAttackRadialSimulation::PlayerInput;
+	using InputType = dAttackRadialSimulation::PlayerInputView;
 	Owned owned;
 	External external;
 };
@@ -537,20 +534,7 @@ struct SerializableFields<dAttackRadialSimulation::State>
 	}
 };
 
-template <>
-struct SerializableFields<dAttackRadialSimulation::PlayerInput>
-{
-	static constexpr auto get()
-	{
-		return std::make_tuple(
-			MemberFieldDesc<&dAttackRadialSimulation::PlayerInput::aimDirection>{},
-			MemberFieldDesc<&dAttackRadialSimulation::PlayerInput::attackLeft>{},
-			MemberFieldDesc<&dAttackRadialSimulation::PlayerInput::attackRight>{});
-	}
-};
-
 static_assert(SimulationState<dAttackRadialSimulation::State>);
-static_assert(SimulationInput<dAttackRadialSimulation::PlayerInput>);
 static_assert(SimulationInitialConditions<dAttackRadialSimulation::InitialConditions>);
 
 OGSIM_OPTIMIZE_ON

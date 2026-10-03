@@ -26,6 +26,7 @@
 #include "OGBrawler/BrawlerCharacterBindings.h"
 #include "OGBrawler/DAttackMachineSimulation.h"
 #include "OGBrawler/BrawlerInboundHit.h"
+#include "OGBrawler/BrawlerSyncedPlayerInput.h"
 #include "OGBrawlerLog.h"
 
 #include "OGSimulation/CompilerControl.h"
@@ -248,21 +249,25 @@ public:
     uint8_t   lastSupportState = 0;
 };
 
-// ⛔G-05  docs/BrawlerMovementSimulation-guards.md
-class PlayerInput
+struct PlayerInputView
 {
-public:
     uint8_t flags = 0u;
+    glm::vec3 moveDirectionWorld{};
 
-    static PlayerInput zero() { return PlayerInput{}; }
+    static PlayerInputView from(const simulatableBrawler::SyncedPlayerInput& in)
+    {
+        return PlayerInputView{ .flags = in.flags, .moveDirectionWorld = in.moveDirectionWorld };
+    }
 };
 
+// ⛔G-05  docs/BrawlerMovementSimulation-guards.md
 inline constexpr uint8_t kInputFlagHoldGuard = 1u << 0;
 
 static_assert(kInputFlagHoldGuard == (1u << 0),
-    "brawlerMovementSimulation::PlayerInput::flags - bit 0 is holdGuard, and it is ON THE "
+    "simulatableBrawler::SyncedPlayerInput::flags - bit 0 is holdGuard, and it is ON THE "
     "RELAYED INPUT RING. Moving it desynchronises every peer that has not shipped the same "
-    "edit; bits 1-7 are where jump, dash, wall-grab and ski-tuck go.");
+    "edit. Bits 1-7 are UNASSIGNED: no reader decodes them and the packer writes them as 0. "
+    "Was the same assertion on the deleted movement input slice's flags byte.");
 
 template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
 class IntegrationUtils
@@ -291,7 +296,7 @@ private:
 };
 
 template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
-using AllInput = SimulationAllInput<PlayerInput, IntegrationUtils<PhysicsBodyAdapterType, SpatialQueryAdapterType>>;
+using AllInput = SimulationAllInput<PlayerInputView, IntegrationUtils<PhysicsBodyAdapterType, SpatialQueryAdapterType>>;
 
 class InitialConditions
 {
@@ -374,7 +379,7 @@ struct Dependencies {
         brawlerMovementSimulation::InitialConditions,
         brawlerMovementSimulation::State>;
     using External = ExternalDeps<const dAttackMachineSimulation::State&>;
-    using InputType = brawlerMovementSimulation::PlayerInput;
+    using InputType = brawlerMovementSimulation::PlayerInputView;
     Owned owned;
     External external;
 };
@@ -503,7 +508,6 @@ inline bool detachesFromSupport(const State& state, const glm::vec3& up, bool co
 template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
 void integrate(float deltaSeconds,
     const AllInput<PhysicsBodyAdapterType, SpatialQueryAdapterType>& input,
-    const dAttackMachineSimulation::PlayerInput& machineInput,
     const StaticData& sd,
     Dependencies deps,
     const RuntimeBindings& bindings,
@@ -628,7 +632,7 @@ void integrate(float deltaSeconds,
     derivedState.lastProbePoint   = probe.blocked ? probe.impactPoint : glm::vec3(0.f);
     derivedState.lastSupportState = supportBits;
 
-    const glm::vec3 stickWorld(machineInput.moveDirectionWorld.x, machineInput.moveDirectionWorld.y, 0.f);
+    const glm::vec3 stickWorld(input.getPlayerInput().moveDirectionWorld.x, input.getPlayerInput().moveDirectionWorld.y, 0.f);
     const float stickDeflection = glm::length(stickWorld);
     glm::vec2 stickUV(0.f);
     if (stickDeflection > 0.f)
@@ -746,17 +750,6 @@ struct SerializableFields<brawlerMovementSimulation::State>
     }
 };
 
-template <>
-struct SerializableFields<brawlerMovementSimulation::PlayerInput>
-{
-    static constexpr auto get()
-    {
-        using MovementInput = brawlerMovementSimulation::PlayerInput;
-        return std::make_tuple(
-            SIM_MEMBER(MovementInput, flags));
-    }
-};
-
 static_assert(std::is_same_v<
         decltype(SerializableFields<brawlerMovementSimulation::State>::get()),
         std::tuple<
@@ -781,17 +774,7 @@ static_assert(std::is_same_v<
     "teleport seed rides the wire so a respawn replays identically on both peers. "
     "Was fences T3-3 and T3-26.");
 
-static_assert(std::is_same_v<
-        decltype(SerializableFields<brawlerMovementSimulation::PlayerInput>::get()),
-        std::tuple<
-            MemberFieldDesc<&brawlerMovementSimulation::PlayerInput::flags>>>,
-    "brawlerMovementSimulation::PlayerInput - APPEND ONLY, same rule as State above, and an "
-    "input byte costs about TEN TIMES a state byte: it is multiplied across every ring entry in "
-    "the packet-budget scenario. A new per-tick signal is a BIT in this byte, never a new "
-    "member. Was fences T3-3 and T3-26.");
-
 static_assert(SimulationState<brawlerMovementSimulation::State>);
-static_assert(SimulationInput<brawlerMovementSimulation::PlayerInput>);
 static_assert(SimulationInitialConditions<brawlerMovementSimulation::InitialConditions>);
 
 OGSIM_OPTIMIZE_ON

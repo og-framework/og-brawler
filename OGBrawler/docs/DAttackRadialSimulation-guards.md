@@ -18,72 +18,13 @@ verbatim, live in `DAttackRadialSimulation-rationale.md`.
 stood after task 9 (672 lines, md5 `5fce5c9f…`). Quoted fence text is the shipped bytes of that
 header, cited as `<!-- pristine lines A-B -->`. The full comment archive is rationale §A.
 
+**Retired by og-syncedInput-rework task 4:** G-01 and G-02, with the radial `PlayerInput` they stood
+on ([§R](#r-retired-ids)).
+
 **Not here, because a check holds them now** (rationale §6): `StaticData` non-copyable
 (`static_assert`), `DerivedState` reserve-not-resize (`OG_CHECK`), and the Hadouken-sentinel
 return staying ahead of `setInitialConditions` (`OG_CHECK`). Two more were already compiler-held
 before this task: the `RuntimeBindings` alias and the `staticDataOf` member template.
-
----
-
-## G-01 — `PlayerInput::zero()` carries `(0,0,1)`, never `PlayerInput{}`
-
-**Tag site:** `DAttackRadialSimulation.h`, on `static PlayerInput zero()`.
-
-**The fence, verbatim** <!-- pristine lines 251-253 -->:
-```
-	// ⛔ (0,0,1) forwards, NOT PlayerInput{}: a value-initialised (0,0,0) aim would
-	// reach normalize(), and the difference is also the TAG the input-resolution and
-	// net-sync anti-vacuity tests discriminate on. Keep zero() != PlayerInput{}.
-```
-
-**The prohibition.** Do not substitute `zero()`'s return value with `PlayerInput{}`, or with any
-aim other than `glm::vec3(0.f, 0.f, 1.f)`. The value was copied verbatim from what
-`getZeroPlayerInput()` returned before movement-sim task 22 folded the neutral input into
-`SimulationComposite::zero()`. It is a wire value, not something to re-derive.
-
-**What breaks if the edit is made.**
-* ⛔ **Not a NaN hazard; corrected at task 19.** Both halves of the fence's first sentence are false.
-  `(0,0,1)` is +Z, which is `defaultUp`, not forwards: `DAttackRadialSequence::defaultForward()` is
-  `(1,0,0)`. And no reader normalizes the raw aim. The machine, the guard and
-  `DAttackDirectionClassifier.h` all project to XY first, where `(0,0,1)` and `(0,0,0)` are the same zero
-  vector, and the guard substitutes `defaultForward` below length 1e-4. The radial never reads its own
-  slice's aim. Task 18 found the same sentence false in the machine header, and task 19 confirmed it here.
-* `SimulationInputResolutionTest.cpp`'s `isGameZeroInput` tells the injected neutral input apart
-  from a value-initialised one only by this aim. If the two are equal, every anti-vacuity pair it
-  anchors keeps passing while testing nothing.
-* The zero input's wire bytes change. `DAttack.SimulatableBrawler.ZeroInputIsTheFold` pins them
-  byte for byte, so that case goes RED. This was derived from the test's byte-identity assertion
-  and was not run as a mutation.
-
-**Verified 2026-09-23 (R0).** Both consumers and the test were read in the tree.
-
-**Score (§9.1): substitution on the tagged statement → `yes`.**
-
----
-
-## G-02 — `aimDirection` keeps a `(0,0,0)` default
-
-**Tag site:** `DAttackRadialSimulation.h`, on `glm::vec3 aimDirection{};` in `PlayerInput`.
-
-**Source.** This is the second way to break G-01's `zero() != PlayerInput{}`, and G-01's fence
-does not name it. The fence text lives in `SimulatableBrawlerTest.cpp`'s banner for
-`DAttack.SimulatableBrawler.ZeroInputIsTheFold`, verbatim:
-```
-//     every one of those anti-vacuity pairs keeps passing while testing nothing.
-//     DO NOT change a default member initialiser to close this gap.
-```
-Task 19 split it out as its own id. §9.1 clause A says to score an entry only as written and to
-record an under-described entry as a finding, and this is that finding. The edit is typed on a
-different statement from G-01's, so it needs its own site (§9.3, the `no (elsewhere)` row: one id
-per site).
-
-**The prohibition.** Do not give `aimDirection` a default member initialiser of `(0,0,1)`, or of
-any value equal to `zero()`'s aim. That would make `PlayerInput{}` equal to `zero()`.
-
-**What breaks if the edit is made.** The same anti-vacuity blind spot as G-01. Nothing fails, and
-the neutral-input tests stop being able to see the defect they exist to catch.
-
-**Score (§9.1): substitution on the tagged token → `yes`.**
 
 ---
 
@@ -267,4 +208,104 @@ is recorded in rationale §4.4.
 
 ## §R Retired ids
 
-*(None.)*
+⛔ **Spent forever.** Neither number may appear as a `⛔G-nn` tag again.
+
+---
+
+### G-01 — RETIRED (og-syncedInput-rework task 4): the radial input slice was deleted
+
+**Was:** *`PlayerInput::zero()` carries `(0,0,1)`, never `PlayerInput{}`*. The entry below is the
+text as task 19 and og-syncedInput-rework task 3 left it.
+
+**Tag site:** `DAttackRadialSimulation.h`, on `static PlayerInput zero()`.
+
+**The fence, verbatim** <!-- pristine lines 251-253 -->:
+```
+	// ⛔ (0,0,1) forwards, NOT PlayerInput{}: a value-initialised (0,0,0) aim would
+	// reach normalize(), and the difference is also the TAG the input-resolution and
+	// net-sync anti-vacuity tests discriminate on. Keep zero() != PlayerInput{}.
+```
+
+**The prohibition.** Do not substitute `zero()`'s return value with `PlayerInput{}`, or with any
+aim other than `glm::vec3(0.f, 0.f, 1.f)`. The value was copied verbatim from what
+`getZeroPlayerInput()` returned before movement-sim task 22 folded the neutral input into
+`SimulationComposite::zero()`. It is a wire value, not something to re-derive.
+
+**What breaks if the edit is made.**
+* ⛔ **Not a NaN hazard; corrected at task 19.** Both halves of the fence's first sentence are false.
+  `(0,0,1)` is +Z, which is `defaultUp`, not forwards: `DAttackRadialSequence::defaultForward()` is
+  `(1,0,0)`. And no reader normalizes the raw aim. The machine, the guard and
+  `DAttackDirectionClassifier.h` all project to XY first, where `(0,0,1)` and `(0,0,0)` are the same zero
+  vector, and the guard substitutes `defaultForward` below length 1e-4. The radial never reads its own
+  slice's aim. Task 18 found the same sentence false in the machine header, and task 19 confirmed it here.
+* `SimulationInputResolutionTest.cpp`'s `isGameZeroInput` tells the injected neutral input apart
+  from a value-initialised one only by this aim. If the two are equal, every anti-vacuity pair it
+  anchors keeps passing while testing nothing.
+* The zero input's wire bytes change. The case DAttack.SimulatableBrawler.ZeroInputIsTheFold pinned
+  them byte for byte, so that case went RED. This was derived from the test's byte-identity
+  assertion and was not run as a mutation.
+
+**Verified 2026-09-23 (R0).** Both consumers and the test were read in the tree.
+
+⚠ **Since og-syncedInput-rework task 3 (2026-10-03) the last two "What breaks" bullets are history.** Task 3
+deleted that case with the six-slice input composite. This slice's `zero()` is no longer on the
+wire and nothing calls it: `simulatableBrawler::getZeroPlayerInput()` returns
+`simulatableBrawler::SyncedPlayerInput::zero()`, and `isGameZeroInput` compares against that. Its
+bytes and its aim are pinned by `SimulatableBrawler.SyncedPlayerInput.ZeroSerializesToTheCapturedBytes`
+and `SimulatableBrawler.SyncedPlayerInput.ZeroIsNotValueInitialised`, and the prohibition is carried
+by `BrawlerSyncedPlayerInput-guards.md` G-02. Task 4 retires this id with the slice.
+
+**Score (§9.1): substitution on the tagged statement → `yes`.**
+
+⛔ **Why it retired.** og-syncedInput-rework task 4 (2026-10-03) deleted `class PlayerInput`, its
+`zero()`, its `SerializableFields` specialization and its `SimulationInput` assertion from
+`DAttackRadialSimulation.h`. The tag stood on `static PlayerInput zero()` and went with it. The
+radial sub-simulation's input is its own empty `PlayerInputView`; it reads no input field at all.
+
+**Successor.** The prohibition is a compile-time check now: the `static_assert`s at the foot of
+`BrawlerSyncedPlayerInput.h`, whose messages end *"Was guard G-02 of BrawlerSyncedPlayerInput-guards.md."*
+(the `(0,0,1)` aim of `simulatableBrawler::SyncedPlayerInput::zero()`) and *"Was guard G-01 of
+BrawlerSyncedPlayerInput-guards.md."* (the value-initialised aim differs from it). Those two guards,
+which carried this entry's prohibition from task 2 on, were retired into the assertions in the same
+change (`BrawlerSyncedPlayerInput-guards.md` §R).
+
+---
+
+### G-02 — RETIRED (og-syncedInput-rework task 4): the radial input slice was deleted
+
+**Was:** *`aimDirection` keeps a `(0,0,0)` default*. The entry below is the text as task 19 and
+og-syncedInput-rework task 3 left it.
+
+**Tag site:** `DAttackRadialSimulation.h`, on `glm::vec3 aimDirection{};` in `PlayerInput`.
+
+**Source.** This is the second way to break G-01's `zero() != PlayerInput{}`, and G-01's fence
+does not name it. Until og-syncedInput-rework task 3 deleted that case (2026-10-03), the fence text
+lived in `SimulatableBrawlerTest.cpp`'s banner for the case DAttack.SimulatableBrawler.ZeroInputIsTheFold,
+verbatim:
+```
+//     every one of those anti-vacuity pairs keeps passing while testing nothing.
+//     DO NOT change a default member initialiser to close this gap.
+```
+Task 19 split it out as its own id. §9.1 clause A says to score an entry only as written and to
+record an under-described entry as a finding, and this is that finding. The edit is typed on a
+different statement from G-01's, so it needs its own site (§9.3, the `no (elsewhere)` row: one id
+per site).
+
+**The prohibition.** Do not give `aimDirection` a default member initialiser of `(0,0,1)`, or of
+any value equal to `zero()`'s aim. That would make `PlayerInput{}` equal to `zero()`.
+
+**What breaks if the edit is made.** The same anti-vacuity blind spot as G-01. Nothing fails, and
+the neutral-input tests stop being able to see the defect they exist to catch.
+
+**Score (§9.1): substitution on the tagged token → `yes`.**
+
+⛔ **Why it retired.** The same deletion as G-01. The tag stood on `glm::vec3 aimDirection{};` in
+the radial `PlayerInput` and went with the class.
+
+**Successor.** The prohibition is a compile-time check now: the `static_assert`s at the foot of
+`BrawlerSyncedPlayerInput.h`, whose messages end *"Was guard G-02 of BrawlerSyncedPlayerInput-guards.md."*
+(the `(0,0,1)` aim of `simulatableBrawler::SyncedPlayerInput::zero()`) and *"Was guard G-01 of
+BrawlerSyncedPlayerInput-guards.md."* (the value-initialised aim differs from it). Those two guards,
+which carried this entry's prohibition from task 2 on, were retired into the assertions in the same
+change (`BrawlerSyncedPlayerInput-guards.md` §R).
+

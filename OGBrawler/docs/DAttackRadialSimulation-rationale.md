@@ -271,7 +271,13 @@ two rigs whose engine handles differ byte for byte. Planting the per-process roo
 
 ## 5. Inputs, state, dependencies and serialization
 
-* **`PlayerInput`** is a plain aggregate (task 43). C++20 parenthesised aggregate init keeps
+* **`PlayerInputView`** is the radial's input since og-syncedInput-rework task 3, and it is empty: the
+  radial's `integrate` reads no input field. `from()` returns `{}` for any
+  `simulatableBrawler::SyncedPlayerInput`, and the view exists only because every sub-simulation
+  names a `Dependencies::InputType` of its own.
+* ⚠ **The two bullets below are history.** og-syncedInput-rework task 4 (2026-10-03) deleted the
+  radial `PlayerInput` and its `zero()`, and retired guards G-01 and G-02 with them (guards §R).
+* **`PlayerInput`** was a plain aggregate (task 43). C++20 parenthesised aggregate init keeps
   `PlayerInput(aim, left, right)` construct sites valid. The radial's `integrate` never reads its
   own input slice. The slice exists so the composite carries it and packaging can fill it.
 * **`PlayerInput::zero()`** is the neutral input, folded into the composite by

@@ -31,49 +31,6 @@ the prohibitions the compiler already holds, are listed in [§C, the census](#c-
 
 ---
 
-## G-01 — The neutral input is `(0,0,1)` aim, NOT `PlayerInput{}`, and its value is a wire value
-
-**Tag site:** `DAttackMachineSimulation.h`, inside `PlayerInput::zero()`, on its `return` statement.
-
-<!-- header lines 85-91 -->
-```cpp
-// THE NEUTRAL INPUT for this sub-simulation, folded into the composite by
-// SimulationComposite::zero() — which is all getZeroPlayerInput() now is.
-// [movement-sim task 22] The value is copied VERBATIM from what that function
-// handed this type before the fold; it is a wire value, not something to re-derive.
-// ⛔ (0,0,1) forwards, NOT PlayerInput{}: a value-initialised (0,0,0) aim would
-// reach normalize(), and the difference is also the TAG the input-resolution and
-// net-sync anti-vacuity tests discriminate on. Keep zero() != PlayerInput{}.
-```
-
-**The prohibition.** Do not make `zero()` return `PlayerInput{}`, and do not change the value it
-returns. The value was copied verbatim from what the pre-fold `getZeroPlayerInput()` handed this
-slice; it is a wire value, not something to re-derive.
-
-**What breaks if the edit is made.** The neutral input is what the resolution peers substitute for a
-tick that has no input, so a changed value changes the bytes every peer fills a gap with. The
-anti-vacuity assertions that tell "the game zero" apart from a default-constructed input lose the
-field they discriminate on. `DAttack.SimulatableBrawler.ZeroInputIsTheFold` pins both halves at run
-time: the zero input's bytes against a captured copy, and this slice's aim `== (0,0,1)`. A
-`static_assert` was tried and cannot be written: `glm::vec3` has no `constexpr` constructor in this
-build (`C2131`, measured by task 18).
-
-**R0 (verified 2026-09-23).** `SimulationComposite::zero()` folds each slice's `zero()`, and
-`simulatableBrawler::getZeroPlayerInput()` is `return PlayerInput::zero();`: true. Two parts of the
-quote are not:
-* `(0,0,1)` is **+Z, `defaultUp`** in this header's own frame (`defaultForward` is `(1,0,0)`). It is
-  not "forwards".
-* For **this** slice, "a value-initialised (0,0,0) aim would reach normalize()" is not what separates
-  the two values. Every read of the machine aim projects it onto XY first (the Hadouken trigger,
-  `setRadialSimulationInitialConditions` and `dAttackDirection::classify`), and `(0,0,1)` and `(0,0,0)`
-  project to the same zero vector. The neutral input also presses no attack button, so it reaches
-  none of those reads. The prohibition stands on the other two reasons: the wire value and the test
-  tag.
-
-**Placement.** A substitution on the tagged `return`: typed under the tag.
-
----
-
 ## G-02 — `swingTickCount` repeats the radial's float additions; never `ceil(duration / dt)`, never `k * dt`
 
 **Tag site:** `DAttackMachineSimulation.h`, `dAttackMachineSimulation::swingTickCount`, on
@@ -322,12 +279,12 @@ on a shadow copy and compiled it (single translation unit, the `OGBrawlerTests` 
 | # | prohibition (pre-conversion lines) | disposition | shape |
 |---|---|---|---|
 | 1 | never include `BrawlerMovementSimulation.h`, directly or transitively (14-17, 559-563) | **compiler-held, measured**: `C2653` in every TU that reaches this header first, `SimulatableBrawler.h` included. Clean only when the movement header is entered first. No entry; rationale §1 | addition, typed in the include list or in another header |
-| 2 | `PlayerInput` fields are not `const` (73) | **compiler-held, measured**: `C2678`/`C3892` wherever the input is deserialized (`readFromSyncedBuffer`), as `InputRedundancyBundleCodec.h` and `RelayedInputRingCodec.h` do. Rationale §3 | substitution |
-| 3 | `triggeredActionId` stays last (79-83) | **compiler-held, measured**: `C2440` in `zero()`'s five-argument initializer | reorder |
+| 2 | `PlayerInput` fields are not `const` (73) | **compiler-held, measured**: `C2678`/`C3892` wherever the input is deserialized (`readFromSyncedBuffer`), as `InputRedundancyBundleCodec.h` and `RelayedInputRingCodec.h` do. Rationale §3. ⚠ Since og-syncedInput-rework task 4 the type is deleted; the deserialized input is `simulatableBrawler::SyncedPlayerInput`, which the same codecs read | substitution |
+| 3 | `triggeredActionId` stays last (79-83) | **compiler-held, measured**: `C2440` in `zero()`'s five-argument initializer. ⚠ Since og-syncedInput-rework task 4 that `zero()` is deleted; the wire field order is held by the descriptor-tuple `static_assert` in `BrawlerSyncedPlayerInput.h` | reorder |
 | 4 | `kDAttackStateCount` bumped with the enum (59-60) | **converted by task 18**: a `static_assert` plus C4062-as-error around `dAttackStateName`. Every poison fired (add only, add + name, add + bump, a mid-enum insert), and the full edit compiled clean | addition, typed at the enum |
 | 5 | write `spawnDir`, NOT velocity (660-661) | **compiler-held, measured**: `C2039`, there is no velocity field | substitution |
 | 6 | `inboundHit` is a plain parameter, NOT an `ExternalDeps` entry (19-21, 586-591) | **compiler-held, measured**: `C2338` "UNOWNED EXTERNAL REF" | addition, typed in `Dependencies` |
-| 7 | the neutral input is `(0,0,1)`, never `PlayerInput{}` (85-91) | **G-01** | substitution |
+| 7 | the neutral input is `(0,0,1)`, never `PlayerInput{}` (85-91) | **G-01**, retired by og-syncedInput-rework task 4 (§R); now `static_assert`s in `BrawlerSyncedPlayerInput.h` | substitution |
 | 8 | `swingTickCount` is the radial's loop (147-163) | **G-02** (a `static_assert` was tried and rejected as vacuous) | deletion + substitution |
 | 9 | `glm::abs`, never unqualified `abs` (235-244) | **G-03** | substitution |
 | 10 | projectile-block recoil from any origin state (610-622) | **G-04** | addition |
@@ -343,9 +300,93 @@ on a shadow copy and compiled it (single translation unit, the `OGBrawlerTests` 
 **By shape:** 7 tagged, all typed on the tagged statement (3 substitution, 1 addition, 1 deletion,
 1 deletion + substitution, 1 absence). 2 ordering constraints, untagged. 5 compiler-held (measured).
 1 converted by a new assertion. 3 facts with no forbidden edit, in the rationale.
+⚠ Since og-syncedInput-rework task 4: 6 tagged; G-01 retired with the type it stood on.
 
 ---
 
 ## §R — Retired ids
 
-*(None.)*
+⛔ **Spent forever.** This number may not appear as a `⛔G-nn` tag again.
+
+---
+
+### G-01 — RETIRED (og-syncedInput-rework task 4): the machine input slice was deleted
+
+**Was:** *The neutral input is `(0,0,1)` aim, NOT `PlayerInput{}`, and its value is a wire value*.
+The entry below is the text as task 18 and og-syncedInput-rework task 3 left it.
+
+**Tag site:** `DAttackMachineSimulation.h`, inside `PlayerInput::zero()`, on its `return` statement.
+
+<!-- header lines 85-91 -->
+```cpp
+// THE NEUTRAL INPUT for this sub-simulation, folded into the composite by
+// SimulationComposite::zero() — which is all getZeroPlayerInput() now is.
+// [movement-sim task 22] The value is copied VERBATIM from what that function
+// handed this type before the fold; it is a wire value, not something to re-derive.
+// ⛔ (0,0,1) forwards, NOT PlayerInput{}: a value-initialised (0,0,0) aim would
+// reach normalize(), and the difference is also the TAG the input-resolution and
+// net-sync anti-vacuity tests discriminate on. Keep zero() != PlayerInput{}.
+```
+
+**The prohibition.** Do not make `zero()` return `PlayerInput{}`, and do not change the value it
+returns. The value was copied verbatim from what the pre-fold `getZeroPlayerInput()` handed this
+slice; it is a wire value, not something to re-derive.
+
+**What breaks if the edit is made.** The neutral input is what the resolution peers substitute for a
+tick that has no input, so a changed value changes the bytes every peer fills a gap with. The
+anti-vacuity assertions that tell "the game zero" apart from a default-constructed input lose the
+field they discriminate on. Until og-syncedInput-rework task 3, the case
+DAttack.SimulatableBrawler.ZeroInputIsTheFold pinned both halves at run time: the zero input's bytes
+against a captured copy, and this slice's aim `== (0,0,1)`. A `static_assert` was tried and cannot be
+written: `glm::vec3` has no `constexpr` constructor in this build (`C2131`, measured by task 18).
+
+⚠ **Since og-syncedInput-rework task 3 (2026-10-03) this paragraph is history.** Task 3 deleted that
+case with the six-slice input composite. This slice's `zero()` is no longer on the wire and nothing
+calls it: `simulatableBrawler::getZeroPlayerInput()` returns `simulatableBrawler::SyncedPlayerInput::zero()`,
+and the resolution tests' `isGameZeroInput` compares against that. The same two halves are now
+pinned on that type: `SimulatableBrawler.SyncedPlayerInput.ZeroSerializesToTheCapturedBytes` (its
+39 bytes) and `SimulatableBrawler.SyncedPlayerInput.ZeroIsNotValueInitialised` (aim `== (0,0,1)`, and
+unequal to the value-initialised input). The prohibition on the wire value is carried by
+`BrawlerSyncedPlayerInput-guards.md` G-02. Task 4 retires this id with the slice.
+
+**R0 (verified 2026-09-23).** `SimulationComposite::zero()` folds each slice's `zero()`, and
+`simulatableBrawler::getZeroPlayerInput()` is `return PlayerInput::zero();`: true. Two parts of the
+quote are not:
+* `(0,0,1)` is **+Z, `defaultUp`** in this header's own frame (`defaultForward` is `(1,0,0)`). It is
+  not "forwards".
+* For **this** slice, "a value-initialised (0,0,0) aim would reach normalize()" is not what separates
+  the two values. Every read of the machine aim projects it onto XY first (the Hadouken trigger,
+  `setRadialSimulationInitialConditions` and `dAttackDirection::classify`), and `(0,0,1)` and `(0,0,0)`
+  project to the same zero vector. The neutral input also presses no attack button, so it reaches
+  none of those reads. The prohibition stands on the other two reasons: the wire value and the test
+  tag.
+
+**Placement.** A substitution on the tagged `return`: typed under the tag.
+
+⛔ **Why it retired.** og-syncedInput-rework task 4 (2026-10-03) deleted `class PlayerInput`, its
+`zero()`, its `SerializableFields` specialization and its `SimulationInput` assertion from
+`DAttackMachineSimulation.h`. The tag stood on the `return` inside `zero()` and went with it. The
+machine reads its input through its own `PlayerInputView`, filled from `simulatableBrawler::SyncedPlayerInput`.
+
+⚠ **R0 on the text above (2026-10-03).**
+* *"The neutral input also presses no attack button, so it reaches none of those reads"* is
+  **FALSE**. The chain branch of `integrate3` starts `m_queuedAttackSequence` when the current
+  sequence ends, whatever this tick's buttons are, and calls `setRadialSimulationInitialConditions`,
+  which normalizes the aim's XY projection with no length check. A neutral-filled tick at the end
+  of a swing with a queued chain therefore reaches that read and normalizes a zero vector. Both
+  candidate aims project to the same zero vector there, so the conclusion stands: the choice between
+  them changes nothing for that reader, and the prohibition rested on the wire value and the test
+  tag. The missing length check is a pre-existing defect, not fixed by this retirement. Found by
+  og-syncedInput-rework task 2; re-verified on this tree.
+* *"A `static_assert` was tried and cannot be written: `glm::vec3` has no `constexpr` constructor"*
+  is not what the compiler does. `glm::vec3(0.f, 0.f, 1.f)` is a constant expression; a
+  value-initialised `glm::vec3{}` member read in a constant expression is `C2131`. The successor is
+  exactly such an assertion.
+
+**Successor.** The prohibition is a compile-time check now: the `static_assert`s at the foot of
+`BrawlerSyncedPlayerInput.h`, whose messages end *"Was guard G-02 of BrawlerSyncedPlayerInput-guards.md."*
+(the `(0,0,1)` aim of `simulatableBrawler::SyncedPlayerInput::zero()`) and *"Was guard G-01 of
+BrawlerSyncedPlayerInput-guards.md."* (the value-initialised aim differs from it). Those two guards,
+which carried this entry's prohibition from task 2 on, were retired into the assertions in the same
+change (`BrawlerSyncedPlayerInput-guards.md` §R).
+

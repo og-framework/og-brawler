@@ -12,21 +12,22 @@
 
 namespace simulatableBrawler
 {
-// ⛔G-01  docs/BrawlerInputPackaging-guards.md
 struct ContinuousInputFields
 {
     // ⛔G-03  docs/BrawlerInputPackaging-guards.md
-    glm::vec3 aimDirection      = dAttackRadialSimulation::PlayerInput::zero().aimDirection;
+    glm::vec3 aimDirection      = SyncedPlayerInput::zero().aimDirection;
     glm::vec2 moveStick         = glm::vec2(0.f, 0.f);
     glm::vec3 moveDirectionWorld = glm::vec3(0.f, 0.f, 0.f);
 };
 
 static_assert(inputSequence::kNoMatch == 0u,
     "simulatableBrawler: inputSequence::kNoMatch must stay 0. A default-constructed "
-    "ContinuousInputFields packs to getZeroPlayerInput() in four slices of five, and the MACHINE "
-    "slice matches ONLY because kNoMatch happens to equal that slice's own defaulted "
-    "triggeredActionId. Make kNoMatch non-zero and the machine slice diverges too, with no other "
-    "diagnostic anywhere in the tree. Was guard G-02, now retired; rationale section 2.");
+    "ContinuousInputFields packed with neutral discrete arguments equals getZeroPlayerInput() FIELD "
+    "FOR FIELD, and triggeredActionId matches ONLY because kNoMatch happens to equal "
+    "SyncedPlayerInput's own defaulted triggeredActionId. Make kNoMatch non-zero and that field "
+    "diverges, with no other diagnostic anywhere in the tree. Was guard G-02, now retired; "
+    "rationale section 2. Until og-syncedInput-rework task 3 this message read \"four slices of "
+    "five\" and \"the MACHINE slice\": the six-slice input composite is gone.");
 
 // ⛔G-04  docs/BrawlerInputPackaging-guards.md
 template <typename Src>
@@ -58,19 +59,14 @@ inline PlayerInput makeSimPlayerInput(const ContinuousInputFields& fields,
     if (flagFields.holdGuard)
         flags = static_cast<uint8_t>(flags | brawlerMovementSimulation::kInputFlagHoldGuard);
 
-    brawlerMovementSimulation::PlayerInput movementInput;
-    movementInput.flags = flags;
-
-    return PlayerInput(
-        dAttackRadialSimulation::PlayerInput(fields.aimDirection, leftAttack, rightAttack),
-        dAttackMachineSimulation::PlayerInput(fields.aimDirection, leftAttack, rightAttack,
-                                              fields.moveStick, fields.moveDirectionWorld,
-                                              triggeredActionId),
-        dAttackGuardSimulation::PlayerInput(fields.aimDirection),
-        brawlerProjectileSimulation::PlayerInput{fields.aimDirection},
-        // ⛔G-13  docs/BrawlerInputPackaging-guards.md
-        movementInput,
-        brawlerRingout::PlayerInput{});
+    return PlayerInput{
+        .aimDirection       = fields.aimDirection,
+        .attackLeft         = leftAttack,
+        .attackRight        = rightAttack,
+        .moveStick          = fields.moveStick,
+        .moveDirectionWorld = fields.moveDirectionWorld,
+        .triggeredActionId  = triggeredActionId,
+        .flags              = flags };
 }
 
 namespace detail

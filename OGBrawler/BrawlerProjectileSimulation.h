@@ -20,6 +20,7 @@
 #include "OGSimulation/BodyId.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
 #include "OGBrawler/DAttackRadialSimulation.h"
+#include "OGBrawler/BrawlerSyncedPlayerInput.h"
 #include "OGBrawlerLog.h"
 
 #include "OGSimulation/CompilerControl.h"
@@ -300,19 +301,12 @@ public:
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-class PlayerInput
+struct PlayerInputView
 {
-public:
-    glm::vec3 aimDirection{};
-
-    // THE NEUTRAL INPUT for this sub-simulation, folded into the composite by
-    // SimulationComposite::zero() — which is all getZeroPlayerInput() now is.
-    // [movement-sim task 22] The value is copied VERBATIM from what that function
-    // handed this type before the fold; it is a wire value, not something to re-derive.
-    // ⚠ Unlike radial/machine/guard, this one IS PlayerInput{} today — the pre-fold
-    // getZeroPlayerInput() passed a value-initialised projectile input, so a (0,0,0)
-    // aim is the shipped wire value. Do not "fix" it to (0,0,1): that is a wire change.
-    static PlayerInput zero() { return PlayerInput{}; }
+    static PlayerInputView from(const simulatableBrawler::SyncedPlayerInput&)
+    {
+        return {};
+    }
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -345,7 +339,7 @@ private:
 };
 
 template <typename PhysicsBodyAdapterType>
-using AllInput = SimulationAllInput<PlayerInput, IntegrationUtils<PhysicsBodyAdapterType>>;
+using AllInput = SimulationAllInput<PlayerInputView, IntegrationUtils<PhysicsBodyAdapterType>>;
 
 // [og-netcode-v2-field-defects task 17] The closed-form position of a slot on `tick`,
 // shared by integrate (which snaps the body there) and the detector (which queries there),
@@ -415,7 +409,7 @@ struct Dependencies
         brawlerProjectileSimulation::InitialConditions,
         brawlerProjectileSimulation::State>;
     using External = ExternalDeps<>;
-    using InputType = brawlerProjectileSimulation::PlayerInput;
+    using InputType = brawlerProjectileSimulation::PlayerInputView;
     Owned owned;
     External external;
 };
@@ -680,18 +674,7 @@ struct SerializableFields<brawlerProjectileSimulation::InitialConditions>
     }
 };
 
-template <>
-struct SerializableFields<brawlerProjectileSimulation::PlayerInput>
-{
-    static constexpr auto get()
-    {
-        return std::make_tuple(
-            MemberFieldDesc<&brawlerProjectileSimulation::PlayerInput::aimDirection>{});
-    }
-};
-
 static_assert(SimulationState<brawlerProjectileSimulation::State>);
 static_assert(SimulationInitialConditions<brawlerProjectileSimulation::InitialConditions>);
-static_assert(SimulationInput<brawlerProjectileSimulation::PlayerInput>);
 
 OGSIM_OPTIMIZE_ON

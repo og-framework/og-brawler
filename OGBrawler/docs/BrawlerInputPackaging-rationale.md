@@ -5,9 +5,10 @@ This is the narrative, the derivations and the provenance for the engine-free in
 `ContinuousInputFields`, `readContinuousInputFields`, `InputFlagFields`, `makeSimPlayerInput` and
 `makeVisualizationPlayerInput`. Under `CommentExtractionRule_v2.md` the header keeps **no prose at all**: a licence line, a
 two-line pointer, code, and one `⛔G-nn` tag per guard. Every fence is in
-`BrawlerInputPackaging-guards.md`, each with a stable id, and **six of the sixteen are no longer
-text anywhere**: five became `static_assert`s in the header, and one turned out to be
-enforced by the language already. This file carries everything else:
+`BrawlerInputPackaging-guards.md`, each with a stable id, and **eight of the sixteen are no longer
+live**: five became `static_assert`s in the header, one turned out to be
+enforced by the language already, and two (G-01, G-13) retired in og-syncedInput-rework task 3
+because the thing each guarded left the wire. This file carries everything else:
 the narrative, the derivations, the provenance and the orientation.
 
 **If this file and `BrawlerInputPackaging.h` disagree, the header is authoritative and this file is
@@ -18,8 +19,9 @@ with an id and a `⛔G-nn` tag on the declaration where the wrong line would be 
 in a `static_assert` so that it cannot be skimmed past at all. `tools/lint/guard_tag_lint.ps1` is a
 hard gate on that join in both directions; a fence filed here has no site and no lint row.
 
-⛔ **This file is not the source of truth for any VALUE.** The neutral aims live in each sub-
-simulation's own `zero()`; the flag constants live in `BrawlerMovementSimulation.h`. Where a value
+⛔ **This file is not the source of truth for any VALUE.** The neutral aim lives in
+`SyncedPlayerInput::zero()` (`BrawlerSyncedPlayerInput.h`); the flag constants live in
+`BrawlerMovementSimulation.h`. Where a value
 appears below it is there to make an argument readable.
 
 **Read alongside:** `BrawlerInputPackaging-guards.md` — the prohibitions, by id.
@@ -101,42 +103,55 @@ discrete input:
 
 ---
 
-## 2. `ContinuousInputFields`' defaults, and the one slice they are not neutral for
+## 2. `ContinuousInputFields`' defaults, and why they now pack to the neutral field for field
 
-**What the defaults are.** `aimDirection` is initialised from `dAttackRadialSimulation`'s own
-`PlayerInput::zero().aimDirection` — `(0,0,1)`, which is also the machine and guard sub-simulations'
-neutral aim, each spelled once in its own `zero()`. `moveStick` and `moveDirectionWorld` default to
-the zero vectors those types carry.
+**What the defaults are.** `aimDirection` is initialised from `SyncedPlayerInput::zero().aimDirection`
+— `(0,0,1)`, the neutral aim of the flat wire struct `simulatableBrawler::SyncedPlayerInput`, spelled
+once in `zero()` in `BrawlerSyncedPlayerInput.h` (guard **G-03** forbids re-spelling it here).
+`moveStick` and `moveDirectionWorld` default to the zero vectors that struct carries.
 
-⭐ **The neutral aim is spelled ONCE per sub-simulation, and this header spells none of its own.**
-It is visible here transitively: `SimulatableBrawlerTypes.h` includes `DAttackRadialSimulation.h`,
-so reading the default off the radial sub-simulation cost no new include. That is the whole reason
-the initialiser is written as a function call rather than as a literal.
+⭐ **This header spells no neutral of its own.** `SyncedPlayerInput` is visible here through
+`SimulatableBrawlerTypes.h`, which includes `BrawlerSyncedPlayerInput.h`, so reading the default off
+it cost no new include. That is the whole reason the initialiser is written as a function call
+rather than as a literal.
 
-**The slice that is not neutral.** `brawlerProjectileSimulation::PlayerInput::zero()` returns
-`PlayerInput{}`, so its shipped neutral aim is `(0,0,0)`, not `(0,0,1)`. That type's own comment
-says so and calls fixing it **a wire change** — the pre-fold `getZeroPlayerInput()` passed a
-value-initialised projectile input, and `(0,0,0)` is therefore the shipped wire value.
+**Packed with neutral discrete arguments** (no buttons, `triggeredActionId = inputSequence::kNoMatch`,
+`InputFlagFields{}` — exactly what `makeVisualizationPlayerInput` passes), **a default-constructed
+`ContinuousInputFields` equals `getZeroPlayerInput()` field for field.**
 
-**⚠ So a default-constructed `ContinuousInputFields` packs to `getZeroPlayerInput()` in four slices
-of five, and differs from it in the projectile slice's aim.** An earlier version of the header's
-comment claimed all five matched; that sentence was corrected by `brawler-movement-simulation`
-task 17, following the task-22 review's N-2.
+⛔ **And that rests on a coincidence the reader cannot see.** `triggeredActionId` matches only
+because `inputSequence::kNoMatch` is `0`, which happens to equal `SyncedPlayerInput`'s own defaulted
+`triggeredActionId`. **If `kNoMatch` ever becomes non-zero that field diverges.** Until task 74
+that happened with no compile error anywhere in the tree. ⭐ **That dependency is no longer a
+sentence.** It is a `static_assert` in the header, directly below `ContinuousInputFields`, so a
+non-zero `kNoMatch` is a translation failure in every unit that includes this header rather than a
+claim that quietly goes false. It was guard **G-02**, now retired. ⚠ Note what that changes: the
+edit is typed in `InputSequence/InputSequence.h`, and the person making it now learns about this
+file from the compiler instead of not learning at all.
 
-⛔ **And the four-of-five figure rests on a coincidence the reader cannot see.** The *machine*
-slice matches only because `inputSequence::kNoMatch` is `0`, which happens to equal that slice's own
-defaulted `triggeredActionId`. **If `kNoMatch` ever becomes non-zero the machine slice diverges too
-and the four-of-five sentence goes false.** Until task 74 that happened with no compile error
-anywhere in the tree. ⭐ **That dependency is no longer a sentence.** It is a `static_assert` in the header, directly
-below `ContinuousInputFields`, so a non-zero `kNoMatch` is a translation failure in every unit
-that includes this header rather than a claim that quietly goes false. It was guard **G-02**, now
-retired. ⚠ Note what that changes: the edit is typed in `InputSequence/InputSequence.h`, and the
-person making it now learns about this file from the compiler instead of not learning at all.
+**Nothing depends on the equality.** `getZeroPlayerInput()` returns `SyncedPlayerInput::zero()`
+(`SimulatableBrawlerTypes.h`), never anything built from this struct. The two are related by
+construction, not by an assertion.
 
-**Nothing depends on the equality.** `getZeroPlayerInput()` is built by the composite's own
-`zero()` — the alias is spelled `SimulationInputComposite` at its declaration in
-`SimulatableBrawlerTypes.h` — never from this struct. The two are related by construction, not by
-an assertion.
+### 2.1 History: "four slices of five", and the projectile slice that is gone
+
+Until og-syncedInput-rework task 3 the packer built a SIX-slice composite
+(`SimulationInputComposite` over the radial, machine, guard, projectile, movement and ring-out
+input types), and this section said a default `ContinuousInputFields` packed to
+`getZeroPlayerInput()` **in four slices of five**. The fifth was the projectile slice: its
+`zero()` returned `PlayerInput{}`, so its shipped neutral aim was `(0,0,0)`, not the `(0,0,1)` the
+radial, machine and guard slices used — the pre-fold `getZeroPlayerInput()` had passed a
+value-initialised projectile input, which made `(0,0,0)` a shipped wire value. The radial `zero()`
+was where the neutral aim was read from, and the machine slice matched only through the
+`kNoMatch == 0` coincidence above. An earlier version of the header's comment claimed all five
+matched; that was corrected by `brawler-movement-simulation` task 17, following the task-22
+review's N-2. Guard **G-01** stood on `struct ContinuousInputFields` to stop someone "tidying" the
+projectile neutral into agreement, because that edit moved a shipped wire value.
+
+Task 3 put ONE aim on the wire. The projectile sub-simulation reads no input at all — its
+`Dependencies::InputType` is an empty `PlayerInputView` — so no projectile aim is serialized, the
+divergence cannot reach a peer, and **G-01** is retired (see the guards file, §R). The legacy
+projectile `PlayerInput` type stood, unused, until og-syncedInput-rework task 4 deleted it.
 
 ---
 
@@ -197,10 +212,11 @@ same `static_assert` that forbids the default, because restoring the default **i
 was written against.
 
 **The mirror property.** `InputFlagFields` is the named-field mirror of
-`brawlerMovementSimulation::PlayerInput::flags`, that type's `flags` byte: one `bool` field per bit, each defaulted to
+`SyncedPlayerInput::flags`, the wire struct's `flags` byte (since og-syncedInput-rework task 3; it
+was `brawlerMovementSimulation::PlayerInput::flags` before): one `bool` field per bit, each defaulted to
 that bit's neutral value. Today the mirror has exactly one row: `holdGuard` ↔
 `brawlerMovementSimulation::kInputFlagHoldGuard`, bit 0. Every bit's neutral is `false`, by the
-packing rule at the type — all bits clear **is** `PlayerInput::zero()` — which is why
+packing rule at the type — all bits clear is what `SyncedPlayerInput::zero()` carries — which is why
 `InputFlagFields{}` is guaranteed to stay the neutral argument as flags are added, with no edit at any call site that does not model the new
 signal.
 
@@ -265,6 +281,18 @@ to fix, not this file's.** Task 66's reviewer measured **three** sites in
 `RoundVsPacketBudgetTest.cpp`, not two (its F-1); task 74 re-ran the sweep and confirms three
 (`:306`, `:477`, `:483`), so the survivors number **ten**. Left as task 66 shipped it because
 the correction is routed elsewhere and a half-fix here would hide it.
+
+⭐ **Since og-syncedInput-rework task 4 (2026-10-03) no present-tense site says otherwise.** Task 4
+absorbed task 71 and task 58's item 3 and ran a joined-text sweep (claims wrap across lines) over
+og-brawler, og-brawler-tests, og-simulation and the UE modules. The sites it corrected:
+`kInputFlagHoldGuard`'s `static_assert` message in `BrawlerMovementSimulation.h` (the header's
+other prose sites had already moved into `BrawlerMovementSimulation-rationale.md` as verbatim
+quotes, flagged by its R0-03 and R0-09), `BrawlerMovementSimulationTest.cpp` (one),
+`MakeSimPlayerInputFlagsTest.cpp` (two), `RoundVsPacketBudgetTest.cpp` (two, both dated ledger
+entries now carrying the correction in place) and a jump comment in
+`OGBrawlerInputCollectionComponent.cpp`. On the tree task 4 stood on, the sweep found two sites in
+`RoundVsPacketBudgetTest.cpp`, not three, and none in `SimulatableBrawlerTest.cpp`. The two
+paragraphs above are kept as the record of what task 66 and task 74 saw.
 
 ⭐ **The rule the false claim was attached to is true and unaffected:** a new per-tick input signal
 is a **bit in the existing byte**, never a new member. One `bool` would spend far more of the input
@@ -348,55 +376,37 @@ in the signature stops a caller feeding a cosmetic `PlayerInput` to the wire.
 
 ---
 
-## 7. The composite is positional
+## 7. The wire struct is built by name
 
-The `return` statement assembles a `simulatableBrawler::PlayerInput` from its sub-simulation
-slices, **by position**. There is exactly one site in the tree that does this, which is why guard
-**G-13** is tagged on the `movementInput` argument of the `return`: appending a sub-simulation costs one line
-here and **no UE edit at all**, because both UE builders route through this function.
-⚠ The sentence this replaces said the header *"names each slice in a comment at the call"*.
-It named ONE — the movement slice, the one the fence was about; the other four carried no
-comment. Corrected rather than moved.
+The `return` statement builds a `simulatableBrawler::PlayerInput` — since og-syncedInput-rework task 3
+an alias of the flat `SyncedPlayerInput` — with **C++20 designated initializers**, one per field, in
+declaration order. There is exactly one site in the tree that turns packer arguments into the wire
+struct. The compiler rejects a designator written out of declaration order, so the positional
+transposition the old composite allowed is gone. ⚠ It does **not** reject an OMITTED designator —
+that field silently takes its default — which is why `InputViewSpecTest.cpp` asserts every packer
+argument against the view field that reads it.
 
-⚠ **Three sentences in this section were true of a five-slice composite and had gone stale.**
-The sixth slice (§ 7.1) landed after this document was written: the composite is no longer five
-slices, the movement slice is no longer the newest, and `G-13` no longer sits on the LAST
-argument of the `return` — it sits, as it always did, on `movementInput`, which stopped being
-last. The guard entry itself always named the right site; only these sentences drifted.
+**What a new input costs** (this is the cost estimate guard **G-13** used to hand on, re-derived for
+the flat struct): a new per-tick input is a field on `SyncedPlayerInput` (append only — its
+layout `static_assert` names the codec version constants to bump), one designator here, and the
+UE builder that captures it (`buildPlayerInput`), plus a field on each sub-simulation `PlayerInputView`
+that reads it, written in that sub-simulation's own header. The recipe is in
+`BrawlerSyncedPlayerInput-rationale.md`. A new **flag** stays cheaper: a named field on
+`InputFlagFields` and a bit in the existing `flags` byte (§5.4), with no wire-struct edit at all.
 
-The movement slice was the newest of the five. At T1 it was empty — the movement sub-simulation
-consumed no input then, and the header said so. That ended when task 14 landed the writer above it:
-the slice now carries the input flags byte, and `SerializableFields<brawlerMovementSimulation::PlayerInput>`
-carries `flags` on the wire.
+### 7.1 History: the positional composite, and the slice that could only be default
 
-### 7.1 The sixth slice, and why nothing explains it at the call
+Until task 3 the `return` assembled a six-slice `SimulationInputComposite` **by position**, and
+guard **G-13** was tagged on its `movementInput` argument: appending a sub-simulation's input slice
+cost one line here and no UE edit, because both UE builders route through this function. The sixth
+slice, `brawlerRingout::PlayerInput{}`, had no fields at all; it was on the composite because
+`ValidDependencies` requires every sub-simulation to name a `Dependencies::InputType`, and the
+ownership validator treats that type as OWNED — naming a neighbour's input type there is an
+`OwnershipOverlap` translation failure. That requirement still holds, and ring-out now satisfies
+it with an empty `brawlerRingout::PlayerInputView` that is not on the wire: a death is positional and a
+respawn is a tick countdown, so there is still nothing for a player to press.
 
-`brawlerRingout::PlayerInput{}` sits after `movementInput` in the `return`, and it is the only
-slice here that can never be anything but default-constructed: the type has no fields at all. The
-others are each handed something — the radial, machine, guard and projectile slices take
-`fields.aimDirection` (the machine slice takes five further values beside it), and the movement
-slice takes the flags byte assembled above.
-
-It is on the composite because `ValidDependencies` requires every sub-simulation to name a
-`Dependencies::InputType`, and the composite's ownership validator treats that type as OWNED by
-the sub-simulation that names it — pointing it at a neighbour's input type is an
-`OwnershipOverlap` translation failure, not a style choice. It is **not** there because ring-out
-reads a button: a death is positional (the body's Z against an authored kill plane) and a respawn
-is a tick countdown, so there is nothing for a player to press.
-
-⛔ **The prohibition that used to stand here as a comment is a `static_assert`, and this document
-deliberately does not restate it.** `BrawlerRingoutSimulation.h` asserts
-`syncSize<brawlerRingout::PlayerInput>() == 0u` — in the same file as the type, below its
-`SerializableFields` specialization, which is the other half of the edit it forbids. ⚠ It does
-**not** sit at the class declaration; it stands far below it, past that specialization, so it
-is caught at BUILD time rather than at the keyboard. An input byte is multiplied
-across every entry of every relayed input ring, so one of them costs roughly **ten times** what a
-state byte costs; the exact arithmetic is in that assertion's message and is derived in
-`RoundVsPacketBudgetTest.cpp`'s pre-diet table. Ring-out task 11 deleted a ten-line block from the
-header that said all of this in prose, because the assertion already forbade the edit the prose
-described and cannot be skimmed past.
-
-⚠ Note the boundary of what the assertion covers, because it is exactly the right one: a member
-added to that class but left out of `SerializableFields<brawlerRingout::PlayerInput>` does not
-fire it — and does not ride the wire either, so it costs no margin. The assertion fences the
-wire cost, which is the whole of the prohibition.
+The `static_assert(syncSize<brawlerRingout::PlayerInput>() == 0u)` in `BrawlerRingoutSimulation.h`
+stood beside the unused legacy type until og-syncedInput-rework task 4 deleted both. The wire cost it priced
+— an input byte is multiplied across every entry of every relayed input ring — is now carried by
+`SyncedPlayerInput`'s size assertion and by `RoundVsPacketBudgetTest.cpp`.

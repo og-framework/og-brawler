@@ -49,6 +49,7 @@
 // movement header (it reads that State and writes that InitialConditions), so this include
 // adds no new external dependency to this file beyond the one already above it.
 #include "OGBrawler/BrawlerRingoutSimulation.h"
+#include "OGBrawler/BrawlerSyncedPlayerInput.h"
 #include "OGSimulation/SimulationDependencies.h"
 
 #include "OGSimulation/CompilerControl.h"
@@ -64,7 +65,7 @@ namespace simulatableBrawler
 //   -> movementIC (16 B) -> movementState (61 B)
 //   -> ringoutIC (4 B) -> ringoutState (5 B)
 // ⚠ [movement-sim task 17] `movementIC` read "(0 bytes)" until here. Stale since task 11 put
-// the teleport seed on the wire — the SAME defect as the input-order comment further down,
+// the teleport seed on the wire — the SAME defect as the former input-order comment below,
 // found by this task's widened sweep rather than by the routed list, which named only that one.
 // (projectile slices appended last per Task 15; machine writes projectileIC, projectile
 //  consumes it — see ExecutionOrder below.)
@@ -156,33 +157,7 @@ private:
     DerivedState m_derivedState;
 };
 
-// Serialization wire order, with each slice's SHIPPED byte count — re-derived from the fence
-// (`SimulatableBrawlerTest.cpp`, `kZeroInputWireBytes == 77`) by [movement-sim task 17], which
-// found the movement entry still reading `(0 bytes)`, stale since task 11 put a byte there:
-//   radialInput (14) -> machineInput (38) -> guardInput (12) -> projectileInput (12)
-//     -> movementInput (1) -> ringoutInput (0) = 77 B
-// ⛔ The movement byte is the `PlayerInput::flags` byte, and it is the SCARCE wire: read the
-// packing rule at that type before adding a signal to it.
-//
-// ⭐ [ringout task 2, 2026-09-13] `ringoutInput` IS ZERO BYTES AND THE TOTAL IS STILL 77 B.
-// `brawlerRingout::PlayerInput` has no fields and an EMPTY `SerializableFields` tuple; it is
-// here only because `ValidDependencies` requires `Dependencies::InputType` and the ownership
-// validator treats that type as OWNED — naming a neighbour's input there reports an
-// `OwnershipOverlap`. Ring-out needs no per-tick player signal: death is positional and
-// respawn is a tick countdown.
-// ⛔ THIS IS NOT A FREE SLOT TO GROW LATER. One INPUT-composite byte costs ~10.264 B of packet
-// margin against ~27.352 B of slack (`RoundVsPacketBudgetTest.cpp`'s pre-diet table), roughly
-// ten times what a STATE byte costs, because it is multiplied across every entry of every
-// relayed ring. `REQUIRE(ringWireBytes(1u) == 86u)` is the fence that says so, and this task
-// re-quoted it UNCHANGED.
-using PlayerInput = SimulationInputComposite<
-    dAttackRadialSimulation::PlayerInput,
-    dAttackMachineSimulation::PlayerInput,
-    dAttackGuardSimulation::PlayerInput,
-    brawlerProjectileSimulation::PlayerInput,
-    brawlerMovementSimulation::PlayerInput,
-    brawlerRingout::PlayerInput
->;
+using PlayerInput = SyncedPlayerInput;
 
 // THE NEUTRAL INPUT.
 inline PlayerInput getZeroPlayerInput() { return PlayerInput::zero(); }
@@ -470,6 +445,16 @@ inline constexpr auto executionViolation_ =
 using ExecutionOrderDiagnostic_ =
     compositeDetail::DecodeViolation<ExecutionOrder, executionViolation_>;
 static_assert(sizeof(ExecutionOrderDiagnostic_) >= 0);
+
+template <typename Tuple> struct EveryInputTypeIsAView_;
+template <typename... Deps>
+struct EveryInputTypeIsAView_<std::tuple<Deps...>>
+    : std::bool_constant<(BrawlerInputView<typename Deps::InputType> && ...)> {};
+static_assert(EveryInputTypeIsAView_<ExecutionOrder>::value,
+    "Every sub-simulation in ExecutionOrder must declare Dependencies::InputType as its own PlayerInputView "
+    "(simulatableBrawler::BrawlerInputView): the view must provide static PlayerInputView from(const "
+    "simulatableBrawler::SyncedPlayerInput&) in that sub-simulation's own header, must NOT be Serializable "
+    "(only SyncedPlayerInput goes on the wire), and must be trivially copyable.");
 
 // ---------------------------------------------------------------------------
 // [movement-sim task 29, F-G6a] THE ORDERING EDGE THE VALIDATOR ABOVE CANNOT SEE.

@@ -132,7 +132,7 @@ MappingContext buildDefaultContext()
 	// dInput::stickRouting::guardFreezeRequested), while BlockLook owns cursor/mouse-aim suppression.
 	// ⚠ [movement-sim task 17] It said "freezes CMC movement" until here. The CMC was retired
 	// by task 15; the freeze is now step 1 of `brawlerMovementSimulation::integrate`, reached
-	// through the `kInputFlagHoldGuard` bit of the movement sub-sim's input flags byte.
+	// through the `kInputFlagHoldGuard` bit of SyncedPlayerInput's input flags byte.
 	{
 		ActionMapping mapping;
 		mapping.action = &HoldGuard;

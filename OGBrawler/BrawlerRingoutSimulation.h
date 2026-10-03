@@ -12,6 +12,7 @@
 #include "OGSimulation/SimulationDependencies.h"
 #include "OGSimulation/SimulationFieldDescriptors.h"
 #include "OGBrawler/BrawlerMovementSimulation.h"
+#include "OGBrawler/BrawlerSyncedPlayerInput.h"
 #include "OGBrawlerLog.h"
 
 #include "OGSimulation/CompilerControl.h"
@@ -122,10 +123,12 @@ public:
     bool diedThisTick = false;
 };
 
-class PlayerInput
+struct PlayerInputView
 {
-public:
-    static PlayerInput zero() { return PlayerInput{}; }
+    static PlayerInputView from(const simulatableBrawler::SyncedPlayerInput&)
+    {
+        return {};
+    }
 };
 
 class IntegrationUtils
@@ -170,7 +173,7 @@ static_assert(RingoutStepExposesDeltaTime<DeltaTimeConceptProbe>,
     "are class TEMPLATES on the two adapters this sub-simulation is deliberately not handed, "
     "so none of them can be named here without an instantiation. Hence the probe type.");
 
-using AllInput = SimulationAllInput<PlayerInput, IntegrationUtils>;
+using AllInput = SimulationAllInput<PlayerInputView, IntegrationUtils>;
 
 struct Dependencies
 {
@@ -180,7 +183,7 @@ struct Dependencies
     using External = ExternalDeps<
         const brawlerMovementSimulation::State&,
         brawlerMovementSimulation::InitialConditions&>;
-    using InputType = brawlerRingout::PlayerInput;
+    using InputType = brawlerRingout::PlayerInputView;
     Owned owned;
     External external;
 };
@@ -329,15 +332,6 @@ struct SerializableFields<brawlerRingout::State>
     }
 };
 
-template <>
-struct SerializableFields<brawlerRingout::PlayerInput>
-{
-    static constexpr auto get()
-    {
-        return std::make_tuple();
-    }
-};
-
 static_assert(!Serializable<brawlerRingout::DerivedState>,
     "brawlerRingout::DerivedState is OFF THE WIRE and must stay there. diedThisTick is a "
     "single-tick EDGE recomputed from scratch at the top of every step including every "
@@ -376,7 +370,6 @@ static_assert(std::is_same_v<
 
 static_assert(SimulationState<brawlerRingout::State>);
 static_assert(SimulationInitialConditions<brawlerRingout::InitialConditions>);
-static_assert(SimulationInput<brawlerRingout::PlayerInput>);
 
 static_assert(ValidDependencies<brawlerRingout::Dependencies>);
 
@@ -384,14 +377,5 @@ static_assert(syncSize<brawlerRingout::InitialConditions>() == 4u,
     "brawlerRingout::InitialConditions is one uint32_t spawnSlot = 4 B.");
 static_assert(syncSize<brawlerRingout::State>() == 5u,
     "brawlerRingout::State is one uint8_t flags + one uint32_t respawnAtTick = 5 B.");
-static_assert(syncSize<brawlerRingout::PlayerInput>() == 0u,
-    "brawlerRingout::PlayerInput carries NO per-tick signal and must cost nothing. An input "
-    "byte is multiplied across every entry of every relayed input ring: measured at the "
-    "pre-diet character cap of 4, ONE byte here closes 10.264 B of the join-alone margin "
-    "and 10.764 B of the 27.352 B of slack above the half-entry floor - about ten times "
-    "what a STATE byte costs. Was the ten-line ring-out prose block at the "
-    "makeSimPlayerInput call in BrawlerInputPackaging.h, deleted by ringout task 11 "
-    "because this line already forbade the edit that block described. The arithmetic is "
-    "RoundVsPacketBudgetTest.cpp's pre-diet table.");
 
 OGSIM_OPTIMIZE_ON

@@ -92,8 +92,8 @@ struct CaptureRowFields
 // Reading the other field here would draw a glyph for a sector the matcher never
 // tested, which is the single disagreement this display exists to rule out.
 // ---------------------------------------------------------------------------
-inline CaptureRowFields captureRowFieldsOf(const dAttackMachineSimulation::PlayerInput& capture,
-                                           float                                        deadzone)
+inline CaptureRowFields captureRowFieldsOf(const simulatableBrawler::PlayerInput& capture,
+                                           float                                   deadzone)
 {
 	CaptureRowFields fields;
 
@@ -118,7 +118,7 @@ struct InputHistoryPollCounts
 // The `History` shape, structural rather than a C++ concept, matching the one
 // BrawlerMotionMatching.h already specifies and DelayLineMotionHistory satisfies:
 //
-//     const dAttackMachineSimulation::PlayerInput* at(uint32_t tick) const;
+//     const simulatableBrawler::PlayerInput* at(uint32_t tick) const;
 //
 // It MUST answer nullptr for a tick the source never captured. A source that
 // substituted a neutral would fabricate a row for every absent tick.
@@ -136,7 +136,7 @@ void mergeResidentCaptures(const History&          history,
 	{
 		const uint32_t tick = window.oldestTick + offset;
 
-		const dAttackMachineSimulation::PlayerInput* capture = history.at(tick);
+		const simulatableBrawler::PlayerInput* capture = history.at(tick);
 		if (capture == nullptr)
 			continue;
 

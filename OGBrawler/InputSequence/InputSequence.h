@@ -10,10 +10,6 @@
 #include "glm/geometric.hpp"
 #include "glm/common.hpp"
 
-// Forward-declare the PlayerInput type the HistoryAccessor returns.
-// Callers that include this header also include the full dAttackMachineSimulation header.
-namespace dAttackMachineSimulation { class PlayerInput; }
-
 namespace inputSequence
 {
 
@@ -106,7 +102,7 @@ inline float angularDistance(float a, float b)
 // ---------------------------------------------------------------------------
 // matchSequence
 //
-// HistoryAccessor: callable (uint32_t tick) -> const dAttackMachineSimulation::PlayerInput*
+// HistoryAccessor: callable (uint32_t tick) -> const simulatableBrawler::PlayerInput*
 //   Must return nullptr for ticks outside the history window.
 //
 // Each MotionStep is a waypoint: a frame matches it if
@@ -172,8 +168,7 @@ uint32_t matchSequence(
             bool stepFound = false;
             for (int t = searchHi; t >= clampedLo; --t)
             {
-                const dAttackMachineSimulation::PlayerInput* entry =
-                    inputAt(static_cast<uint32_t>(t));
+                const auto* entry = inputAt(static_cast<uint32_t>(t));
                 if (!entry)
                     continue;
 

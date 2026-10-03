@@ -24,6 +24,8 @@
 <!-- lint-external-ref: CapsuleComponent.h -- UE 5.6 engine symbol -- C:/dev/UnrealEngine is outside every scan root by initiative rule, so this can never resolve here -->
 <!-- lint-external-ref: SurfaceKind -- a RETIRED token -- this prose exists in order to say the name is gone (task 56 replaced SurfaceKind{Airborne, Floor} with SupportState) -->
 <!-- lint-external-ref: Airborne -- a RETIRED token -- this prose exists in order to say the name is gone (task 56 replaced SurfaceKind{Airborne, Floor} with SupportState) -->
+<!-- lint-external-ref: dAttackMachineSimulation::PlayerInput -- a RETIRED token -- og-syncedInput-rework task 4 deleted the machine's input slice; the name survives only inside the verbatim header quote of lines 1270-1283 (section 23, the movement tick), which R0-20 corrects -->
+<!-- lint-external-ref: PlayerInput::flags -- a RETIRED token -- og-syncedInput-rework task 4 deleted brawlerMovementSimulation's input slice and its flags member; the name survives only inside the verbatim header quote of lines 804-808 (section 13, the input flags byte), which R0-23 corrects: the byte is now simulatableBrawler::SyncedPlayerInput's flags -->
 <!-- lint-external-ref: MachineInputT -- a RETIRED template parameter -- task 62 deleted it, and this prose records why the indirection existed and why it went -->
 <!-- lint-external-ref: Jumping -- an UNBUILT name -- the fence that quotes it exists precisely BECAUSE it does not exist yet (tasks 21 / 27 / 31); a resolving name would falsify the fence -->
 <!-- lint-external-ref: kFlagJumping -- an UNBUILT name -- the fence that quotes it exists precisely BECAUSE it does not exist yet (tasks 21 / 27 / 31); a resolving name would falsify the fence -->
@@ -44,6 +46,7 @@
 <!-- lint-external-ref: research_spike_9.md -- brawler-movement-simulation initiative archive; private working material, not distributed with this submodule -->
 <!-- lint-external-ref: design_ledge_fall_and_landing.md -- brawler-movement-simulation initiative archive; private working material, not distributed with this submodule -->
 <!-- lint-external-ref: BrawlerInputPackaging.h:153 -- a DEAD citation, quoted DELIBERATELY: note R0-13 exists in order to record that task 65's published correction cites a line past the end of a file since rewritten 197 -> 128 lines. The lint is RIGHT and so is the note -->
+<!-- lint-external-ref: ZeroInputIsTheFold -- a RETIRED token -- og-syncedInput-rework task 3 DELETED this Catch2 case with the six-slice input composite it tested; the header quote that names it is verbatim and R0-21 records the successor, so a resolving name would falsify both -->
 # `BrawlerMovementSimulation.h` — rationale
 
 The narrative, the provenance and the **derivations** for the brawler character-movement
@@ -149,6 +152,26 @@ forbidden include is typed in `DAttackMachineSimulation.h`, and the compiler hol
 > What this include buys is that the edge is visible in the signature and CHECKED BY THE
 > COMPILER. Teaching the dependency graph about INPUT edges means changing
 > `OGSimulation/SimulationDependencies.h`, which every sub-sim shares: a separate framework task.
+
+> ### R0-19 — FALSE since og-syncedInput-rework task 3 (2026-10-03): the input edge is declared
+>
+> ⛔ *"THE INPUT EDGE IS STILL UNDECLARED"*, *"The `PlayerInput` edge is declared NOWHERE"*, and
+> the task-62 line above that movement reads the machine's `PlayerInput`.
+>
+> **Now.** The wire carries one flat `simulatableBrawler::SyncedPlayerInput`, and this sub-sim
+> declares what it reads from it in its own header: `brawlerMovementSimulation::PlayerInputView`
+> holds `flags` and `moveDirectionWorld`, filled by `PlayerInputView::from(const SyncedPlayerInput&)`.
+> `Dependencies::InputType` and the `AllInput` alias name that view, so `InputType` now says
+> truthfully what step 1 and step 3 read, and `integrate` no longer takes the machine's
+> `PlayerInput` (that type was deleted by task 4) — step 3's `stickWorld` reads
+> `input.getPlayerInput().moveDirectionWorld`. `SimulatableBrawlerTypes.h` asserts the view
+> contract (`simulatableBrawler::BrawlerInputView`) over every `ExecutionOrder` entry.
+>
+> **What did NOT change.** The machine include stays, for the STATE edge
+> (`External<const dAttackMachineSimulation::State&>`), which is what `findFirstViolation`
+> checks. `OGSimulation/SimulationDependencies.h` still knows nothing about input edges: the
+> view declares the edge in the type the sub-sim owns, not in the dependency graph, so no
+> framework task was needed. The paragraph above stays as the record of the shape it described.
 
 ---
 
@@ -281,6 +304,32 @@ NO PER-TICK TRANSCENDENTAL — the single `cos` is in `StaticData`'s constructor
 once per session. `OGBLOG_G` fires only on surface-kind CHANGES, Cadence commits and
 teleports; never unconditionally per tick.
 ```
+
+> ### R0-22 — the numbers, the bit budget and "AT THE TYPE" in the quote above are history since og-syncedInput-rework tasks 3 and 4 (2026-10-03)
+>
+> ⛔ *"cost 10.264 B of the join-alone margin at the character cap, leaving 27.352 B of slack
+> … 2.54 more input bytes before … "the pre-diet cap is 4" case goes RED"*, *"bits 1-7 are
+> reserved for those four"* and *"the constant that carries it live AT THE TYPE, on
+> `PlayerInput` below"*.
+>
+> **Now.**
+> * **The numbers** were measured on the six-slice composite at the 82 B ring entry stride and
+>   the cap of 4. Since task 3 the input wire is the flat 39 B
+>   `simulatableBrawler::SyncedPlayerInput` and the stride is 44 B. The packet-budget table
+>   derives a join-alone bound of 11; at that bound the margin is 32.728 B against a half-entry
+>   floor of 22 B (10.728 B of slack), and one input byte costs 18.188 B of margin, so ONE more
+>   input byte turns that floor red. The case that pins the bound is
+>   "PacketBudget: the join-alone bound is 11 characters, and N = 12 crosses it"; the runtime
+>   cap `kPreDietCharacterCap` is still 4. The rule the quote states (a new on/off input is a
+>   bit, never a new member) is unchanged and is restated in `BrawlerSyncedPlayerInput-rationale.md`
+>   §6 and §7.
+> * **The bit budget:** bit 0 is holdGuard and **bits 1-7 are UNASSIGNED** (R0-03, R0-09). Task 4
+>   corrected every present-tense site that said otherwise, in this repository's code, tests and
+>   docs; this quote stays verbatim as history.
+> * **"AT THE TYPE":** task 4 deleted this header's `PlayerInput`. The flags byte is
+>   `simulatableBrawler::SyncedPlayerInput::flags`, the bit constant `kInputFlagHoldGuard` is still
+>   declared in this header (guard G-05 stands on it), and this sub-sim reads the byte through its
+>   own `brawlerMovementSimulation::PlayerInputView`.
 
 ---
 
@@ -969,6 +1018,23 @@ than riding a defect fix. Do not fold it in here; do not delete this paragraph e
 
 ## 13. `PlayerInput` — the input flags byte
 
+> ### R0-23 — the type this section describes is DELETED since og-syncedInput-rework task 4 (2026-10-03)
+>
+> ⛔ Every quote below describes `brawlerMovementSimulation`'s own `PlayerInput`, and R0-21 says
+> *"`zero()` and `PlayerInput{}` still coincide here"*.
+>
+> **Now.** Task 4 deleted `class PlayerInput`, its `zero()`, its `SerializableFields`
+> specialization, its APPEND-ONLY descriptor assertion and its `SimulationInput` assertion. The
+> byte this section is about is `simulatableBrawler::SyncedPlayerInput::flags` (byte 38 of the 39 B
+> input wire since task 3); its order is held by that struct's descriptor-tuple `static_assert`,
+> which names the deleted assertion it succeeds. What stays in this header:
+> `kInputFlagHoldGuard` and its `static_assert` (whose message now names
+> `SyncedPlayerInput::flags` and states that bits 1-7 are UNASSIGNED), and step 1's `frozen` gate.
+> Guard G-05 now stands on `kInputFlagHoldGuard`. The quotes' numbers (*"ate 10.264 B … ~2.5 bytes
+> remain"*) are history for the reason R0-22 gives, and the bit-budget sentences R0-09 flags were
+> corrected at every present-tense site by task 4, which absorbed task 58's item 3; the quotes stay
+> verbatim. Every input bit's neutral value is still 0: `SyncedPlayerInput::zero()` has `flags` = 0.
+
 > ### R0-09 — FALSE — "bits 1-7 RESERVED, and already spoken for", twice more
 >
 > ⛔ Sites 2 and 3 of the three in this header (site 1 is in §2, R0-03). Same correction:
@@ -1035,6 +1101,19 @@ of the ordinary-join margin — a quarter of everything that was left. ~2.5 byte
 > aim there is no (0,0,1)-style tag value here, so `zero()` and `PlayerInput{}`
 > deliberately coincide — the property task 22's `ZeroInputIsTheFold` rests on, and one
 > every future bit inherits for free precisely because each bit's neutral value is 0.
+
+> ### R0-21 — the cited case is DELETED since og-syncedInput-rework task 3 (2026-10-03)
+>
+> ⛔ *"the property task 22's `ZeroInputIsTheFold` rests on"* (the quote above, kept verbatim).
+>
+> **Now.** That Catch2 case was deleted with the six-slice input composite it tested; the name
+> no longer resolves. `zero()` and `PlayerInput{}` still coincide here (`zero()` returns
+> `PlayerInput{}`), but this slice's `zero()` is no longer what goes on the wire. The neutral
+> wire input is `simulatableBrawler::SyncedPlayerInput::zero()`, whose `flags` is 0, and
+> `SimulatableBrawler.SyncedPlayerInput.ZeroSerializesToTheCapturedBytes` pins its 39 bytes,
+> the flags byte at index 38 included. `SyncedPlayerInputTest.cpp`'s `is_same` `static_assert`
+> holds that `simulatableBrawler::PlayerInput` is that type. The rule the quote states, that
+> every input bit's neutral value is 0, holds for the flags byte on the new wire as well.
 
 
 <!-- header lines 804-808 -->
@@ -1484,6 +1563,18 @@ block the acceptance criterion names, alongside `THE SERVO IS ONE-SIDED` (34 lin
 > template parameter; that indirection existed only to survive the include cycle. The default
 > template argument it carried was documentation — the parameter was always deduced from the
 > argument at that one call site, so the default never participated.
+
+> ### R0-20 — FALSE since og-syncedInput-rework task 3 (2026-10-03): there is no `machineInput`
+>
+> ⛔ *"`machineInput` IS THE MACHINE'S INPUT SLICE"* and *"the single call site in
+> `SimulatableBrawler.h` is the one place it can be supplied"*.
+>
+> **Now.** `integrate`'s parameter list is `(deltaSeconds, input, sd, deps, bindings,
+> derivedState, inboundHit)`. The move stick is a field of this sub-sim's own
+> `brawlerMovementSimulation::PlayerInputView`, and `SimulatableBrawler::integrate` builds that view
+> with `PlayerInputView::from(input)` and passes it through `AllInput` like every other sub-sim's. The
+> prose block at the call site that explained the second argument was deleted with it. See
+> R0-19 at the machine include.
 
 
 <!-- header lines 1302-1307 -->

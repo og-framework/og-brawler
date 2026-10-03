@@ -244,8 +244,12 @@ history about task 13, not a description of a class you can grep for.
 
 ⚠ **History, closed at task 17.** While two independent sources for the capsule id coexisted, an
 assertion watched them agree. Task 17 deleted the tripwire **and the second source with it**:
-PendingRegistration::parentBodyId is gone — `SimulationManagerUImpl.h:813-819` now declares four
-members and none of them is it, and `:808-812` records the removal.
+PendingRegistration::parentBodyId is gone. The record today —
+`SimulationManagerUImpl.h` :: `PendingRegistration`, `simulatable`, `bodiesCreated`, `inputProvider`, `isAuthority`
+(the struct, then its four members) — has no such member. The header comment that recorded the
+removal sat above that struct until 2026-09-22, when it was carried out of the header into
+`SimulationManagerUImpl-rationale.md`: its §10 *Registration and unregistration* restates it under
+**The capsule body id**, and its §12 *The header's declaration comments, carried* keeps it verbatim.
 
 **The identity is still asserted, one layer down**, by a check neither task touched:
 `ChaosPhysicsFactory::createPhysicalObject`'s adopt-root arm ends in

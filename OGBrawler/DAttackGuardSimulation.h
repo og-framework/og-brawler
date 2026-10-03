@@ -10,6 +10,7 @@
 #include "DAttackRadialSequence.h"
 #include "DAttackMachineSimulation.h"
 #include "OGBrawler/DAttackCircle.h"
+#include "OGBrawler/BrawlerSyncedPlayerInput.h"
 #include "OGSimulation/SimulationDependencies.h"
 #include "OGSimulation/SimulationComparisonGlm.h"
 #include "OGSimulation/SimulationFieldDescriptors.h"
@@ -91,20 +92,14 @@ public:
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-class PlayerInput
+struct PlayerInputView
 {
-public:
-	// [Task 43] Plain aggregate — const dropped so MemberFieldDesc::write() can assign.
 	glm::vec3 aimDirection{};
 
-	// THE NEUTRAL INPUT for this sub-simulation, folded into the composite by
-	// SimulationComposite::zero() — which is all getZeroPlayerInput() now is.
-	// [movement-sim task 22] The value is copied VERBATIM from what that function
-	// handed this type before the fold; it is a wire value, not something to re-derive.
-	// ⛔ (0,0,1) forwards, NOT PlayerInput{}: a value-initialised (0,0,0) aim would
-	// reach normalize(), and the difference is also the TAG the input-resolution and
-	// net-sync anti-vacuity tests discriminate on. Keep zero() != PlayerInput{}.
-	static PlayerInput zero() { return PlayerInput(glm::vec3(0.f, 0.f, 1.f)); }
+	static PlayerInputView from(const simulatableBrawler::SyncedPlayerInput& in)
+	{
+		return PlayerInputView{ .aimDirection = in.aimDirection };
+	}
 };
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -134,7 +129,7 @@ private:
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
-using AllInput = SimulationAllInput<PlayerInput, IntegrationUtils<PhysicsBodyAdapterType, SpatialQueryAdapterType>>;
+using AllInput = SimulationAllInput<PlayerInputView, IntegrationUtils<PhysicsBodyAdapterType, SpatialQueryAdapterType>>;
 
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -221,7 +216,7 @@ struct Dependencies {
 		dAttackGuardSimulation::State>;
 	using External = ExternalDeps<
 		const dAttackMachineSimulation::State&>;
-	using InputType = dAttackGuardSimulation::PlayerInput;
+	using InputType = dAttackGuardSimulation::PlayerInputView;
 	Owned owned;
 	External external;
 };
@@ -357,17 +352,7 @@ struct SerializableFields<dAttackGuardSimulation::State>
 	static constexpr auto get() { return std::make_tuple(); }
 };
 
-template <>
-struct SerializableFields<dAttackGuardSimulation::PlayerInput>
-{
-	static constexpr auto get()
-	{
-		return std::make_tuple(MemberFieldDesc<&dAttackGuardSimulation::PlayerInput::aimDirection>{});
-	}
-};
-
 static_assert(SimulationState<dAttackGuardSimulation::State>);
-static_assert(SimulationInput<dAttackGuardSimulation::PlayerInput>);
 static_assert(SimulationInitialConditions<dAttackGuardSimulation::InitialConditions>);
 
 OGSIM_OPTIMIZE_ON

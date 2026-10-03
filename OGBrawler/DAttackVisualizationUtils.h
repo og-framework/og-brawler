@@ -231,7 +231,7 @@ struct AttackIndicatorGeometry
 // the same UX quirk the inline aim-viz code had; NOT fixed here.
 inline AttackIndicatorGeometry computeAttackIndicatorGeometry(
 	const glm::vec3& aimDirection,
-	const glm::vec2& moveDirection,        // 2D stick, matches PlayerInput::moveDirection
+	const glm::vec2& moveDirection,        // 2D stick, matches PlayerInput::moveStick
 	const glm::vec3& moveDirectionWorld,   // separate 3D field
 	const glm::vec3& rootTranslation,
 	float innerRadius)

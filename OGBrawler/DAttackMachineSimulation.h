@@ -14,6 +14,7 @@
 #include "OGBrawler/BrawlerProjectileSimulation.h"
 #include "OGBrawler/BrawlerCharacterBindings.h"
 #include "OGBrawler/BrawlerInboundHit.h"
+#include "OGBrawler/BrawlerSyncedPlayerInput.h"
 #include "OGBrawler/InputSequence/InputSequence.h"
 #include "OGSimulation/SimulationDependencies.h"
 #include "OGSimulation/SimulationComparisonGlm.h"
@@ -44,9 +45,8 @@ class DAttackRadialSequence;
 namespace dAttackMachineSimulation
 {
 
-class PlayerInput
+struct PlayerInputView
 {
-public:
 	glm::vec3 aimDirection{};
 	bool attackLeft = false;
 	bool attackRight = false;
@@ -54,10 +54,15 @@ public:
 	glm::vec3 moveDirectionWorld{};
 	uint32_t triggeredActionId = 0;
 
-	static PlayerInput zero()
+	static PlayerInputView from(const simulatableBrawler::SyncedPlayerInput& in)
 	{
-		// ⛔G-01  docs/DAttackMachineSimulation-guards.md
-		return PlayerInput(glm::vec3(0.f, 0.f, 1.f), false, false, glm::vec2(0.f), glm::vec3(0.f));
+		return PlayerInputView{
+			.aimDirection = in.aimDirection,
+			.attackLeft = in.attackLeft,
+			.attackRight = in.attackRight,
+			.moveDirection = in.moveStick,
+			.moveDirectionWorld = in.moveDirectionWorld,
+			.triggeredActionId = in.triggeredActionId };
 	}
 };
 
@@ -111,7 +116,7 @@ inline uint32_t swingTickCount(float duration, float dt)
 }
 
 template <typename PhysicsAdapterType>
-using AllInput = SimulationAllInput<PlayerInput, IntegrationUtils<PhysicsAdapterType>>;
+using AllInput = SimulationAllInput<PlayerInputView, IntegrationUtils<PhysicsAdapterType>>;
 
 class State
 {
@@ -131,7 +136,7 @@ struct Dependencies {
 		const dAttackRadialSimulation::State&,
 		dAttackRadialSimulation::InitialConditions&,
 		brawlerProjectileSimulation::InitialConditions&>;
-	using InputType = dAttackMachineSimulation::PlayerInput;
+	using InputType = dAttackMachineSimulation::PlayerInputView;
 	Owned owned;
 	External external;
 };
@@ -174,7 +179,7 @@ void integrate(float deltaTime,
 {
 	state.m_timeInCurrentState += deltaTime;
 
-	const PlayerInput& playerInput = input.getPlayerInput();
+	const PlayerInputView& playerInput = input.getPlayerInput();
 
 	const bool inboundHit_PLACEHOLDER = false;
 	if (inboundHit_PLACEHOLDER && state.m_currentState != DAttackState::HitFlinch)
@@ -298,7 +303,7 @@ void integrate2(float deltaTime,
 {
 	state.m_timeInCurrentState += deltaTime;
 
-	const PlayerInput& playerInput = input.getPlayerInput();
+	const PlayerInputView& playerInput = input.getPlayerInput();
 
 	const bool inboundHit_PLACEHOLDER = false;
 	if (inboundHit_PLACEHOLDER && state.m_currentState != DAttackState::HitFlinch)
@@ -466,7 +471,7 @@ void integrate3(float deltaTime,
 
 	state.m_timeInCurrentState += deltaTime;
 
-	const PlayerInput& playerInput = input.getPlayerInput();
+	const PlayerInputView& playerInput = input.getPlayerInput();
 
 	OGBLOG_G("[Machine.integrate] state=%s activeSeq=%u queuedSeq=%u attackState.curSeq=%u attackState.timer=%.4f L=%d R=%d",
 		dAttackStateName(state.m_currentState), state.m_activeAttackSequence, state.m_queuedAttackSequence,
@@ -697,23 +702,7 @@ struct SerializableFields<dAttackMachineSimulation::State>
 	}
 };
 
-template <>
-struct SerializableFields<dAttackMachineSimulation::PlayerInput>
-{
-	static constexpr auto get()
-	{
-		return std::make_tuple(
-			MemberFieldDesc<&dAttackMachineSimulation::PlayerInput::aimDirection>{},
-			MemberFieldDesc<&dAttackMachineSimulation::PlayerInput::attackLeft>{},
-			MemberFieldDesc<&dAttackMachineSimulation::PlayerInput::attackRight>{},
-			MemberFieldDesc<&dAttackMachineSimulation::PlayerInput::moveDirection>{},
-			MemberFieldDesc<&dAttackMachineSimulation::PlayerInput::moveDirectionWorld>{},
-			MemberFieldDesc<&dAttackMachineSimulation::PlayerInput::triggeredActionId>{});
-	}
-};
-
 static_assert(SimulationState<dAttackMachineSimulation::State>);
-static_assert(SimulationInput<dAttackMachineSimulation::PlayerInput>);
 
 OGSIM_OPTIMIZE_ON
 
