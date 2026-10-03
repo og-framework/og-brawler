@@ -57,7 +57,7 @@ three accessors — `buildAimDirection`, `getMoveStick` and `buildMoveDirectionW
 else of that machinery escapes into this header.
 
 **Two packers, one continuous read.** `makeSimPlayerInput` is the per-tick path; its
-discrete and edge-derived fields — the attack buttons, the holdGuard button, and
+discrete and edge-derived fields — the attack buttons, the holdGuard freeze request, and
 `triggeredActionId` from the tick-stateful motion matcher — are passed in explicitly by the
 caller, because sampling any of them needs edge state, a tick or the matcher, none of which may
 enter this header (guard **G-08**). `makeVisualizationPlayerInput` is the render-rate path; §6
@@ -218,13 +218,27 @@ true thing. `SimulatableBrawlerTest.cpp:463-464` assigns the constant into a `fl
 writers; what is unique is the **OR**. Guard **G-09** now carries the corrected sentence. Task 51 shipped the flags byte and its *reader* — step 1's `frozen` gate in
 `brawlerMovementSimulation::integrate`, which names itself the only reader — **deliberately without
 a writer**, so until task 14 added this line the gate was inert and `frozen` could never come from
-input. This line is what makes holding guard actually freeze movement.
+input. This line is what makes holding guard actually freeze movement, under the condition the
+next paragraph states.
+
+**What the bit means since og-brawler-3rdControllerMode task 5.** `flagFields.holdGuard` is no
+longer the raw guard button. It is a **client-resolved freeze request**:
+`UOGBrawlerInputCollectionComponent::buildPlayerInput` sets it to
+`dInput::stickRouting::guardFreezeRequested(getHoldGuard(), ...)`, which is true only while the
+guard is held **and** either the scheme's own movement input (the move routed with the
+move-stick-feeds-aim fallback off) or the actual routed move is below the move deadzone. So guard
+plus movement walks and guard alone roots. In `AimRelativeSwapped`, guard plus the left stick
+alone roots even though the single-stick fallback routes the left stick to move. The simulation
+cannot tell such a fallback move from a real one, which is why the decision is made on the client.
+The bit's name, position and packing are unchanged and no wire byte moved. This packer still only
+copies the bool into the bit.
 
 That asymmetry is worth keeping in mind when reading either site: a reader with no writer is not a
 bug there, it is a staged landing.
 
 **The one production caller that models a real button press** is the simulated path,
-`UOGBrawlerInputCollectionComponent::buildPlayerInput`. ⚠ *Production* is the denominator that
+`UOGBrawlerInputCollectionComponent::buildPlayerInput` (which, as above, passes the press through
+`guardFreezeRequested` first). ⚠ *Production* is the denominator that
 matters: `MakeSimPlayerInputFlagsTest.cpp` raises the bit too, legitimately, and an earlier
 version of the header's sentence left that unstated.
 
@@ -311,8 +325,9 @@ this is the only place it is written down, and it is the premise of everything b
 
 **Every discrete field is pinned neutral at that call:** no attack buttons, no `holdGuard`, and
 `triggeredActionId` at `inputSequence::kNoMatch`, because the tick-stateful motion matcher is never
-invoked on this path. `holdGuard` is a **button**, so it is a discrete field and is pinned by
-exactly the rule that pins the attack buttons.
+invoked on this path. `holdGuard` comes from a **button** (the guard press, gated by the movement
+input on the sim path since og-brawler-3rdControllerMode task 5), so it is a discrete field and is
+pinned by exactly the rule that pins the attack buttons.
 
 ⭐ **The consequence is structural, and that is the whole point of the design.** A discrete input
 edge *cannot* render-echo — not "should not". There is no per-caller judgment involved and no code

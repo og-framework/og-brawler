@@ -338,7 +338,9 @@ void visualize(const Input<RendererFunctorType>& input,
 
     // ---- the capsule outline, at the SIM's position ------------------------------------
     // ⛔ Colour is the support state, EXCEPT while frozen, where the whole outline goes red.
-    // Freezing (a held guard, or a Hit/Guard flinch) suspends step 3 entirely -- the model's
+    // Freezing (the hold-guard input bit, which the client raises only while guard is held and
+    // the movement input is neutral -- dInput::stickRouting::guardFreezeRequested -- or a
+    // Hit/Guard flinch) suspends step 3 entirely -- the model's
     // contribution is zeroed EXACTLY on that tick, not decayed -- so "why is my input doing
     // nothing" has a one-glance answer. The support state is still readable off the band marks
     // below while the outline is red.

@@ -129,6 +129,7 @@ namespace dAttackMachineSimulation
             if (value == "AimRelative")     { g_movementScheme = MovementScheme::AimRelative;     return true; }
             if (value == "CameraRelative")  { g_movementScheme = MovementScheme::CameraRelative;  return true; }
             if (value == "MoveRelativeAim") { g_movementScheme = MovementScheme::MoveRelativeAim; return true; }
+            if (value == "AimRelativeSwapped") { g_movementScheme = MovementScheme::AimRelativeSwapped; return true; }
             // Legacy numeric forms ("1" = AimRelative, "3" = CameraRelative).
             if (value == "1") { fprintf(stderr, "[OGBrawler] SetVariable: legacy value '1' for MovementScheme; use 'AimRelative'\n");    g_movementScheme = MovementScheme::AimRelative;    return true; }
             if (value == "3") { fprintf(stderr, "[OGBrawler] SetVariable: legacy value '3' for MovementScheme; use 'CameraRelative'\n"); g_movementScheme = MovementScheme::CameraRelative; return true; }

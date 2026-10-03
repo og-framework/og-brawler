@@ -98,6 +98,25 @@ bytes, so no checker mistakes it for a span that moved):
   and a motion-matcher call that is not a direction build at all. The bytes above are the
   corrected ones.
 
+**The enumeration as it stands (og-brawler-3rdControllerMode task 2).** The fence above is the
+moved text; this list is the maintained one, and a new reader is added **here**. Measured by
+`grep -rn "g_moveStickDeadzone\|g_aimStickDeadzone"` over `Source/` and `Plugins/OGBrawler/Source/`,
+tests and writers excluded:
+
+* `g_moveStickDeadzone` — `UOGBrawlerInputCollectionComponent`: `buildAimDirection`,
+  `buildMoveDirectionWorld`, the file-local `routeRawSticks` behind `getMoveStick` /
+  `getAimStick` (it passes the value to `dInput::stickRouting::routeSticks` as the
+  right-stick-neutral threshold of `AimRelativeSwapped`), and `buildPlayerInput`, which loads it once and passes
+  that one value to both the `resolveTriggeredActionId` call and
+  `dInput::stickRouting::guardFreezeRequested` (the hold-guard freeze request;
+  og-brawler-3rdControllerMode task 5). `SimmableUpdateComponent`: the `pollInputHistory` and
+  `captureRowFieldsOf` calls.
+* `g_aimStickDeadzone` — `UOGBrawlerInputCollectionComponent`: `buildAimDirection` and
+  `buildMoveDirectionWorld`.
+
+`routeSticks` and `guardFreezeRequested` read no global; they take the deadzone as a parameter, so they
+are not readers. Neither is `BrawlerInputHistoryVisualization.h`, whose deadzone is a parameter too.
+
 ⛔ **Not convertible to a compile-time check.** The claim is a statement about *who reads a
 global across translation units*, and nothing in a header can count that. Probe arm CAND 5 adds
 a sixth reader of `g_moveStickDeadzone` and updates no enumeration anywhere; it compiles clean.

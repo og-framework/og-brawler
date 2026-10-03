@@ -1,6 +1,7 @@
 #pragma once
 // SPDX-License-Identifier: BUSL-1.1
 
+#include <optional>
 #include <vector>
 #include "glm/vec3.hpp"
 #include <glm/gtc/quaternion.hpp>
@@ -26,6 +27,25 @@ namespace dAttackVisualizationUtils
 // channel midpoint of the old Orange (243,156,18) and Yellow (255,255,0).
 // `inline` is required: a namespace-scope constexpr alone has internal linkage.
 inline constexpr unsigned int kAttackDirectionColorId = 14u;
+
+inline constexpr float kAimRightMarkerOverhangCm = 10.f;
+inline constexpr float kAimRightMarkerMinAimXYLength = 1e-4f;
+
+// End of the aim viz's horizontal marker line from the root: the XY-flattened aim turned
+// +π/2 about +Z (UE screen-right, the inner arc's side), innerRadius + 10 cm long.
+// nullopt when aim has no horizontal part (straight up/down).
+inline std::optional<glm::vec3> aimRightMarkerEnd(const glm::vec3& rootTranslation, const glm::vec3& aimDirection, float innerRadius)
+{
+	const glm::vec3 aimXY(aimDirection.x, aimDirection.y, 0.f);
+	const float aimXYLength = glm::length(aimXY);
+	if (!(aimXYLength > kAimRightMarkerMinAimXYLength))
+	{
+		return std::nullopt;
+	}
+	const glm::mat4 quarterTurn = glm::rotate(glm::mat4(1.f), glm::pi<float>() / 2.f, glm::vec3(0.f, 0.f, 1.f));
+	const glm::vec3 rightDirXY = glm::vec3(quarterTurn * glm::vec4(aimXY / aimXYLength, 0.f));
+	return rootTranslation + rightDirXY * (innerRadius + kAimRightMarkerOverhangCm);
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 

@@ -8,6 +8,7 @@ namespace gameMapping
 
 const ActionDescriptor Aim         { "Aim",         ActionValueType::Axis2D };
 const ActionDescriptor Move        { "Move",        ActionValueType::Axis2D };
+const ActionDescriptor MoveStick   { "MoveStick",   ActionValueType::Axis2D };
 const ActionDescriptor LeftAttack  { "LeftAttack",  ActionValueType::Boolean };
 const ActionDescriptor RightAttack { "RightAttack", ActionValueType::Boolean };
 const ActionDescriptor Jump        { "Jump",        ActionValueType::Boolean };
@@ -17,17 +18,19 @@ const ActionDescriptor HoldGuard   { "HoldGuard",   ActionValueType::Boolean };
 const ActionDescriptor SetSchemeCameraRelative  { "SetSchemeCameraRelative",  ActionValueType::Boolean };
 const ActionDescriptor SetSchemeAimRelative     { "SetSchemeAimRelative",     ActionValueType::Boolean };
 const ActionDescriptor SetSchemeMoveRelativeAim { "SetSchemeMoveRelativeAim", ActionValueType::Boolean };
+const ActionDescriptor SetSchemeAimRelativeSwapped { "SetSchemeAimRelativeSwapped", ActionValueType::Boolean };
 
 MappingContext buildDefaultContext()
 {
 	MappingContext ctx;
 	ctx.name = "IMC_Default";
 
-	// Move: WASD + Gamepad Left Stick + Gamepad D-pad
+	// Move: WASD + Gamepad D-pad
 	// The D-pad mirrors the WASD modifier shapes exactly: Up=SwizzleAxis (Y+1),
-	// Down=NegateAndSwizzle (Y-1), Left=Negate (X-1), Right=None (X+1). Each D-pad
-	// direction is a digital duplicate of the left-stick Move; diagonals aggregate
-	// through Enhanced Input the same way W+D etc. do.
+	// Down=NegateAndSwizzle (Y-1), Left=Negate (X-1), Right=None (X+1); diagonals
+	// aggregate through Enhanced Input the same way W+D etc. do. The gamepad left stick
+	// is NOT bound here: it is its own action (MoveStick, below) so the input component
+	// can tell it apart from WASD/D-pad when routing sticks per movement scheme.
 	{
 		ActionMapping mapping;
 		mapping.action = &Move;
@@ -36,11 +39,20 @@ MappingContext buildDefaultContext()
 			{ KeyId::Key_S, KeyModifier::NegateAndSwizzle },
 			{ KeyId::Key_A, KeyModifier::Negate },
 			{ KeyId::Key_D, KeyModifier::None },
-			{ KeyId::Gamepad_LeftStick_XY, KeyModifier::None },
 			{ KeyId::Gamepad_DPad_Up, KeyModifier::SwizzleAxis },
 			{ KeyId::Gamepad_DPad_Down, KeyModifier::NegateAndSwizzle },
 			{ KeyId::Gamepad_DPad_Left, KeyModifier::Negate },
 			{ KeyId::Gamepad_DPad_Right, KeyModifier::None },
+		};
+		ctx.actionMappings.push_back(std::move(mapping));
+	}
+
+	// MoveStick: Gamepad Left Stick
+	{
+		ActionMapping mapping;
+		mapping.action = &MoveStick;
+		mapping.bindings = {
+			{ KeyId::Gamepad_LeftStick_XY, KeyModifier::None },
 		};
 		ctx.actionMappings.push_back(std::move(mapping));
 	}
@@ -114,8 +126,10 @@ MappingContext buildDefaultContext()
 
 	// HoldGuard: Left Shift + Gamepad Left Bumper.
 	// Distinct physical inputs from BlockLook so the two semantics don't overlap on the
-	// same key — HoldGuard gates combat-stance behavior (freezes locomotion, so the
-	// character roots), while BlockLook owns cursor/mouse-aim suppression.
+	// same key — HoldGuard gates combat-stance behavior (it freezes locomotion, so the
+	// character roots, but only while the scheme's own movement input, or the routed move, is
+	// neutral: guard + movement walks; og-brawler-3rdControllerMode task 5, decided client-side by
+	// dInput::stickRouting::guardFreezeRequested), while BlockLook owns cursor/mouse-aim suppression.
 	// ⚠ [movement-sim task 17] It said "freezes CMC movement" until here. The CMC was retired
 	// by task 15; the freeze is now step 1 of `brawlerMovementSimulation::integrate`, reached
 	// through the `kInputFlagHoldGuard` bit of the movement sub-sim's input flags byte.
@@ -130,7 +144,7 @@ MappingContext buildDefaultContext()
 	}
 
 	// Movement-scheme switch shortcuts: 7 = CameraRelative, 8 = AimRelative,
-	// 9 = MoveRelativeAim. Dev convenience for hot-swapping schemes in PIE.
+	// 9 = MoveRelativeAim, 0 = AimRelativeSwapped. Dev convenience for hot-swapping schemes in PIE.
 	{
 		ActionMapping mapping;
 		mapping.action = &SetSchemeCameraRelative;
@@ -147,6 +161,12 @@ MappingContext buildDefaultContext()
 		ActionMapping mapping;
 		mapping.action = &SetSchemeMoveRelativeAim;
 		mapping.bindings = { { KeyId::Key_9, KeyModifier::None } };
+		ctx.actionMappings.push_back(std::move(mapping));
+	}
+	{
+		ActionMapping mapping;
+		mapping.action = &SetSchemeAimRelativeSwapped;
+		mapping.bindings = { { KeyId::Key_0, KeyModifier::None } };
 		ctx.actionMappings.push_back(std::move(mapping));
 	}
 

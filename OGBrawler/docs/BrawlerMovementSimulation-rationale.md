@@ -983,6 +983,24 @@ than riding a defect fix. Do not fold it in here; do not delete this paragraph e
 > `BrawlerMovementSimulation-guards.md`; the claim survives only on the narrow
 > production-code reading.
 
+> ### R0-18 — "holding guard freezes locomotion" is FALSE since 2026-10-02 (og-brawler-3rdControllerMode task 5)
+>
+> ⛔ *"holding guard freezes locomotion EXACTLY on the tick it is held"* (the paragraph below).
+>
+> **Now.** Bit 0 is the client's **freeze request**, not the raw guard button. The user ruled
+> that hold-guard roots the character only while the scheme's own movement input is neutral
+> (all schemes, keyboard included). `UOGBrawlerInputCollectionComponent::buildPlayerInput` sets
+> the bit to `dInput::stickRouting::guardFreezeRequested(...)`: guard held **and** either the move
+> routed with the move-stick-feeds-aim fallback off, or the move actually routed, is shorter
+> than `g_moveStickDeadzone`. Guard plus movement therefore walks. Guard alone, or guard plus
+> only the aim input (the mouse, or the aim stick), roots. In `AimRelativeSwapped`, guard plus
+> the left stick alone roots even though the fallback routes the left stick to move.
+>
+> **What did NOT change.** This header: the name, bit 0, the packing, step 1's `frozen` gate
+> and everything it does once the bit is set, including the exact-tick freeze. Only the
+> condition under which the client raises the bit moved, and it moved in the producer because
+> the simulation cannot tell a fallback move from a real one. No wire byte moved.
+
 
 <!-- header lines 766-781 -->
 ```text
@@ -1667,31 +1685,35 @@ ramp starts from whatever it finds. Noted, not handled here.
 > grep and the code disagree. `Floor` / `Airborne` are RETIRED tokens — a runbook or a saved
 > log filter still looking for them is looking for a build older than task 56.
 
-> ### R0-14 — ⛔⛔ FALSE, KNOWN-FALSE SINCE 2026-09-09 — ROUTED TO TASK 63, NOT REWORDED
+> ### R0-14 — FALSE again since 2026-10-03 (no analog walk speed); the parenthesis is also FALSE
 >
 > ⛔ *"The stick arrives as a WORLD XY direction whose magnitude is the stick deflection
 > (`BrawlerInputPackaging.h`: `moveDirectionWorld` is the move stick rotated into camera
-> space, so rotation preserves its length)."* — **both halves are false.**
+> space, so rotation preserves its length)."*
 >
-> | step | measured 2026-09-11 |
-> |---|---|
-> | the normalise | `OGBrawlerInputCollectionComponent.cpp:243` — `glm::normalize(inputDirection)` |
-> | the rotation | `:236-245` is a **Z-rotation only** (`camForwardNormalized.z = 0.f`), so `z` stays 0 |
-> | the deadzone | `:212-213` returns `(0,0,0)` below `g_moveStickDeadzone` = **0.15f** |
-> | ⇒ consequence | `stickDeflection` is **{0, 1}**, never analog — a stick at 0.16 and a stick at 1.0 both request full walk speed |
-> | ⇒ attribution | the rotation *does* preserve length. The PRODUCER normalises first, and the parenthesis blames the wrong file: `BrawlerInputPackaging.h` only **carries** the field |
+> **History, short.** When this was moved, both halves were false: the producer normalised the
+> move stick. Brawler-movement-simulation task 63 held the fix for a user feel ruling (analog
+> against binary). On 2026-10-02 the user ruled analog for the gamepad (og-brawler-3rdControllerMode
+> task 4), and the producer scaled its unit direction by the stick deflection, which made the first
+> half true. On 2026-10-03 the user reversed that (ruling #5, task 6): **no analog walk speed**. The
+> producer is back to its pre-task-4 form, so the first half is false again.
 >
-> ⛔ **NOT reworded here, and that is deliberate.** `Backlog.md` task 63 is a **user FEEL
-> decision** — analog walk speed against binary — marked *"Do not implement without a user
-> ruling"*, and its two outcomes have different fixes. Rewording this paragraph to be true
-> would silently ratify the binary answer the user has not given. **ROUTED to task 63.**
+> **Now.** `UOGBrawlerInputCollectionComponent::buildMoveDirectionWorld` returns `(0,0,0)` while the
+> routed move stick is shorter than `g_moveStickDeadzone` (0.15f). Otherwise
+> `buildMoveDirectionWorldFor` returns `getInputDirectionInCameraSpace`'s result, which normalises
+> the input and then rotates it about Z only, so its length is 1. That holds for the gamepad, the
+> keyboard and the D-pad alike. ⇒ `stickDeflection` here is **{0, 1}**: a stick at 0.16 and a stick
+> at 1.0 both ask for full walk speed.
 >
-> ⚠ Task 63's own line pins into this header are stale and need refreshing before anyone
-> acts on it.
+> **The sim is NOT changed.** Its law (`stickDeflection` is the length of the incoming vector, and
+> ContinuousAccelBrake targets the stick times `maxWalkSpeed`) can still express analog speed and is
+> still correct. With this producer it is constant in effect: the producer decides the length. The
+> parenthesis is false either way. `BrawlerInputPackaging.h` only **carries** the field, and the
+> producer normalises before it rotates, so the rotation has no deflection to preserve.
 >
-> ⚠ The following paragraph — *"projected … with the DEFLECTION PRESERVED and the DIRECTION
-> renormalised"* — is **TRUE of the code and vacuous in effect**: `stickDeflection` is 1, so
-> the scale is a renormalisation to 1. Not false; **dead**. Task 63 owns that too.
+> The following paragraph, *"projected … with the DEFLECTION PRESERVED and the DIRECTION
+> renormalised"*, is therefore again a renormalisation to 1 in effect: on a slope the character
+> asks for full walk speed along the slope.
 
 
 <!-- header lines 1507-1513 -->

@@ -14,7 +14,13 @@ enum class MovementScheme : uint32_t
 	CameraRelative = 0,
 	AimRelative    = 1,
 	MoveRelativeAim = 2,
+	AimRelativeSwapped = 3,
 };
+
+constexpr bool isAimRelativeFamily(MovementScheme s)
+{
+	return s == MovementScheme::AimRelative || s == MovementScheme::AimRelativeSwapped;
+}
 
 OGBRAWLER_API extern std::atomic<MovementScheme> g_movementScheme;
 

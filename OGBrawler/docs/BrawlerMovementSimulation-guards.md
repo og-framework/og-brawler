@@ -540,6 +540,11 @@ branch:** `DAttackGuardSimulation` disables every guard shape whenever
 `attackMachineSimulation.m_currentState != DAttackState::Idle`, which covers the whole lockout. The
 shape gate is the mechanism; freezing the body would be a second, wrong one.
 
+⚠ **[og-brawler-3rdControllerMode task 5, 2026-10-02] Read "the tick the button goes down" above
+as "the tick bit 0 is raised".** Bit 0 is now the client's freeze request: guard held **and** the
+movement input neutral (`BrawlerMovementSimulation-rationale.md`, note R0-18). A thrown player who
+holds guard without steering still raises it, so the prohibition and its consequence are unchanged.
+
 ⛔⛔ **[task 84] DO NOT MERGE `locked` INTO THE `committed` ARM, EITHER — and the reason is
 not tidiness.** `committed` is also the third argument of `detachesFromSupport(state, up,
 committed)`, whose arm is `committed && dot(velocity, up) > 0`. The attack slide writes the two

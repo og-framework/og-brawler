@@ -1,6 +1,7 @@
 #pragma once
 // SPDX-License-Identifier: BUSL-1.1
 
+#include <optional>
 #include <vector>
 #include "glm/vec3.hpp"
 #include <glm/gtc/quaternion.hpp>
@@ -99,19 +100,25 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	// so π/16 gives a total span of π/8.
 	rendererFunctor.drawCircleArc(rootTranslation, input.getAimDirection(), radialSimulationStaticData.getAttackCircle().getOuterRadius(), glm::pi<float>() / 32.f, 1, 1.f);
 
-	// Inner-radius arc: asymmetric — keep the original tiny tick on the right side of aim
-	// (at -aimArchAngle CW), but extend the left side a full quarter circle (π/2 CCW) so
-	// the player always has a visible "left of me" reference relative to where they aim.
-	// "Left" here matches integrate3's labeling: cross(aim, dir).z > 0 → left strike,
-	// which is CCW from aim around +Z, hence the positive centerOffset.
+	// Inner-radius arc: a quarter circle on the character's screen-right of aim, overhanging
+	// both ends by aimArchAngle (spans -aimArchAngle .. π/2 + aimArchAngle about +Z).
+	// A positive rotation about +Z maps UE's X (forward) to Y (right), so that side is
+	// screen-right. The classifier (dAttackDirection::classify) labels the same side
+	// "left" because it reads cross(aim, dir).z > 0 as left in a right-handed frame.
 	{
-		const float innerArcLeftExtent   = glm::pi<float>() / 2.f;
+		const float innerArcLeftExtent   = glm::pi<float>() / 2.f + aimArchAngle;
 		const float innerArcRightExtent  = aimArchAngle;
 		const float innerArcHalfAngle    = (innerArcLeftExtent + innerArcRightExtent) * 0.5f;
 		const float innerArcCenterOffset = (innerArcLeftExtent - innerArcRightExtent) * 0.5f; // positive → CCW
 		const glm::mat4 innerArcCenterRot = glm::rotate(glm::mat4(1.f), innerArcCenterOffset, glm::vec3(0.f, 0.f, 1.f));
 		const glm::vec3 innerArcCenter = glm::vec3(innerArcCenterRot * glm::vec4(input.getAimDirection(), 0.f));
 		rendererFunctor.drawCircleArc(rootTranslation, innerArcCenter, radialSimulationStaticData.getAttackCircle().getInnerRadius(), innerArcHalfAngle, 1, 1.f);
+	}
+
+	if (const std::optional<glm::vec3> rightMarkerEnd = dAttackVisualizationUtils::aimRightMarkerEnd(
+			rootTranslation, input.getAimDirection(), radialSimulationStaticData.getAttackCircle().getInnerRadius()))
+	{
+		rendererFunctor.drawLine(rootTranslation, *rightMarkerEnd, 1, 1.f);
 	}
 
 

@@ -71,9 +71,23 @@ this is the text that stood on it:
 
 The branch that implements it is in `UOGBrawlerInputCollectionComponent::buildAimDirection`: the
 aim reference starts at the cached camera forward and is replaced by the move direction only
-when there is one, which is the "falls back to camera-relative" half. Every reader and every
-writer of `g_movementScheme` is in the UE layer; the simulation sees only the resulting
-directions.
+when there is one, which is the "falls back to camera-relative" half. Every reader of
+`g_movementScheme` is in the UE layer, and so is every writer except `SetVariable` (this
+header's named-pipe path); the simulation sees only the resulting directions.
+
+The fourth enumerator, `AimRelativeSwapped`, is AimRelative with the two gamepad sticks
+exchanged: the right stick is the move stick and the left stick is the aim stick. What each raw
+source feeds is decided in one place, `dInput::stickRouting::routeSticks` in
+`InputMapping/StickRouting.h`. It takes the scheme, the two stick toggles and the move deadzone as parameters
+and reads no global. With the right stick at or inside the move deadzone and
+`g_gamepadMoveStickFeedsAim` on, that function routes this scheme exactly as it routes
+AimRelative with `g_swapMoveAndAimSticks` off, so the single-stick fallback is shared rather than reimplemented.
+`isAimRelativeFamily` is the test for "AimRelative or AimRelativeSwapped", for the call sites
+that treat the two alike.
+
+On the named-pipe path `SetVariable` takes the scheme by **name**. The legacy numerals it still
+accepts are not the enum values: `"3"` means CameraRelative there, and `AimRelativeSwapped` is
+reached only by its name. `StickRoutingTest.cpp` in og-brawler-tests pins both.
 
 ## 3. The stick deadzones
 
@@ -98,8 +112,10 @@ Both are flags the simulation never sees. This is the text that stood on each.
 > the sim sees the resulting (moveStick, aimDirection, moveDirectionWorld) tuple either
 > way and does not read this flag.
 
-It is implemented as a straight pointer swap in
-`UOGBrawlerInputCollectionComponent::getMoveStick` and `::getAimStick`, with no sign flips.
+It is implemented in `dInput::stickRouting::routeSticks` (rows 1 and 2 of its table), which
+`UOGBrawlerInputCollectionComponent::getMoveStick` and `::getAimStick` call, with no sign flips.
+The "left (move) stick" of the quote is the summed WASD + D-pad + left-stick input, so the swap
+moves the keys onto aim too. `AimRelativeSwapped` ignores this flag.
 
 **`g_gamepadMoveStickFeedsAim`:**
 
@@ -110,9 +126,17 @@ It is implemented as a straight pointer swap in
 > to mouse aim / camera forward like any other input source. Keyboard+mouse play is
 > unaffected either way (the latch m_lastMoveInputWasGamepad gates this).
 
-The latch is a member of `UOGBrawlerInputCollectionComponent`, false until a gamepad-driven
-move, which is what makes the "keyboard+mouse is unaffected" half true rather than merely
-intended.
+The latch is a member of `UOGBrawlerInputCollectionComponent`, false until a non-zero event from
+either gamepad stick or the D-pad, and cleared by a WASD move with no D-pad direction held, which is what makes the
+"keyboard+mouse is unaffected" half true rather than merely intended.
+
+Since og-brawler-3rdControllerMode task 5, both toggles also shape one bit the simulation does
+see, still without the simulation reading either of them. `UOGBrawlerInputCollectionComponent::buildPlayerInput`
+passes them, with `g_movementScheme` and `g_moveStickDeadzone`, to
+`dInput::stickRouting::guardFreezeRequested`. That function decides whether a held guard raises
+`brawlerMovementSimulation::kInputFlagHoldGuard`, and it raises the bit only when the scheme's
+own move (routed with the fallback off, so `g_swapMoveAndAimSticks` picks which stick it is) or
+the actual routed move (with the real `g_gamepadMoveStickFeedsAim`) is below the move deadzone.
 
 ## 5. The refused-name path — where the obligation came from
 
