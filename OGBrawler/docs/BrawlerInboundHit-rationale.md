@@ -2,6 +2,7 @@
 # `BrawlerInboundHit.h` — rationale
 
 <!-- lint-external-ref: hasHitGuard -- RETIRED by og-netcode-v2-field-defects task 9: the radial State's wire flag wasGuardBlockedThisTick replaced. It must NOT resolve -->
+<!-- lint-external-ref: wasProjectileBlockedThisTick -- RETIRED by og-attackstatetransition-cleanup task 4: the slice field that carried a projectile block to its shooter; the machine was its only reader. It must NOT resolve -->
 
 What the inbound-hit slice is, who writes and reads each field, and why it is shaped as it is. The
 header has **no guards file**: every prohibition its comments carried is held by the compiler (§3),
@@ -45,16 +46,17 @@ lifecycle. That is why `integrate3` takes it as a plain by-reference parameter r
 | field | set by (routing branch, `BrawlerHitRoutingSystem-rationale.md` §3) | read by | effect |
 |---|---|---|---|
 | `wasHitThisTick` (T3) | 2 (a radial hit in `hitsThisTick`) or 3 (a projectile slot the detector found `Hit`) | `dAttackMachineSimulation::integrate3`; `brawlerMovementSimulation::integrate` | machine: any state → `HitFlinch`, taking the reaction kind and dwell. Movement: launches at `hitDirectionXY * knockbackSpeed` |
-| `wasProjectileBlockedThisTick` (T15) | 4 (a slot this character owns, found `BlockedByGuard`; `integrate` ends it with `endReason` 4) | `integrate3` | any state except `GuardFlinch` → `GuardFlinch` (`DAttackMachineSimulation-guards.md` G-04). It fires from `Idle` too, because a projectile can be blocked long after the shooter's Hadouken commitment has ended. Mirrors the melee recoil below |
+| `wasProjectileBlockedThisTick` (T15) — **REMOVED by og-attackstatetransition-cleanup task 4** | was 4 (a slot this character owns, found `BlockedByGuard`; `integrate` ends it with `endReason` 4, which it still does) | was `integrate3` | was any state except `GuardFlinch` → `GuardFlinch` (`DAttackMachineSimulation-guards.md` G-04, now retired). The user ruled (2026-10-03) that a blocked projectile does not recoil its shooter. The machine was the field's only reader, so the field and its routing branch were deleted |
 | `wasGuardBlockedThisTick` (og-netcode-v2-field-defects task 9) | 5 (copied from the radial `DerivedState`'s `guardBlockedThisTick`, which the detector wrote: this character's swing was blocked by another's guard in the state the previous tick left) | `integrate3`, `Attacking` case only | `Attacking` → `GuardFlinch`. Replaces the radial `State`'s `hasHitGuard`, which rode the wire |
 | `reactionKind`, `knockbackSpeed`, `flinchDuration`, `hitDirectionXY` (movement-sim task 27) | 2 and 3, through `resolveHitReaction` (`BrawlerHitRoutingSystem-rationale.md` §4) | `integrate3` (kind, dwell); movement (speed, direction) | the whole reaction, resolved where both the attack table and `launchDecel` are in hand |
 
 The three bools are one-shot: routing's branch 1 resets the whole slice to its value-initialised
 state every pass (`BrawlerHitRoutingSystem-guards.md` G-03), and every default above means "no
-signal".
+signal". ⚠ Two bools since og-attackstatetransition-cleanup task 4.
 
 ⚠ When a hit and a projectile block land on one tick, `integrate3` applies both in order: `HitFlinch`,
-then `GuardFlinch` (`DAttackMachineSimulation-guards.md` G-04, a task-18 finding). When two hits reach
+then `GuardFlinch` (`DAttackMachineSimulation-guards.md` G-04, a task-18 finding; moot since
+og-attackstatetransition-cleanup task 4 retired G-04, so the hit stands). When two hits reach
 one target in one pass, the reaction fields hold the one routed last
 (`BrawlerHitRoutingSystem-rationale.md` §6, observed and awaiting a ruling).
 
@@ -82,9 +84,9 @@ bumped the version.
 |---|---|---|---|
 | 1 | 14-15 | the slice is "consumed in the SAME tick by dAttackMachineSimulation::integrate3" | also by `brawlerMovementSimulation::integrate`, which reads `wasHitThisTick`, `hitDirectionXY` and `knockbackSpeed` (§2) |
 | 2 | 15, 54-55 | the reasons are at "current_state.md §D7" and "§D1" | an initiative workspace file outside this repository; both reasons are compile errors (§3) |
-| 3 | 20 | "Three signals, one slice" | three signals and the resolved reaction, four more fields, since movement-sim task 27 (§2) |
+| 3 | 20 | "Three signals, one slice" | three signals and the resolved reaction, four more fields, since movement-sim task 27 (§2); two signals since og-attackstatetransition-cleanup task 4 |
 | 4 | 28-29 | `wasHitThisTick` "Drives the Idle/Attacking/GuardFlinch -> HitFlinch transition" | from EVERY state, `HitFlinch` included: a re-hit restarts the dwell (§2) |
-| 5 | 34 | `wasProjectileBlockedThisTick` "Drives any-state -> GuardFlinch" | every state except `GuardFlinch` (§2) |
+| 5 | 34 | `wasProjectileBlockedThisTick` "Drives any-state -> GuardFlinch" | every state except `GuardFlinch` (§2). The field is gone since og-attackstatetransition-cleanup task 4 |
 
 **Checked and true:** routing fills it in `preIntegrate` from what the detector found earlier in the
 pass; the projectile's closed-form position on this tick; same-tick consumption and replay

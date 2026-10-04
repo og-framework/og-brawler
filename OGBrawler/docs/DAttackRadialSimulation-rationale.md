@@ -372,7 +372,8 @@ keeps `setInitialConditions` from indexing the table with the sentinel, now a ch
 ⛔ **Corrected at task 19** (§A, pristine lines 562-566):
 * *"so the machine's Attacking->Idle exit fires naturally next tick"* is false. The machine's exit
   gate does read the radial's Invalid `currenSequenceId`, but `integrate3` holds it off with
-  `inHadoukenCommitment` until `kHadoukenCommitmentSeconds` (0.3 s, task 25) has passed. The exit
+  `inHadoukenCommitment` until `kHadoukenCommitmentSeconds` (0.3 s, task 25; 0.875 s since
+  og-attackstatetransition-cleanup task 4; 0.74167 s since its task 6) has passed. The exit
   fires then, not on the next tick.
 * *"Keep the weapon idle"* overstates what the branch does. It writes no pose, and the attachment
   block moves translation only. The weapon keeps whatever pose it had. That is the idle pose
@@ -380,6 +381,10 @@ keeps `setInitialConditions` from indexing the table with the sentinel, now a ch
   been idle. For the same reason, the reset of `currenSequenceId` finds it already Invalid on every
   path the machine was read to take. It is defensive. This was not proven for adoption or replay
   states.
+  ⚠ **Since og-attackstatetransition-cleanup task 1 (2026-10-03)** "from its `Idle` case only" is
+  false: the machine also fires a repeat from `Attacking`, but only while the active sequence is
+  already the sentinel. The radial has then been on this branch since the previous shot, so the
+  conclusion (idle pose, `currenSequenceId` already Invalid) still holds.
 
 The `[Radial.*]` `OGBLOG_G` format strings are code, not comments. They are grep-sensitive and are
 pinned by `DAttackRadialAimLogTest.cpp`.
@@ -400,7 +405,7 @@ pinned by `DAttackRadialAimLogTest.cpp`.
 | 10 | 364-365 | sim/viz drift "structurally impossible" | only the predicate cannot drift (§7) |
 | 11 | 370-371 | constants "mirror the inline check this predicate was extracted from exactly" | no inline check remains (§7) |
 | 12 | 372-373, 387 | the narrowing is "preserved verbatim", "matches sim" | value-neutral: ×0.5 is exact (§7) |
-| 13 | 564-565 | Attacking->Idle exit "fires naturally next tick" | after the 0.3 s Hadouken commitment (§8) |
+| 13 | 564-565 | Attacking->Idle exit "fires naturally next tick" | after the 0.3 s Hadouken commitment (§8; 0.875 s since og-attackstatetransition-cleanup task 4, 0.74167 s since its task 6) |
 | 14 | 254-255 | `zero()` cannot be constexpr, because glm is "build-flag dependent" | true of glm in principle; constexpr compiles on every flag set probed (§5) |
 | 15 | 563 | the branch keeps "the weapon idle" | it writes no pose, and the weapon is already idle (§8) |
 | 16 | 251 | the neutral aim `(0,0,1)` is "forwards" | it is +Z (`defaultUp`); `defaultForward()` is `(1,0,0)` (guard G-01) |

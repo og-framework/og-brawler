@@ -100,6 +100,32 @@ inline float angularDistance(float a, float b)
 }
 
 // ---------------------------------------------------------------------------
+// stickMatchesStep — does one input's stick satisfy one MotionStep?
+//
+// THE ONE DEFINITION of a per-frame step match: matchSequence applies it to
+// every history entry, and dAttackMachineSimulation::wantsHeldProjectile
+// applies it to the live input. The stick is moveDirectionWorld's XY, measured
+// against aimDirection's XY.
+//
+// Written as !(distance > tolerance) so a NaN angle matches exactly as
+// matchSequence's `distance > tolerance -> skip` test always did.
+// ---------------------------------------------------------------------------
+inline bool stickMatchesStep(const glm::vec3& moveDirectionWorld,
+                             const glm::vec3& aimDirection,
+                             const MotionStep& step,
+                             float             deadzone)
+{
+    const auto angleOpt = aimRelativeAngle(
+        glm::vec2(moveDirectionWorld.x, moveDirectionWorld.y),
+        glm::vec3(aimDirection.x, aimDirection.y, 0.f),
+        deadzone);
+    if (!angleOpt)
+        return false;
+
+    return !(angularDistance(*angleOpt, step.targetAngle) > step.angleTolerance);
+}
+
+// ---------------------------------------------------------------------------
 // matchSequence
 //
 // HistoryAccessor: callable (uint32_t tick) -> const simulatableBrawler::PlayerInput*
@@ -172,14 +198,7 @@ uint32_t matchSequence(
                 if (!entry)
                     continue;
 
-                const auto angleOpt = aimRelativeAngle(
-                    glm::vec2(entry->moveDirectionWorld.x, entry->moveDirectionWorld.y),
-                    glm::vec3(entry->aimDirection.x, entry->aimDirection.y, 0.f),
-                    deadzone);
-                if (!angleOpt)
-                    continue;
-
-                if (angularDistance(*angleOpt, step.targetAngle) > step.angleTolerance)
+                if (!stickMatchesStep(entry->moveDirectionWorld, entry->aimDirection, step, deadzone))
                     continue;
 
                 prevBound = t;

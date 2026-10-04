@@ -5,6 +5,7 @@
 <!-- lint-external-ref: routeInboundHitsAll -- RETIRED with BrawlerHitRouter.h. It must NOT resolve -->
 <!-- lint-external-ref: hasHitGuard -- RETIRED by og-netcode-v2-field-defects task 9: the radial State's wire flag branch 5 replaced. It must NOT resolve -->
 <!-- lint-external-ref: ASimulationManagerUImpl::m_byRootBodyId -- RETIRED by the OGSim system-API initiative (T8): the adapter-owned map this system's map replaced. It must NOT resolve -->
+<!-- lint-external-ref: wasProjectileBlockedThisTick -- RETIRED by og-attackstatetransition-cleanup task 4: the shooter-side flag branch 4 wrote; branch 4 went with it. It must NOT resolve -->
 
 The law, the five branches, the provenance and the history of the hit-routing system. The
 **prohibitions** are in `BrawlerHitRoutingSystem-guards.md`, and nothing here is a fence except §6,
@@ -82,12 +83,17 @@ way; they were never comments here.
 `preIntegrate` collects the storage view into `ordered`, sorts it (§5, guards G-02), then runs five
 loops over it. **These are the branch numbers every other document cites** ("routing branch 5"):
 
+⚠ **Since og-attackstatetransition-cleanup task 4 (2026-10-04) there are four loops.** Branch 4 is
+retired: a blocked projectile no longer recoils its shooter (user ruling 2026-10-03), so nothing
+read the flag it wrote, and the loop and the field were deleted. Its number is kept and never
+reused, so "branch 5" still means the melee guard block (§3.4).
+
 | branch | what it reads (written by the detector earlier in this pass) | what it writes | lookup | self-hit filter |
 |---|---|---|---|---|
 | 1 | nothing | every character's slice := `brawlerInboundHit::DerivedState{}` (guards G-03) | — | — |
 | 2 | each attacker's radial `DerivedState::hitsThisTick` (guards G-04) | the target's slice via `resolveHitReaction` | `m_byRootBodyId[hit.hitRootBodyId]` | yes |
 | 3 | each shooter's projectile `DerivedState::detectedThisTick`, outcome `SlotOutcome::Hit` | the target's slice via `resolveHitReaction` | `m_byRootBodyId[detected.struckRootBodyId]` | yes |
-| 4 | the same, outcome `SlotOutcome::BlockedByGuard` | the shooter's own `wasProjectileBlockedThisTick` | none (self) | no |
+| 4 | **retired by og-attackstatetransition-cleanup task 4**; was: the same, outcome `SlotOutcome::BlockedByGuard` | was: the shooter's own `wasProjectileBlockedThisTick` | — | — |
 | 5 | each attacker's radial `DerivedState::guardBlockedThisTick` | the attacker's own `wasGuardBlockedThisTick` (guards G-07) | none (self) | no |
 
 **The self-hit filter** on branches 2 and 3 compares the resolved `SimulatableBrawler*` with the
@@ -99,7 +105,8 @@ resolved pointer is the attacker's exactly when the hit's root id is the attacke
 machine enters `HitFlinch` from any state on `wasHitThisTick`, `GuardFlinch` from any state but
 `GuardFlinch` on `wasProjectileBlockedThisTick`, and `GuardFlinch` from `Attacking` only on
 `wasGuardBlockedThisTick`. The movement sub-simulation launches on `wasHitThisTick` with
-`hitDirectionXY * knockbackSpeed`.
+`hitDirectionXY * knockbackSpeed`. ⚠ The projectile-block transition is gone since
+og-attackstatetransition-cleanup task 4.
 
 ### 3.1 Branch 1 — the whole-slice reset (movement-sim task 27)
 
@@ -107,7 +114,8 @@ Routing owns the slice's reset and set, so every tick's signal is fresh and the 
 a stale flag. Movement-sim task 27 added the resolved reaction (kind, speed, dwell, direction) beside
 the bools and made the reset a whole-slice assignment, because a reset that names fields misses the
 next field added. ⚠ R0: the pristine says "beside the two bools"; there have been three since
-og-netcode-v2-field-defects task 9 added `wasGuardBlockedThisTick`.
+og-netcode-v2-field-defects task 9 added `wasGuardBlockedThisTick`, and two again since
+og-attackstatetransition-cleanup task 4 removed the projectile-block flag.
 
 ### 3.2 Branch 2 — radial hits (T3, movement-sim tasks 83 and 86)
 
@@ -163,10 +171,20 @@ blocked long after its shooter's Hadouken commitment has ended (`DAttackMachineS
 G-04). The pristine's "T14's blockedByGuard" is `endReason` 4, which `integrate` still writes from
 the outcome.
 
+⚠ **Retired by og-attackstatetransition-cleanup task 4 (2026-10-04).** The user ruled (2026-10-03)
+that a blocked projectile does not recoil its shooter; the punish window comes from the shooter's
+longer Hadouken commitment instead (`DAttackMachineSimulation-rationale.md` §15). The machine was
+the flag's only reader, so the loop, the flag and machine guard G-04 were deleted together. The
+detector still reports `BlockedByGuard`, and the projectile integrate still ends the slot with
+`endReason` 4 and places the block indicator. Pinned by `HitRouting.ProjectileOutcomeIsRoutedWhateverTheStepKind`
+(a block leaves its shooter's slice untouched on every step kind) and
+`DAttack.AttackTransitions.ProjectileBlockDoesNotFlinchShooter`.
+
 ### 3.5 Branch 5 — melee guard-blocks (og-netcode-v2-field-defects task 9)
 
 An attacker whose swing the detector found blocked by a guard (the radial `DerivedState`'s
-`guardBlockedThisTick`) gets a recoil routed to itself, exactly as branch 4 does for a projectile.
+`guardBlockedThisTick`) gets a recoil routed to itself, exactly as branch 4 did for a projectile
+until og-attackstatetransition-cleanup task 4.
 The flag is derived and recomputed on every replayed tick, including the first one after a restore,
 since task 20 put this pass inside the consuming tick. It replaces the radial `State`'s
 `hasHitGuard`, which rode the wire. It must be copied here rather than written by the detector:

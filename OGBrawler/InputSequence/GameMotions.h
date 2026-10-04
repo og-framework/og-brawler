@@ -22,6 +22,12 @@
 // camera-frame directions but the matcher reference is still aim, so the
 // firing WASD arc rotates with the mouse in those modes. Making the matcher's
 // reference movement-mode-aware is a follow-up.
+
+// The back-shortcut's one step (motion 3). Named because the attack machine's
+// held-projectile test (dAttackMachineSimulation::wantsHeldProjectile) reuses it,
+// so "holding back" has one definition.
+inline constexpr inputSequence::MotionStep kBackShortcutStep{ inputSequence::angle::Back, inputSequence::pi / 8.f, 8 };
+
 inline const std::vector<inputSequence::MotionCommand> kGameMotions =
 {
     // Original — S -> S+A -> A + LMB (left-handed quarter arc)
@@ -52,7 +58,7 @@ inline const std::vector<inputSequence::MotionCommand> kGameMotions =
     // Back-shortcut — Hold S + tap RightAttack (single-step motion)
     {
         {
-            { inputSequence::angle::Back, inputSequence::pi / 8.f, 8 },
+            kBackShortcutStep,
         },
         /* requiredButtonEdge    = */ 0b10,  // attackRight rising edge
         /* windowAfterFinalStep  = */ 6,

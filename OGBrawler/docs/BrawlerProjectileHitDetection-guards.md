@@ -40,9 +40,12 @@ found for every slot and nothing a previous pass found.
 
 **What breaks if the edit is made.** The outcome of a slot that ended survives into every later
 pass. Routing reads it again on each one and flinches the target, or recoils the shooter, on
-every step until the slot is reused. Measured by poison (task 17): with the reset deleted, 8
-cases fail, among them `HitRouting.ProjectilePointBlankFollowUpWindow` (the hit is routed on more
-than one tick) and `HitDetection.Projectile.AShotEndingOnThePreJumpTickIsRoutedOnceAcrossAHardResync`.
+every step until the slot is reused. (Since og-attackstatetransition-cleanup task 4 routing ignores a
+block outcome, so only the target half applies.) Measured by poison (task 17): with the reset deleted, 8
+cases fail, among them HitRouting.ProjectilePointBlankFollowUpWindow (the hit is routed on more
+than one tick; that assertion is in `HitRouting.ProjectilePointBlankHitStunsOnce` since
+og-attackstatetransition-cleanup task 4 retired the case's follow-up half, user ruling 2026-10-04)
+and `HitDetection.Projectile.AShotEndingOnThePreJumpTickIsRoutedOnceAcrossAHardResync`.
 
 This is the projectile half of `BrawlerHitDetectionSystem-guards.md` G-13: the detector owns
 the per-tick signals it writes.

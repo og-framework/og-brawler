@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- lint-external-ref: wasProjectileBlockedThisTick -- RETIRED by og-attackstatetransition-cleanup task 4: the inbound-slice flag that drove the projectile-block recoil (guard G-04 of DAttackMachineSimulation-guards.md). It must NOT resolve -->
 <!-- lint-external-ref: hasHitGuard -- RETIRED by og-netcode-v2-field-defects task 9: the radial State field the machine's guard-block recoil used to read. It must NOT resolve; the recoil now reads brawlerInboundHit::DerivedState::wasGuardBlockedThisTick -->
 <!-- lint-external-ref: glm/vec2.hpp -- the third-party glm header vendored under og-simulation/glm; the lint indexes .h/.cpp, not glm's .hpp -->
 <!-- lint-external-ref: glm/common.hpp -- the third-party glm header vendored under og-simulation/glm; the lint indexes .h/.cpp, not glm's .hpp -->
@@ -6,9 +7,11 @@
 # `DAttackMachineSimulation.h` — rationale
 
 The narrative, the derivations and the provenance for the attack state machine: `DAttackState`,
-`dAttackMachineSimulation::PlayerInputView`, `IntegrationUtils`, `swingTickCount`, `State`,
-`Dependencies`, the three `integrate` variants and `dAttackStateName`. The **prohibitions** are in
-`DAttackMachineSimulation-guards.md`; nothing here is a fence. Two sections carry a derivation id
+`dAttackMachineSimulation::PlayerInputView`, `wantsHeldProjectile`, `wantsProjectile`,
+`followUpSequenceFor` and its two follow-up ids, `followUpPressSequence`, `IntegrationUtils`,
+`swingTickCount`, `State`, `Dependencies`, `launchHadouken`, the three `integrate` variants and
+`dAttackStateName`. The **prohibitions** are in
+`DAttackMachineSimulation-guards.md`; nothing here is a fence. Three sections carry a derivation id
 (`∴D-nn`) because a tag in the header points at them.
 
 **If this file and `DAttackMachineSimulation.h` disagree, the header is authoritative and this file is
@@ -107,6 +110,11 @@ composite and this slice lives on the `DerivedState` composite.
 includes directly (and which the radial header includes too). It is not declared at file scope in
 `DAttackRadialSimulation.h`. The rest is true, and 0.3 s is exactly 18 ticks at 60 Hz by
 `swingTickCount`.
+
+⚠ **Since og-attackstatetransition-cleanup tasks 4 and 6 (2026-10-04)** the value is `0.74167f`, 45
+ticks at 60 Hz, and the constant carries `∴D-03` (§15). The purpose the quote states (hold `Attacking`
+through the cast) still holds; the length now also sets the blocker's punish window and the
+rapid-fire period.
 
 <!-- header lines 39-44 -->
 > [hit-resolution T1] Minimum dwell for the target-side HitFlinch state. When an inbound hit
@@ -257,6 +265,10 @@ is the precedent the quote names: an absolute tick, on the wire. The field is st
 `State` and the last in `SerializableFields`. That records how it was added; moving it now would be a
 wire change like any other.
 
+⚠ **Since og-attackstatetransition-cleanup task 1 (2026-10-03)** the Hadouken write is one statement
+in `launchHadouken`, reached from three routes: the matcher's trigger and the held trigger in `Idle`,
+and the repeat in `Attacking` (§6.4, §6.5). Still three statements, still two radial edges.
+
 ---
 
 ## 6. The Hadouken
@@ -272,6 +284,16 @@ wire change like any other.
 
 That is an ordering, and it has no tag: the case `break`s after the trigger, and the button handling
 below it never runs on a trigger tick.
+
+⚠ **Since og-attackstatetransition-cleanup task 1** the condition is `triggeredActionId ==
+kHadoukenActionId || wantsHeldProjectile(playerInput)` (§6.4), and the launch itself is
+`launchHadouken`. The ordering is unchanged and now covers both: back + a held attack 2 never reaches
+the classifier in `Idle`. That is what removes the forward swing the classifier gives a stick inside
+its backpedal cone (`dAttackDirection::kBackpedalConeHalfAngle`, 10°).
+
+⚠ **Since og-attackstatetransition-cleanup task 2** the two terms are one function,
+`wantsProjectile(playerInput)`, because the follow-up rule (§14) asks the same question: a press that
+is a projectile input is never a follow-up press. The `Idle` condition is unchanged in value.
 
 <!-- header lines 647-649 -->
 > [Task 33] Resolve the parent capsule position on-demand from the CharacterBindings
@@ -313,6 +335,90 @@ is not driven.
 > (leaving currenSequenceId == InvalidAttackSequenceId from tick T+1), so without this
 > guard the machine would drop back to Idle one tick after the trigger and a still-held
 > attack button would chain an immediate normal swing.
+
+⚠ **Since og-attackstatetransition-cleanup tasks 4 and 6** the window is 0.74167 s (45 ticks), long
+enough for a blocker within about 2 m to punish the shot (§15).
+
+### 6.4 The held trigger (og-attackstatetransition-cleanup task 1)
+
+**The ruling (user, 2026-10-03).** Holding back + attack 2 fires projectiles continuously, whenever
+both are held and the character is free: `Idle`, or the previous projectile's commitment has ended.
+Back + a held attack 2 never gives a forward swing. Before this, a held attack 2 fired once (the
+matcher reports a rising edge only). The machine left the commitment 18 ticks later (the 0.3 s
+commitment of that time), and on the next
+tick `Idle` handed the still-held button to the classifier, which calls a stick within 10° of
+dead-back a forward swing (sequence 4).
+`DAttack.AttackTransitions.HeldBackAndAttack2RefiresProjectile` was seen failing on that code with
+exactly that trace: one shot on tick 1, `Idle` on tick 19, sequence 4 from tick 20.
+
+**One definition of "holding back".** `wantsHeldProjectile` is `attackRight` held and
+`inputSequence::stickMatchesStep(moveDirectionWorld, aimDirection, kBackShortcutStep, epsilon)`.
+`kBackShortcutStep` (`GameMotions.h`) is the only step of motion 3 in `kGameMotions`, the matcher's
+back shortcut: within π/8 of dead-back, aim-relative. `inputSequence::stickMatchesStep` is the
+per-entry test `inputSequence::matchSequence` applies, extracted so both call one function. So the
+first shot (the matcher's edge) and every later one (the machine's hold) test the same cone. The
+classifier's 10° backpedal cone answers a different question (which swing) and is not used here. The
+prohibitions are guard **G-08**.
+
+**Why the epsilon and not the deadzone.** The matcher runs on the client with
+`g_moveStickDeadzone`. The machine runs on every peer and in every resimulation, so it may read only
+the wire input and static data; a tweakable can differ between peers. The client already zeroes
+`moveDirectionWorld` below its deadzone, so the machine only has to reject that zero, which
+`dAttackDirection::kMoveMagnitudeEpsilon` does.
+
+**Both routes, one launch.** On the press tick the matcher's trigger and the held test are usually
+both true; either one enters the same `launchHadouken`, once.
+
+**Pins.** `DAttack.AttackTransitions.HeldFromIdleFires` (no matcher action, held input fires on that
+tick) and `DAttack.AttackTransitions.BackConeIsTheMatchersCone` (15° off dead-back fires, 30° gives
+the classified side swing; both sides).
+
+### 6.5 The repeat (og-attackstatetransition-cleanup task 1)
+
+In `Attacking`, when the active sequence is the sentinel, the commitment has ended (the same
+`m_timeInCurrentState < kHadoukenCommitmentSeconds` predicate, false) and `wantsHeldProjectile` is
+true, the machine fires again: `Attacking -> Attacking`, logged as
+`[Machine.transition] Attacking -> Attacking (Hadouken repeat, projectile spawn requested)`.
+
+* **Before the exit.** The repeat and the "radial finished → `Idle` / queued" exit are one `if` /
+  `else if`. A reorder is not a line move; the structure holds it, so it has no tag. When attack 2 is
+  released, or the stick leaves the cone, the `else if` runs exactly as before: exit to `Idle` on the
+  commitment's last tick, then the classifier on the next.
+* **The fire rate is the commitment.** One shot every `swingTickCount(kHadoukenCommitmentSeconds, dt)`
+  ticks: 18 at 60 Hz. There is no separate knob.
+  ⚠ **Since tasks 4 and 6** that is 45 ticks at 60 Hz, about 1.33 shots per second (§15).
+* **No shot is dropped at the shipped tuning.** The pool has 3 slots and a shot lives 0.875 s. A slot
+  spawned on tick S ends on tick S + 53 (`52 × dt` is under 0.875 s, `53 × dt` is not), and the
+  projectile integrate ends expired slots before it consumes the spawn request on the same tick. At
+  the 45-tick period the next shot spawns on S + 45 while the first is still alive, so two shots are
+  in flight for 8 ticks; the shot after that, on S + 90, finds the first slot free. The pool never
+  holds more than two. Pinned by `DAttack.AttackTransitions.NoShotDroppedAtDefaultPool` (10 shots,
+  every one spawned, no `[Projectile.poolFull]`, slots reused). A slower commitment or a shorter
+  lifetime only adds slack; a faster commitment or a longer lifetime can drop shots, and that case
+  will fail. The period and the lifetime are independent values (§15).
+* **The end tick is rewritten on every shot**, by the same D-01 statement (§8.1).
+* **The queued sequence is not touched, and is invalid on both routes.** Under the sentinel the
+  radial's `attackTimer` is 0: `deactivate` reset it when the last swing ended, and the sentinel path
+  returns before advancing it. So neither `attackTimer > 0.3` queue can form. A dual press under the
+  sentinel takes the `attackTimer < 0.1` restart branch instead and overwrites the sentinel before the
+  repeat test reads it. That path is og-attackstatetransition-cleanup task 2's.
+  ⚠ **Since task 2** a dual press is handled on a real swing only (guard **G-10**), so under the
+  sentinel neither dual-press branch runs, and the follow-up rule cannot map the sentinel (§14).
+  Measured before task 2: the press tick went `Idle` (the exit ran on the same tick, its commitment
+  test reading the 4 that had replaced the sentinel), and sequence 4 started on the next tick. With
+  the stick back as well, `Idle` fired again on that next tick: a shot every second tick.
+* **Priority.** The inbound-hit veto and the projectile-block recoil run before the switch (§7), so a
+  hit or a block on the tick the commitment ends wins. The swing's guard-block recoil clears the
+  active sequence first, so the sentinel test fails.
+  ⚠ **Since task 4** there is no projectile-block recoil (§7.2): a block during the stream leaves it
+  on schedule (`DAttack.AttackTransitions.ProjectileBlockDoesNotFlinchShooter`).
+* **Movement.** The character stays in `Attacking` for the whole stream, so movement stays locked
+  (`machineLocksMovement`), as it is for one projectile.
+
+Pins: `DAttack.AttackTransitions.HeldBackAndAttack2RefiresProjectile` (7 shots, one every period,
+never a real sequence, end tick = shot tick + period) and `DAttack.AttackTransitions.ReleaseStopsFire`
+(release after a repeat: `Idle` exactly one period after the last shot; stick out of the cone: no shot,
+sentinel left on the commitment's last tick).
 
 ---
 
@@ -356,6 +462,14 @@ arrives the same way:
 Verified: routing branch 5 copies the radial `DerivedState`'s `guardBlockedThisTick` onto the
 attacker's inbound slice as `wasGuardBlockedThisTick`. `hasHitGuard` exists nowhere in the tree.
 
+⚠ **Since og-attackstatetransition-cleanup task 4 (2026-10-04) there is one recoil, not two.** The
+user ruled (2026-10-03) that a blocked projectile does not recoil its shooter. Task 4 deleted the
+transition, its input `wasProjectileBlockedThisTick` and the routing loop that set it. G-04 is
+retired with its quote (guards §R). A block now only ends the slot with `endReason` 4; the shooter's
+machine is unaffected, and the punish window comes from the commitment instead (§15). The swing's
+recoil above is unchanged, 18 ticks at both shipped `dt` values, pinned by
+`DAttack.AttackTransitions.MeleeGuardBlockRecoilIsUnchanged`.
+
 ### 7.3 A hit and a projectile block on the same tick
 
 Found by reading the code, not by running it. Routing sets `wasHitThisTick` (branches 2 and 3) and
@@ -365,6 +479,9 @@ projectile-block test passes (`HitFlinch` is not `GuardFlinch`) and moves it to 
 switch lands in `GuardFlinch`, not in `HitFlinch` as §7.1's quote says, and the character recoils for
 the fixed 0.3 s instead of taking the hit's reaction. Whether that precedence is intended is not recorded anywhere.
 It is routed, not changed.
+
+⚠ **Moot since og-attackstatetransition-cleanup task 4:** there is no projectile-block transition
+any more, so a hit on a block tick stands, with its own reaction and dwell.
 
 ### 7.4 The `HitFlinch` dwell
 
@@ -399,6 +516,16 @@ it leaves on the first tick where the sum reaches the window, which is
 `T + swingTickCount(kHadoukenCommitmentSeconds, dt)`. The radial set `currenSequenceId` to invalid on
 tick T already (§6.2), so nothing arrives a tick late and there is nothing to add.
 `DAttack.Integrate3.AttackEndTickMatchesTheFirstIdleTick` pins it (18 ticks at 60 Hz).
+⚠ Since og-attackstatetransition-cleanup tasks 4 and 6 that is 45 ticks (§15); the derivation does
+not depend on the length, and the case asserts the relation, not a count.
+
+⚠ **Since og-attackstatetransition-cleanup task 1** the tagged statement is in `launchHadouken`, and
+the repeat (§6.5) is the third route to it, after the matcher's trigger and the held trigger. The
+derivation holds for the repeat unchanged: the repeat resets `m_timeInCurrentState` to 0 on its own
+shot tick T, and the radial was already invalid on T (the sentinel never left). So the next shot, or
+the exit, is on T + `swingTickCount(kHadoukenCommitmentSeconds, dt)`: the value written.
+`DAttack.AttackTransitions.HeldBackAndAttack2RefiresProjectile` pins the write on every shot, and
+`DAttack.AttackTransitions.ReleaseStopsFire` pins the exit after a repeat.
 
 ### 8.2 The `Idle` swing entry: the radial's deactivate tick plus one ∴D-02
 
@@ -429,6 +556,10 @@ still holds the side swing's prediction. At 60 Hz that prediction is 44 ticks fr
 sequence 4 from one tick later ends at 1 + 32 + 1 = 34, so the slide's schedule is 10 ticks long.
 Derived from the code and the measured tick counts. Not run. The owner is brawler-movement-simulation
 Backlog task 85, whose entry today describes only the 4 → 4 path.
+
+⚠ **Since og-attackstatetransition-cleanup task 2** the branch is reached only when the active
+sequence is a real swing (guard **G-10**). That removes two paths into it, the projectile sentinel and
+a guard-block tick, and leaves the side-swing path above as it was.
 
 ---
 
@@ -612,7 +743,7 @@ Verified against the tree on 2026-09-23.
 | 8 | 153-154 | 42 × (1/60) lands BELOW `0.7f` | it lands exactly on `0.7f`; the duration is `0.70000005f` |
 | 9 | 197-198 | `m_attackEndTick` is written only on radial edges, at three sites | three sites, two of them radial edges |
 | 10 | 589, 611 | the inbound slice is set by the manager's routing pass | by `brawlerHitRouting::System::postIntegrate` (`preIntegrate` of the consuming tick since task 20) |
-| 11 | 595-596 | after the veto the switch lands in `HitFlinch` | not when a projectile block arrives on the same tick (§7.3) |
+| 11 | 595-596 | after the veto the switch lands in `HitFlinch` | not when a projectile block arrives on the same tick (§7.3); moot since og-attackstatetransition-cleanup task 4 |
 | 12 | 758-760 | a dual-tap write would push the end later while the radial keeps its schedule | true only when the active sequence is already 4 (§8.4) |
 
 Also found: two references (20, 591) to `current_state.md` §D7, a file outside this repository. Their
@@ -622,3 +753,182 @@ substance is the compile error in §1.
 re-pointed projectile-block paragraph, the `Attacking` case's guard-block read) all describe
 `hasHitGuard` as gone, which it is. None of them describes `collisionCheck` or detection inside an
 `integrate`. Every row above predates task 9.
+
+---
+
+## 14. The same-side follow-up (og-attackstatetransition-cleanup task 2)
+
+### 14.1 The rule
+
+**The rulings (user, 2026-10-03).** Two swings on the same side in a row make the second one the
+fast follow-up, whichever attack button is pressed. A projectile never leads into a follow-up: the
+first side swing after one is the normal swing, and a projectile input (back + attack 2) pressed
+during a swing is not a follow-up press.
+
+In `integrate3`'s `Attacking` case, when the radial's `attackTimer` is past 0.3 and nothing is
+queued yet, the machine queues `followUpSequenceFor(attackIntialConditions.activeAttackSequence,
+followUpPressSequence(playerInput))` when that is not `InvalidAttackSequenceId`.
+
+* **`followUpPressSequence`** is the side this tick's press asks for. With no button held it is
+  `InvalidAttackSequenceId`. With a button held it is `dAttackDirection::classify`'s answer, the
+  same classifier the `Idle` entry uses (guard **G-05** there, guard **G-09** here), except that a
+  projectile input (`wantsProjectile`, §6.1) is `InvalidAttackSequenceId`. Which button is held does
+  not enter it.
+* **`followUpSequenceFor`** maps (active, pressed) to the follow-up. The right swing
+  (`dAttackDirection::kRightSequenceId`, 0) and its follow-up (`kRightFollowUpSequenceId`, 2) with a
+  right press give 2. The left swing (`kLeftSequenceId`, 1) and its follow-up
+  (`kLeftFollowUpSequenceId`, 3) with a left press give 3. Everything else gives
+  `InvalidAttackSequenceId`: the opposite side, a forward press, the forward swing (4), no swing, and
+  `kHadoukenSequenceSentinel`. Two `static_assert`s beside the function hold the whole table over
+  the ids 0–4 and both sentinels.
+* **A follow-up repeats.** The follow-up's own id is in the active column, so holding a side keeps
+  chaining 2 → 2 or 3 → 3.
+* **The sentinel cannot map**, so a side swing that follows a projectile always starts from `Idle`
+  through the classifier, as 0 or 1, and the next same-side press chains from there.
+* **A projectile input is no press.** During a swing it queues nothing. The swing ends, the machine
+  goes `Idle`, and on the next tick `Idle` fires the projectile (§6.4). Between the classifier's 10°
+  backpedal cone and the matcher's π/8 cone, `classify` calls the stick a SIDE, so without the
+  exclusion that press would chain into the same side's follow-up.
+* **Everything that is not a follow-up stays unbuffered**, as before: an opposite-side or forward press
+  queues nothing, and a still-held button starts the classified swing from `Idle` once the current
+  swing has ended.
+* **The dual press keeps its priority.** Its `attackTimer > 0.3` branch, which runs first, queues 4,
+  and the follow-up test then sees a queue and does nothing. Both buttons on a real swing past 0.3 s
+  still give sequence 4.
+
+The log line keeps its shape, `[Machine.Attacking] queue seq=N (…,timer>0.3,ic=M)`. The button letter
+it used to print (`L` for 2, `R` for 3) is now both buttons' levels, `L=l R=r`, because the button no
+longer decides the sequence.
+
+**What it replaced.** The test was keyed on the button: `attackLeft` with an active 0 or 2 queued 2,
+`attackRight` with an active 1 or 3 queued 3. That is a leftover from when the button chose the side.
+Since `dAttackDirection::classify` chooses it from the stick, a left swing (1) chained only on attack 2
+and a right swing (0) only on attack 1. Several PIE sessions of 2026-10-01 to 10-03 logged one side's chain
+only; the largest, 87 `queued seq=2` lines and no `queued seq=3` (counted 2026-10-03). `DAttack.AttackTransitions.LeftSwingFollowUpWithAttack1` was seen
+failing on that code as swings `{ 1, 1, 1, 1, 1 }`: every left swing restarted from `Idle`.
+
+### 14.2 The authored labels disagree — R0 finding, not fixed
+
+The pairing 0 → 2 and 1 → 3 is the pairing the authored data makes. The names given to those ids do
+not agree with each other:
+
+| id | `SimulatableBrawlerTypes.h`, sequence list | `SimulatableBrawlerTypes.h`, hit-reaction list | `DAttackDirectionClassifier.h` | the authored angle |
+|---|---|---|---|---|
+| 0 | "from idle to leftAttack" | "right" | `kRightSequenceId` | rises, −4π/8 → 3π/8 |
+| 1 | "from idle to rightAttack" | "left" | `kLeftSequenceId` | falls, 4π/8 → −3π/8 |
+| 2 | "from leftAttack to leftAttack" | "left -> left" | (none) | rises, 4π/8 → 17π/8 |
+| 3 | "from rightAttack to rightAttack" | "right -> right" | (none) | falls, −4π/8 → −17π/8 |
+| 4 | "from idle to rightAttack (vertical)" | "forward/overhead" | `kForwardSequenceId` | about Y, not Z |
+
+Read from the tree on 2026-10-03. The sequence list names 0 and 2 the same side ("leftAttack"), and
+the angle of 0 and of 2 rises while that of 1 and of 3 falls. So 2 continues 0's sweep and 3
+continues 1's, and the button-keyed rule paired them the same way. The hit-reaction list calls 0
+"right" and 2 "left -> left", and the classifier calls 0 right. Nothing was renamed. The lead raises
+the labels with the user.
+
+### 14.3 The dual press under the sentinel, and on a guard-block tick
+
+Guard **G-10**. Before task 2 a dual press during the projectile commitment took the restart branch
+(the radial's `attackTimer` is 0 under the sentinel), replaced the sentinel with 4 and ended the
+commitment on that tick; §6.5 has the measured trace. The same gate also stops a dual press on a
+guard-block tick from writing 4 into a character already in `GuardFlinch`. Past 0.3 s that 4 was
+queued, survived the recoil and `Idle`, and the next swing chained into 4 instead of its own
+follow-up. Both were measured by deleting the gate (the guard's R0).
+
+### 14.4 Pins
+
+All in `AttackStateTransitionTest.cpp`, tags `[DAttack][AttackTransitions]`:
+`LeftSwingFollowUpWithAttack1`, `RightSwingFollowUpWithAttack2`, `PreviouslyWorkingFollowUpsStillChain`,
+`OppositeOrForwardPressIsNotAFollowUp`, `FirstSwingAfterProjectileIsNormal`,
+`ProjectileInputMidSwingIsNotAFollowUp`, `DualPressCannotHijackProjectile`,
+`FollowUpPressIsTheClassifiedSideWithoutProjectileIntent` and
+`DualPressOnAGuardBlockTickQueuesNothing`. Each one's pre-change result is in
+`AttackStateTransitionTest-rationale.md` §4.
+
+---
+
+## 15. The Hadouken commitment is the punish window (og-attackstatetransition-cleanup tasks 4 and 6) ∴D-03
+
+**The rulings.** A blocked projectile must not recoil its shooter (§7.2; guards §R, G-04). Instead
+every shot locks its shooter long enough for a blocker close by to punish it (user, 2026-10-03,
+task 4). Task 4 set `kHadoukenCommitmentSeconds` to 0.875 s (53 ticks), sized for a block at the 3 m edge
+of swing reach. The user then shortened it to `0.74167f`, 45 ticks (user, 2026-10-04, task 6), so the
+guaranteed punish now reaches a block within about 2 m. The cost: the rapid-fire stream (§6.5) fires
+one shot per 45 ticks, about 1.33 per second (it was one per 18 ticks before task 4).
+
+**Derivation.** The lock must outlast, from the shot tick, the projectile's flight to the blocker, plus
+the blocker's reaction, its input delay and its swing up to the hit:
+
+`commitment ticks ≥ k + D_in + r + f` = 24 + 6 + 10 + 5 = 45
+
+* **k = 24**, swing start to first hit on a target the blocker aims at. Hit detection registers a
+  target only while the weapon is in the authored segment that holds the target's direction, so k is
+  the start time of the segment holding the aim (local angle 0), counted with `swingTickCount`. For
+  the side swings (sequences 0 and 1) that segment starts at keyframe time 0.4 s: k = 24. For the
+  forward swing (sequence 4) it starts at 0.3 s: k = 18. The slower side swing binds. Distance
+  decides whether the swing reaches at all (90 to 300 cm), never when it hits.
+* **D_in = 6**, the input delay. An input captured on tick c is applied on c plus the larger of the
+  session floor and the connection tier's delay (`ConnectionTierTable.h`, `ServerInputDelayQueue.h`).
+  The shipped floor is `RelayDelayFloorTicks=6` in `Config/DefaultEngine.ini`, so every player's
+  press lands 6 ticks late. It is a config value, not a sim constant: the pin names it as an
+  assumption and does not read the config.
+* **r = 10**, the reaction budget: 167 ms from seeing the block to pressing.
+* **f = 5**, the flight to the farthest block the lock guarantees. The shot spawns 60 cm ahead of its
+  shooter and moves 800 cm/s, 13.33 cm per tick. Its sphere (radius 40) meets the blocker's guard
+  sphere (radius 40, 30 cm above the capsule centre) roughly 64 to 77.5 cm before the blocker's
+  centre. So a block f ticks after the shot happens with the blocker at about
+  60 + 13.33·f + (64 to 77.5) cm: for f = 5, 1.9 to 2.0 m.
+
+The numbers k, D_in and the flight formula come from og-attackstatetransition-cleanup task 3's
+research (its §5 and §6). r is the user's choice (task 3's option B: 40 ticks from the block). The
+total, 45, is the user's (task 6). f = 5 is the lead's split of it, keeping k, D_in and r; the user
+may revise it.
+
+**Beyond 2 m the reaction budget shrinks.** Each tick of flight past 5 comes out of r: a side-swing
+punish needs r ≤ 15 − f ticks, a forward-swing punish r ≤ 21 − f. At the 3 m edge of swing reach
+(f = 13) that leaves 2 ticks for a side swing and 8 for a forward swing: possible only when the
+blocker presses before it sees the block. Beyond about 3 m a blocker standing still cannot reach the
+shooter, whatever the lock.
+
+**The literal is a half tick.** 45 ticks exactly would be 45/60 = 0.75 s. A literal on a tick
+boundary can come out one tick off under float accumulation: 0.3 = 18/60 gives 18 only because the
+float sum overshoots. `0.74167f` is 44.5/60 to within a few microseconds and sits half a tick from
+both neighbours, so `swingTickCount` returns 45 at `dt` = `1.f / 60.f` and at the engine's fixed step
+0.016667. `DAttack.AttackTransitions.CommitmentIs45Ticks` pins it: one shot holds `Attacking` for
+exactly 45 ticks at both `dt` values, its end tick is shot tick + 45, and the rapid-fire period is 45.
+
+**The pin.** `DAttack.AttackTransitions.CommitmentLeavesThePunishWindow` computes k from the shipped
+`StaticData` with no physics: for sequences 0, 1 and 4, the segment that holds local angle 0
+(`DAttackRadialSequence::getAttackSegment`), its start keyframe's time
+(`DAttackRadialSequence::getAttackPointTime`), counted with `swingTickCount`. It takes the slowest k
+and checks the commitment against k + 6 + 10 + 5 at both `dt` values. It measures k = 24, 24 and 18.
+The sum is met exactly (45 ≥ 45), with no slack: a commitment one tick shorter (`0.725f`, 44 ticks)
+fails it, and so does a side-swing wind-up one tick longer. Retuning a swing's keyframes, or this
+constant, re-runs the sum.
+
+**What else the length drives.** The same constant is the D-01 end tick (§8.1), so the movement lock
+of a shot lasts 45 ticks; the rapid-fire period (§6.5); and the exit to `Idle` after a single shot.
+
+**Independent of the projectile lifetime.** `brawlerProjectileSimulation::StaticData::maxLifetime` is
+0.875 s (a slot lives 53 ticks). One is how long the shooter is locked, the other how far the shot
+flies. They are different values, and neither may be derived from the other. With the lock shorter
+than the lifetime, two of a stream's shots are in flight at once for 8 ticks (§6.5).
+
+**Range.** Only blocks within about 2 m are guaranteed punishable ("Beyond 2 m" above). Task 3's
+research found blocks happening out to about 8 m, and put the eight blocks in its PIE logs at an
+estimated 3.1 to 4.6 m. A blocker beyond swing reach cannot close the gap in time, and no reach fix
+is planned (user, 2026-10-03).
+
+**No combo after a projectile hit (user, 2026-10-04).** A point-blank projectile HIT does not leave
+its shooter time to land a side swing before the target's 0.65 s stun (`m_projectileHitReaction`,
+hand-authored) ends. Brawler-movement-simulation task 87 chose the 0.65 s for that combo, when the
+lock was 0.3 s. The swing connects 19 ticks after the shooter goes `Idle`: with the shot on tick 1
+and a lock of L ticks, on tick L + 20. The stun is over on tick 41, so the combo needs L ≤ 20. With
+the 45-tick lock the shooter is `Idle` on tick 46 and its swing connects on tick 65, 24 ticks late
+(measured by task 6 with the retired rig; with 53 ticks it was tick 73, 32 late). The user dropped
+the combo under task 4 and kept the 0.65 s stun. The case that pinned the combo,
+HitRouting.ProjectilePointBlankFollowUpWindow, lost its follow-up half; its shot-only half is now
+`HitRouting.ProjectilePointBlankHitStunsOnce`. No test asserts that the combo is impossible: the two
+numbers that rule it out are pinned absolutely instead
+(`DAttack.AttackTransitions.CommitmentIs45Ticks`, and the 0.65 line in
+`HitRouting.ProjectileHitStunsInPlace`). Bringing the combo back means re-choosing one of them.

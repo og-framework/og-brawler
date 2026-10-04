@@ -16,13 +16,15 @@
 #include "OGBrawler/BrawlerInboundHit.h"
 #include "OGBrawler/BrawlerSyncedPlayerInput.h"
 #include "OGBrawler/InputSequence/InputSequence.h"
+#include "OGBrawler/InputSequence/GameMotions.h"
 #include "OGSimulation/SimulationDependencies.h"
 #include "OGSimulation/SimulationComparisonGlm.h"
 #include "OGSimulation/SimulationFieldDescriptors.h"
 #include "OGSimulation/OGAssert.h"
 #include "OGBrawlerLog.h"
 
-static constexpr float kHadoukenCommitmentSeconds = 0.3f;
+// ∴D-03  docs/DAttackMachineSimulation-rationale.md
+static constexpr float kHadoukenCommitmentSeconds = 0.74167f;
 
 static constexpr float kHitFlinchDuration = 0.3f;
 
@@ -65,6 +67,71 @@ struct PlayerInputView
 			.triggeredActionId = in.triggeredActionId };
 	}
 };
+
+inline bool wantsHeldProjectile(const PlayerInputView& playerInput)
+{
+	// ⛔G-08  docs/DAttackMachineSimulation-guards.md
+	return playerInput.attackRight
+		&& inputSequence::stickMatchesStep(playerInput.moveDirectionWorld, playerInput.aimDirection,
+			kBackShortcutStep, dAttackDirection::kMoveMagnitudeEpsilon);
+}
+
+inline bool wantsProjectile(const PlayerInputView& playerInput)
+{
+	return playerInput.triggeredActionId == inputSequence::kHadoukenActionId
+		|| wantsHeldProjectile(playerInput);
+}
+
+inline constexpr unsigned int kRightFollowUpSequenceId = 2u;
+inline constexpr unsigned int kLeftFollowUpSequenceId = 3u;
+
+constexpr unsigned int followUpSequenceFor(unsigned int activeSequence, unsigned int pressedSequence)
+{
+	if (pressedSequence == dAttackDirection::kRightSequenceId
+		&& (activeSequence == dAttackDirection::kRightSequenceId || activeSequence == kRightFollowUpSequenceId))
+		return kRightFollowUpSequenceId;
+	if (pressedSequence == dAttackDirection::kLeftSequenceId
+		&& (activeSequence == dAttackDirection::kLeftSequenceId || activeSequence == kLeftFollowUpSequenceId))
+		return kLeftFollowUpSequenceId;
+	return InvalidAttackSequenceId;
+}
+
+static_assert(followUpSequenceFor(dAttackDirection::kRightSequenceId, dAttackDirection::kRightSequenceId) == kRightFollowUpSequenceId
+	&& followUpSequenceFor(kRightFollowUpSequenceId, dAttackDirection::kRightSequenceId) == kRightFollowUpSequenceId
+	&& followUpSequenceFor(dAttackDirection::kLeftSequenceId, dAttackDirection::kLeftSequenceId) == kLeftFollowUpSequenceId
+	&& followUpSequenceFor(kLeftFollowUpSequenceId, dAttackDirection::kLeftSequenceId) == kLeftFollowUpSequenceId,
+	"followUpSequenceFor: a same-side press during the right swing (0) or its follow-up (2) queues 2, and during "
+	"the left swing (1) or its follow-up (3) queues 3, whichever button was pressed. Replaces the button-keyed "
+	"follow-up test in integrate3 (attackLeft with 0/2 -> 2, attackRight with 1/3 -> 3), removed by "
+	"og-attackstatetransition-cleanup task 2.");
+
+static_assert([] {
+	constexpr unsigned int ids[] = { 0u, 1u, 2u, 3u, 4u, InvalidAttackSequenceId, kHadoukenSequenceSentinel };
+	unsigned int followUps = 0u;
+	for (const unsigned int active : ids)
+		for (const unsigned int pressed : ids)
+			followUps += followUpSequenceFor(active, pressed) != InvalidAttackSequenceId ? 1u : 0u;
+	return followUps == 4u
+		&& followUpSequenceFor(kHadoukenSequenceSentinel, dAttackDirection::kLeftSequenceId) == InvalidAttackSequenceId
+		&& followUpSequenceFor(kHadoukenSequenceSentinel, dAttackDirection::kRightSequenceId) == InvalidAttackSequenceId
+		&& followUpSequenceFor(dAttackDirection::kForwardSequenceId, dAttackDirection::kForwardSequenceId) == InvalidAttackSequenceId;
+}(), "followUpSequenceFor has exactly four follow-up rows (right 0/2 -> 2, left 1/3 -> 3): the opposite side, the "
+	"forward swing (4), no swing and the Hadouken sentinel map to InvalidAttackSequenceId, so the first side swing "
+	"after a projectile is never a follow-up. Replaces the button-keyed follow-up test removed by "
+	"og-attackstatetransition-cleanup task 2.");
+
+inline unsigned int followUpPressSequence(const PlayerInputView& playerInput)
+{
+	if (!playerInput.attackLeft && !playerInput.attackRight)
+		return InvalidAttackSequenceId;
+	// ⛔G-09  docs/DAttackMachineSimulation-guards.md
+	return wantsProjectile(playerInput)
+		? InvalidAttackSequenceId
+		: dAttackDirection::classify(
+			playerInput.aimDirection,
+			glm::vec3(playerInput.moveDirectionWorld),
+			glm::vec2(playerInput.moveDirection));
+}
 
 template <typename PhysicsAdapterType>
 class IntegrationUtils
@@ -459,6 +526,63 @@ static_assert([] {
 }(), "a dAttackStateName exceeds ogblog::kMaxStringArgBytes; the OGBLOG_G clip check no longer bounds the [Machine.*] lines that print it");
 
 template <typename PhysicsAdapterType>
+void launchHadouken(float deltaTime,
+	const AllInput<PhysicsAdapterType>& input,
+	Dependencies& deps,
+	const simulatableBrawler::CharacterBindings& characterBindings,
+	dAttackRadialSimulation::InitialConditions& attackIntialConditions,
+	State& state)
+{
+	const PlayerInputView& playerInput = input.getPlayerInput();
+	const DAttackState fromState = state.m_currentState;
+
+	brawlerProjectileSimulation::InitialConditions& projectileIC =
+		deps.external.edit<brawlerProjectileSimulation::InitialConditions>();
+	const brawlerProjectileSimulation::StaticData& projSD =
+		input.getIntegrationUtils().getProjectileStaticData();
+	const glm::vec3 parentPosition = glm::vec3(
+		input.getIntegrationUtils().getPhysicsAdapter().getBodyTransform(
+			characterBindings.capsuleBodyId)[3]);
+
+	const glm::vec3 aimXYraw(playerInput.aimDirection.x, playerInput.aimDirection.y, 0.f);
+	const glm::vec3 aimXY = (glm::length(aimXYraw) < 0.0001f)
+		? glm::vec3(1.f, 0.f, 0.f)
+		: glm::normalize(aimXYraw);
+
+	projectileIC.spawnRequestPending = 1;
+	projectileIC.spawnPos = parentPosition
+		+ aimXY * projSD.spawnForwardOffset
+		+ glm::vec3(0.f, 0.f, projSD.spawnZOffset);
+	projectileIC.spawnDir = aimXY;
+
+	state.m_activeAttackSequence = kHadoukenSequenceSentinel;
+	attackIntialConditions.activeAttackSequence = kHadoukenSequenceSentinel;
+	state.m_currentState = DAttackState::Attacking;
+	state.m_timeInCurrentState = 0.f;
+
+	const uint32_t currentTick = input.getIntegrationUtils().getCurrentTick();
+	// ∴D-01  docs/DAttackMachineSimulation-rationale.md
+	state.m_attackEndTick =
+		currentTick + swingTickCount(kHadoukenCommitmentSeconds, deltaTime);
+	OG_CHECK(state.m_attackEndTick > currentTick,
+		"dAttackMachineSimulation::launchHadouken - the Hadouken commitment must be at "
+		"least one tick long; swingTickCount returns at least 1 for any positive "
+		"duration, so this can only fire if kHadoukenCommitmentSeconds went "
+		"non-positive.");
+
+	if (fromState == DAttackState::Attacking)
+	{
+		OGBLOG_G("[Machine.transition] Attacking -> Attacking (Hadouken repeat, projectile spawn "
+			"requested) endTick=%u", state.m_attackEndTick);
+	}
+	else
+	{
+		OGBLOG_G("[Machine.transition] Idle -> Attacking (Hadouken, projectile spawn "
+			"requested) endTick=%u", state.m_attackEndTick);
+	}
+}
+
+template <typename PhysicsAdapterType>
 void integrate3(float deltaTime,
 	const AllInput<PhysicsAdapterType>& input,
 	Dependencies deps,
@@ -491,58 +615,13 @@ void integrate3(float deltaTime,
 		attackIntialConditions.activeAttackSequence = InvalidAttackSequenceId;
 	}
 
-	// ⛔G-04  docs/DAttackMachineSimulation-guards.md
-	if (inboundHit.wasProjectileBlockedThisTick && state.m_currentState != DAttackState::GuardFlinch)
-	{
-		OGBLOG_G("[Machine.transition] %s -> GuardFlinch (projectile blocked)", dAttackStateName(state.m_currentState));
-		state.m_currentState = DAttackState::GuardFlinch; state.m_timeInCurrentState = 0.f;
-		state.m_activeAttackSequence = InvalidAttackSequenceId;
-		state.m_queuedAttackSequence = InvalidAttackSequenceId;
-		attackIntialConditions.activeAttackSequence = InvalidAttackSequenceId;
-	}
-
 	switch (state.m_currentState)
 	{
 	case DAttackState::Idle:
 	{
-		if (playerInput.triggeredActionId == inputSequence::kHadoukenActionId)
+		if (wantsProjectile(playerInput))
 		{
-			brawlerProjectileSimulation::InitialConditions& projectileIC =
-				deps.external.edit<brawlerProjectileSimulation::InitialConditions>();
-			const brawlerProjectileSimulation::StaticData& projSD =
-				input.getIntegrationUtils().getProjectileStaticData();
-			const glm::vec3 parentPosition = glm::vec3(
-				input.getIntegrationUtils().getPhysicsAdapter().getBodyTransform(
-					characterBindings.capsuleBodyId)[3]);
-
-			const glm::vec3 aimXYraw(playerInput.aimDirection.x, playerInput.aimDirection.y, 0.f);
-			const glm::vec3 aimXY = (glm::length(aimXYraw) < 0.0001f)
-				? glm::vec3(1.f, 0.f, 0.f)
-				: glm::normalize(aimXYraw);
-
-			projectileIC.spawnRequestPending = 1;
-			projectileIC.spawnPos = parentPosition
-				+ aimXY * projSD.spawnForwardOffset
-				+ glm::vec3(0.f, 0.f, projSD.spawnZOffset);
-			projectileIC.spawnDir = aimXY;
-
-			state.m_activeAttackSequence = kHadoukenSequenceSentinel;
-			attackIntialConditions.activeAttackSequence = kHadoukenSequenceSentinel;
-			state.m_currentState = DAttackState::Attacking;
-			state.m_timeInCurrentState = 0.f;
-			{
-				const uint32_t currentTick = input.getIntegrationUtils().getCurrentTick();
-				// ∴D-01  docs/DAttackMachineSimulation-rationale.md
-				state.m_attackEndTick =
-					currentTick + swingTickCount(kHadoukenCommitmentSeconds, deltaTime);
-				OG_CHECK(state.m_attackEndTick > currentTick,
-					"dAttackMachineSimulation::integrate3 - the Hadouken commitment must be at "
-					"least one tick long; swingTickCount returns at least 1 for any positive "
-					"duration, so this can only fire if kHadoukenCommitmentSeconds went "
-					"non-positive.");
-				OGBLOG_G("[Machine.transition] Idle -> Attacking (Hadouken, projectile spawn "
-					"requested) endTick=%u", state.m_attackEndTick);
-			}
+			launchHadouken(deltaTime, input, deps, characterBindings, attackIntialConditions, state);
 			break;
 		}
 
@@ -589,7 +668,8 @@ void integrate3(float deltaTime,
 			attackIntialConditions.activeAttackSequence = InvalidAttackSequenceId;
 		}
 
-		if (playerInput.attackLeft && playerInput.attackRight)
+		// ⛔G-10  docs/DAttackMachineSimulation-guards.md
+		if (isRealAttackSequence(state.m_activeAttackSequence) && playerInput.attackLeft && playerInput.attackRight)
 		{
 			if (attackState.attackTimer < 0.1)
 			{
@@ -611,23 +691,27 @@ void integrate3(float deltaTime,
 
 		if (attackState.attackTimer > 0.3 && state.m_queuedAttackSequence == InvalidAttackSequenceId)
 		{
-			if (playerInput.attackLeft && (attackIntialConditions.activeAttackSequence == 0 || attackIntialConditions.activeAttackSequence == 2))
+			const unsigned int followUp = followUpSequenceFor(
+				attackIntialConditions.activeAttackSequence, followUpPressSequence(playerInput));
+			if (followUp != InvalidAttackSequenceId)
 			{
-				OGBLOG_G("[Machine.Attacking] queue seq=2 (L,timer>0.3,ic=%u)", attackIntialConditions.activeAttackSequence);
-				state.m_queuedAttackSequence = 2;
-			}
-			if (playerInput.attackRight && (attackIntialConditions.activeAttackSequence == 1 || attackIntialConditions.activeAttackSequence == 3))
-			{
-				OGBLOG_G("[Machine.Attacking] queue seq=3 (R,timer>0.3,ic=%u)", attackIntialConditions.activeAttackSequence);
-				state.m_queuedAttackSequence = 3;
+				OGBLOG_G("[Machine.Attacking] queue seq=%u (L=%d R=%d,timer>0.3,ic=%u)", followUp,
+					playerInput.attackLeft ? 1 : 0, playerInput.attackRight ? 1 : 0,
+					attackIntialConditions.activeAttackSequence);
+				state.m_queuedAttackSequence = followUp;
 			}
 		}
 
+		const bool hadoukenActive = state.m_activeAttackSequence == kHadoukenSequenceSentinel;
 		const bool inHadoukenCommitment =
-			state.m_activeAttackSequence == kHadoukenSequenceSentinel
+			hadoukenActive
 			&& state.m_timeInCurrentState < kHadoukenCommitmentSeconds;
 
-		if (!inHadoukenCommitment && attackState.currenSequenceId == InvalidAttackSequenceId)
+		if (hadoukenActive && !inHadoukenCommitment && wantsHeldProjectile(playerInput))
+		{
+			launchHadouken(deltaTime, input, deps, characterBindings, attackIntialConditions, state);
+		}
+		else if (!inHadoukenCommitment && attackState.currenSequenceId == InvalidAttackSequenceId)
 		{
 			if (state.m_queuedAttackSequence != InvalidAttackSequenceId)
 			{

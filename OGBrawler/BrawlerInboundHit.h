@@ -10,9 +10,8 @@ namespace brawlerInboundHit
     class DerivedState
     {
     public:
-        bool wasHitThisTick               = false;
-        bool wasProjectileBlockedThisTick = false;
-        bool wasGuardBlockedThisTick      = false;
+        bool wasHitThisTick          = false;
+        bool wasGuardBlockedThisTick = false;
 
         HitReactionKind reactionKind   = HitReactionKind::Stun;
         float           knockbackSpeed = 0.f;

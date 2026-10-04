@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- lint-external-ref: wasProjectileBlockedThisTick -- RETIRED by og-attackstatetransition-cleanup task 4: the inbound-slice flag that drove the projectile-block recoil (guard G-04 of DAttackMachineSimulation-guards.md). It must NOT resolve -->
 # `DAttackMachineSimulation.h` — guards
 
 Every prohibition the attack state machine's header still needs a person to read. Each entry has an
@@ -118,54 +119,6 @@ and -1 under the int one.
 
 ---
 
-## G-04 — The projectile-block recoil fires from ANY origin state
-
-**Tag site:** `DAttackMachineSimulation.h`, `integrate3`, on
-`if (inboundHit.wasProjectileBlockedThisTick && state.m_currentState != DAttackState::GuardFlinch)`.
-
-<!-- header lines 610-622 -->
-```cpp
-// [hit-resolution T15] Shooter-side GuardFlinch from a blocked projectile.
-// The manager routing pass sets wasProjectileBlockedThisTick=true on THIS character
-// (the shooter) when any of its projectile slots ended the prior tick with
-// endReason=4 (blockedByGuard, per T14). Fires the same recoil the radial swing's
-// attacker-side guard-block path produces (wasGuardBlockedThisTick, read in the
-// Attacking case below; it was the radial State's hasHitGuard until
-// og-netcode-v2-field-defects task 9). Unlike the guard-block path, this one intentionally fires from any origin state — including
-// Idle — because a projectile can be blocked long after the shooter's Hadouken
-// commitment window has expired and they've returned to Idle. Same cancellation
-// as the HitFlinch veto above: active/queued sequences cleared so the switch below
-// lands in the GuardFlinch case with m_timeInCurrentState freshly reset. The
-// `!= GuardFlinch` guard prevents re-transition if the character is already
-// flinching (rapid successive blocks coalesce to a single flinch window).
-```
-
-**The prohibition.** Do not narrow this condition to an origin state, for example by gating it on
-`Attacking` the way the swing's guard-block recoil is gated.
-
-**What breaks if the edit is made.** A projectile can be blocked long after its shooter's Hadouken
-commitment window has ended and the shooter is back in `Idle`. With an origin gate, that block
-produces no recoil at all.
-
-**R0 (verified 2026-09-23).** The signal is set by `brawlerHitRouting::System::postIntegrate`, branch
-4, on the prior tick, for any of the shooter's projectile slots that ended that tick with
-`endReason == 4` (blocked by guard). ⚠ **Since og-netcode-v2-field-defects task 20** it is set by
-`preIntegrate` of the consuming tick, for slots whose `endTick` is the tick integrated last
-(task 20 Rework (1)). ⚠ **Since og-netcode-v2-field-defects task 17** no slot `endTick` is matched
-at all: `brawlerHitDetection::System`'s projectile pass finds the slot `BlockedByGuard` at its
-closed-form position on the step's own tick, routing branch 4 copies that onto this slice in the
-same `preIntegrate`, and the machine reads it in that same step's `integrate`, the tick the shot
-reaches the guard, while the projectile sub-simulation ends the slot with `endReason` 4. That is
-the systems executor's routing system, not "the manager routing pass" the quote names. ⚠ **A same-tick interaction the quote does not state:** the inbound-hit
-veto runs first. When `wasHitThisTick` and `wasProjectileBlockedThisTick` are both set on one tick,
-the veto moves the machine to `HitFlinch`, and this block then moves it on to `GuardFlinch` (the
-`!= GuardFlinch` test passes). The hit's `m_hitReaction` and `m_flinchDuration` stay written. That is
-found by reading the code, not by running it; it is recorded in the rationale, §7.3.
-
-**Placement.** An addition to the tagged condition: typed on the tagged statement.
-
----
-
 ## G-05 — One forward/side decision, shared with the indicator: `dAttackDirection::classify`
 
 **Tag site:** `DAttackMachineSimulation.h`, `integrate3`, `Idle` case, on
@@ -188,6 +141,14 @@ swing and gets another.
 
 **R0 (verified 2026-09-23).** The two production callers are this statement and
 `DAttackVisualizationUtils.h`. The only other caller is the classifier's own test file.
+
+⚠ **R0 (2026-10-03, og-attackstatetransition-cleanup task 2).** There are now three production callers:
+this statement, `dAttackMachineSimulation::followUpPressSequence` in this header (which side a press
+during a swing asks for, guard **G-09**), and `DAttackVisualizationUtils.h`. The same prohibition
+holds at the second site, and G-09 carries it there, because one tag stands on one statement. Test
+files that call `classify` today: `DAttackDirectionClassifierTest.cpp`,
+`IntegrateThreeAttackSelectionTest.cpp` and `AttackStateTransitionTest.cpp`, not the classifier's own
+test file alone.
 
 **Placement.** A substitution on the tagged statement.
 
@@ -271,6 +232,127 @@ rationale, §8.2.
 
 ---
 
+## G-08 — "Holding back" is the matcher's step and the classifier's epsilon, never a local cone or a client tweakable
+
+**Tag site:** `DAttackMachineSimulation.h`, `dAttackMachineSimulation::wantsHeldProjectile`, on its
+`return` statement (three lines; both tokens below are on its continuation line).
+
+Added by og-attackstatetransition-cleanup task 1 (2026-10-03). It replaces no comment; there was no
+held trigger before it.
+
+**The prohibition.** Two substitutions are forbidden on the tagged statement.
+1. Replacing `kBackShortcutStep` with a step, cone or angle typed here, or with another constant such
+   as the classifier's `dAttackDirection::kBackpedalConeHalfAngle`.
+2. Replacing `dAttackDirection::kMoveMagnitudeEpsilon` with `g_moveStickDeadzone` or any other value
+   from `DAttackMachineSimulationRuntimeTweakables.h`.
+
+**What breaks if the edit is made.**
+1. "Holding back" gets two definitions. The motion matcher fires the first projectile on the button's
+   rising edge with motion 3 of `kGameMotions`, whose only step is `kBackShortcutStep`. The machine
+   fires every later projectile with its own cone. A stick between the two cones gives a projectile
+   on the press and a classified swing on the hold, or the reverse. Changing the cone in
+   `GameMotions.h` changes both, which is the point.
+2. `g_moveStickDeadzone` is a per-process atomic, set from a console variable
+   (`MovementSchemeCVar.cpp`). The server, each client and every resimulation run this function on
+   the same wire input; with a tweakable in it, peers with different values decide differently, and
+   one fires a projectile where another swings. A simulation reads wire input and static data only.
+
+`DAttack.AttackTransitions.BackConeIsTheMatchersCone` catches a cone change that moves the edge past
+15° or 30° off dead-back. A change between those, and edit 2, are caught by no test.
+
+**R0 (verified 2026-10-03).** The client zeroes `moveDirectionWorld` below `g_moveStickDeadzone`
+(`UOGBrawlerInputCollectionComponent::buildMoveDirectionWorld`), so a stick under the deadzone reaches
+the simulation as the zero vector, and the epsilon only has to reject that zero.
+`inputSequence::stickMatchesStep` gates on the length of `moveDirectionWorld`'s XY. ⚠ The 2D stick
+(`PlayerInputView::moveDirection`, the wire's `moveStick`) is **not** zeroed: the client packs the
+routed raw stick (`dInput::stickRouting::routeSticks` applies the deadzone only to pick a source in
+one scheme). This predicate does not read it.
+
+**Placement.** Both edits are substitutions on the tagged statement.
+
+---
+
+## G-09 — A follow-up press's side is the classifier's, never the button's, and a projectile input is no press
+
+**Tag site:** `DAttackMachineSimulation.h`, `dAttackMachineSimulation::followUpPressSequence`, on its
+`return` statement (five lines: the `wantsProjectile` test and the `dAttackDirection::classify` call
+are both on it).
+
+Added by og-attackstatetransition-cleanup task 2 (2026-10-03). It replaces no comment. It replaces
+the button-keyed follow-up test that stood in `integrate3`'s `Attacking` case (`attackLeft` with an
+active 0 or 2 queued 2, `attackRight` with an active 1 or 3 queued 3).
+
+**The prohibition.** Two edits are forbidden on the tagged statement.
+1. Replacing the `dAttackDirection::classify` call with a side taken from the button
+   (`attackLeft` / `attackRight`) or from any decision made here.
+2. Deleting the `wantsProjectile(playerInput)` test, or narrowing it to one of its two halves.
+
+**What breaks if the edit is made.**
+1. The side of a swing comes from `classify` (the `Idle` entry, guard **G-05**). A follow-up keyed on
+   the button chains only when the button happens to match the side: with the old rule a left swing
+   chained only on attack 2 and a right swing only on attack 1, which is the PIE report this task
+   fixed (rationale §14.1). A decision of its own can also disagree with
+   the indicator, as G-05 says.
+2. Back + attack 2 is the projectile input. The classifier calls a stick between its 10° backpedal
+   cone and the matcher's π/8 cone a SIDE, so without the test a projectile input during a left
+   swing queues the left follow-up (3), and the projectile the player asked for never comes.
+
+`DAttack.AttackTransitions.LeftSwingFollowUpWithAttack1` and `RightSwingFollowUpWithAttack2` fail on
+edit 1 (both were seen failing on the button-keyed rule). `ProjectileInputMidSwingIsNotAFollowUp` fails
+on edit 2 (seen failing: the swing chained into 3). `FollowUpPressIsTheClassifiedSideWithoutProjectileIntent`
+pins the function directly, for every whole degree around a tilted aim.
+
+**R0 (verified 2026-10-03).** At 15° off dead-back on the side `classify` calls left, `classify`
+returns `kLeftSequenceId` and `wantsHeldProjectile` is true (both `REQUIRE`d by the test).
+`wantsProjectile` is `triggeredActionId == kHadoukenActionId || wantsHeldProjectile(playerInput)`,
+the same test the `Idle` case fires on. Edit 2 was made on a poison build (the test replaced by
+`false`; restored byte-identical, md5 checked): `ProjectileInputMidSwingIsNotAFollowUp` and
+`FollowUpPressIsTheClassifiedSideWithoutProjectileIntent` failed, and nothing else in
+`[AttackTransitions]`.
+
+**Placement.** Edit 1 substitutes a token on the tagged statement, edit 2 deletes or substitutes a
+token on it.
+
+---
+
+## G-10 — The dual press acts on a real swing only, never under the projectile sentinel
+
+**Tag site:** `DAttackMachineSimulation.h`, `integrate3`, `Attacking` case, on
+`if (isRealAttackSequence(state.m_activeAttackSequence) && playerInput.attackLeft && playerInput.attackRight)`.
+
+Added by og-attackstatetransition-cleanup task 2 (2026-10-03). It replaces no comment.
+
+**The prohibition.** Do not delete `isRealAttackSequence(state.m_activeAttackSequence)` from the
+tagged condition.
+
+**What breaks if the edit is made.** Under `kHadoukenSequenceSentinel` the radial's `attackTimer` is 0
+(the sentinel path returns before advancing it), so a dual press takes the `attackTimer < 0.1` restart
+branch. That overwrites the sentinel with 4, the commitment test then reads false, and the exit below
+runs on the same tick: the machine goes `Idle` in the middle of the commitment, and the held buttons
+start sequence 4 on the next tick. With the stick back as well, `Idle` fires again on that next tick,
+so holding both buttons and back fires a projectile **every second tick** and fills the pool.
+`DAttack.AttackTransitions.DualPressCannotHijackProjectile` was seen failing both ways on the code
+before this guard: `Idle` on the press tick and sequence 4 from the next; shots on ticks 1, 3, 5, …
+with 35 `[Projectile.poolFull]` lines.
+
+**A second path the same token closes.** The swing's guard-block recoil, earlier in the same case,
+clears the active sequence, so on a guard-block tick the condition is false too. Without the token, a
+dual press on that tick reaches a character that is already in `GuardFlinch`: inside the first 0.1 s
+it sets the active sequence to 4 and hands it to the radial; past 0.3 s it queues 4, the queue
+survives the recoil and `Idle`, and the next swing chains into 4 instead of its follow-up.
+`DAttack.AttackTransitions.DualPressOnAGuardBlockTickQueuesNothing` pins both.
+
+**R0 (measured 2026-10-03).** Both paths were run with this token deleted (a poison build of the
+header; restored byte-identical, md5 checked). `DualPressCannotHijackProjectile` failed in both
+sections and `DualPressOnAGuardBlockTickQueuesNothing` failed on both rows: active 4 on the
+block tick inside the window; queued 4 on the block tick past 0.3 s, still queued after the recoil,
+and the next swings `{ 0, 4, 0, 2, … }`. Nothing else in `[AttackTransitions]` failed. Guard **G-06**
+(no end-tick write on the restart branch) is unchanged and still holds for every real swing.
+
+**Placement.** A deletion of a token from the tagged condition.
+
+---
+
 ## C. Census — every prohibition the pre-conversion header stated
 
 Closed, so nobody reads a missing id as a deletion. "Measured" means task 18 made the forbidden edit
@@ -287,7 +369,7 @@ on a shadow copy and compiled it (single translation unit, the `OGBrawlerTests` 
 | 7 | the neutral input is `(0,0,1)`, never `PlayerInput{}` (85-91) | **G-01**, retired by og-syncedInput-rework task 4 (§R); now `static_assert`s in `BrawlerSyncedPlayerInput.h` | substitution |
 | 8 | `swingTickCount` is the radial's loop (147-163) | **G-02** (a `static_assert` was tried and rejected as vacuous) | deletion + substitution |
 | 9 | `glm::abs`, never unqualified `abs` (235-244) | **G-03** | substitution |
-| 10 | projectile-block recoil from any origin state (610-622) | **G-04** | addition |
+| 10 | projectile-block recoil from any origin state (610-622) | **G-04**, retired by og-attackstatetransition-cleanup task 4 (§R): the transition itself was deleted at the user's ruling | addition |
 | 11 | one direction decision, shared with the indicator (697-700) | **G-05** | substitution |
 | 12 | the dual-tap branch writes no end tick (752-764) | **G-06** | absence |
 | 13 | the chain rewrites the end tick (808-812) | **G-07** | deletion |
@@ -301,6 +383,12 @@ on a shadow copy and compiled it (single translation unit, the `OGBrawlerTests` 
 1 deletion + substitution, 1 absence). 2 ordering constraints, untagged. 5 compiler-held (measured).
 1 converted by a new assertion. 3 facts with no forbidden edit, in the rationale.
 ⚠ Since og-syncedInput-rework task 4: 6 tagged; G-01 retired with the type it stood on.
+⚠ Since og-attackstatetransition-cleanup task 4: 5 tagged; G-04 retired with the transition it stood on.
+
+**Added after the conversion** (not in the census above, which closes over the pre-conversion
+header): **G-08** (og-attackstatetransition-cleanup task 1), two substitutions on one statement.
+**G-09** (task 2), a substitution and a deletion on one statement. **G-10** (task 2), a deletion. The
+follow-up mapping itself (`followUpSequenceFor`) is held by two `static_assert`s, with no entry.
 
 ---
 
@@ -390,3 +478,75 @@ BrawlerSyncedPlayerInput-guards.md."* (the value-initialised aim differs from it
 which carried this entry's prohibition from task 2 on, were retired into the assertions in the same
 change (`BrawlerSyncedPlayerInput-guards.md` §R).
 
+---
+
+### G-04 — RETIRED (og-attackstatetransition-cleanup task 4): the projectile-block recoil was deleted
+
+**Was:** *The projectile-block recoil fires from ANY origin state*. The entry below is the text as
+og-attackstatetransition-cleanup task 4 found it.
+
+**Tag site:** `DAttackMachineSimulation.h`, `integrate3`, on
+`if (inboundHit.wasProjectileBlockedThisTick && state.m_currentState != DAttackState::GuardFlinch)`.
+
+<!-- header lines 610-622 -->
+```cpp
+// [hit-resolution T15] Shooter-side GuardFlinch from a blocked projectile.
+// The manager routing pass sets wasProjectileBlockedThisTick=true on THIS character
+// (the shooter) when any of its projectile slots ended the prior tick with
+// endReason=4 (blockedByGuard, per T14). Fires the same recoil the radial swing's
+// attacker-side guard-block path produces (wasGuardBlockedThisTick, read in the
+// Attacking case below; it was the radial State's hasHitGuard until
+// og-netcode-v2-field-defects task 9). Unlike the guard-block path, this one intentionally fires from any origin state — including
+// Idle — because a projectile can be blocked long after the shooter's Hadouken
+// commitment window has expired and they've returned to Idle. Same cancellation
+// as the HitFlinch veto above: active/queued sequences cleared so the switch below
+// lands in the GuardFlinch case with m_timeInCurrentState freshly reset. The
+// `!= GuardFlinch` guard prevents re-transition if the character is already
+// flinching (rapid successive blocks coalesce to a single flinch window).
+```
+
+**The prohibition.** Do not narrow this condition to an origin state, for example by gating it on
+`Attacking` the way the swing's guard-block recoil is gated.
+
+**What breaks if the edit is made.** A projectile can be blocked long after its shooter's Hadouken
+commitment window has ended and the shooter is back in `Idle`. With an origin gate, that block
+produces no recoil at all.
+
+**R0 (verified 2026-09-23).** The signal is set by `brawlerHitRouting::System::postIntegrate`, branch
+4, on the prior tick, for any of the shooter's projectile slots that ended that tick with
+`endReason == 4` (blocked by guard). ⚠ **Since og-netcode-v2-field-defects task 20** it is set by
+`preIntegrate` of the consuming tick, for slots whose `endTick` is the tick integrated last
+(task 20 Rework (1)). ⚠ **Since og-netcode-v2-field-defects task 17** no slot `endTick` is matched
+at all: `brawlerHitDetection::System`'s projectile pass finds the slot `BlockedByGuard` at its
+closed-form position on the step's own tick, routing branch 4 copies that onto this slice in the
+same `preIntegrate`, and the machine reads it in that same step's `integrate`, the tick the shot
+reaches the guard, while the projectile sub-simulation ends the slot with `endReason` 4. That is
+the systems executor's routing system, not "the manager routing pass" the quote names. ⚠ **A same-tick interaction the quote does not state:** the inbound-hit
+veto runs first. When `wasHitThisTick` and `wasProjectileBlockedThisTick` are both set on one tick,
+the veto moves the machine to `HitFlinch`, and this block then moves it on to `GuardFlinch` (the
+`!= GuardFlinch` test passes). The hit's `m_hitReaction` and `m_flinchDuration` stay written. That is
+found by reading the code, not by running it; it is recorded in the rationale, §7.3.
+
+**Placement.** An addition to the tagged condition: typed on the tagged statement.
+
+⛔ **Why it retired.** User ruling, 2026-10-03 (og-attackstatetransition-cleanup Backlog task 4):
+the shooter must NOT enter `GuardFlinch` when its projectile is blocked. The punish window comes
+from a longer lock after every shot instead: `kHadoukenCommitmentSeconds` (0.875 s, 53 ticks at
+60 Hz, from task 4; 0.74167 s, 45 ticks, since task 6: `DAttackMachineSimulation-rationale.md` §15). Task 4 deleted the `if` the tag stood on, and
+with it the only reader of its input. The input went too: the slice field
+`wasProjectileBlockedThisTick` and the routing loop that set it (`brawlerHitRouting::System`, the
+branch the routing rationale numbers 4). A block now only ends the slot: the projectile integrate
+still writes `endReason` 4 from the detector's `BlockedByGuard` outcome. The melee guard-block
+recoil (`wasGuardBlockedThisTick`, read in the `Attacking` case) is unchanged.
+
+⚠ **R0 on the text above (2026-10-04).** The same-tick interaction in its R0 paragraph (a hit and
+a block on one tick end in `GuardFlinch` with the hit's reaction stranded) cannot happen any more:
+a hit on a block tick now stands, with its own reaction and dwell. Verified by reading the header.
+
+**Successor.** No prohibition: the forbidden edit (narrowing the transition to an origin state) has
+no statement left to be typed on. The behaviour is pinned instead:
+`DAttack.AttackTransitions.ProjectileBlockDoesNotFlinchShooter` (a block while `Idle`, mid-commitment
+and in rapid fire: no `GuardFlinch`, the slot ends with `endReason` 4, the schedule is unchanged) and
+`DAttack.AttackTransitions.MeleeGuardBlockRecoilIsUnchanged` (the swing's recoil is still 18 ticks
+at both shipped `dt` values). Both were seen against the code before task 4: the first failed there
+(`GuardFlinch` on the block tick), the second passed (18).

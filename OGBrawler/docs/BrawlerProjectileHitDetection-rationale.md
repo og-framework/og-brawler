@@ -121,7 +121,7 @@ collision-channel setup, which was read, not measured. The code did not change; 
 The pass queries each slot at its closed-form position on `step.getTick()`, in that step's
 `preIntegrate` (`BrawlerHitDetectionSystem-guards.md` G-14). `integrate` of the same step snaps
 the body to that same position and ends the slot there. Consequences, measured in
-`HitRouting.ProjectilePointBlankFollowUpWindow` (fire on tick 1, target at point blank):
+HitRouting.ProjectilePointBlankFollowUpWindow (fire on tick 1, target at point blank):
 
 | | before task 17 | after |
 |---|---|---|
@@ -131,6 +131,14 @@ the body to that same position and ends the slot there. Consequences, measured i
 | target leaves `HitFlinch` | 42 | **41** |
 | follow-up swing's first damaging tick | 38 | 38 |
 | slack | 4 ticks | **3 ticks** |
+
+⚠ **The last two rows are retired (og-attackstatetransition-cleanup task 4, user ruling 2026-10-04).**
+That task lengthened the Hadouken commitment to 0.875 s, so the follow-up swing connected on tick 73,
+32 ticks after the stun ends; at today's 0.74167 s (the same initiative's task 6) it connects on tick
+65, still 24 ticks late. The user dropped that combo, and the case lost its follow-up half. Its
+shot-only half, `HitRouting.ProjectilePointBlankHitStunsOnce`, still measures the first four rows
+(2, 2, 2 and 41 on 2026-10-04) and asserts how they relate: `endTick` is the contact tick, the target
+enters `HitFlinch` on it, and the stun lasts the authored lockout (to within three ticks).
 
 The shot is never drawn a step past the target: `endTick` is the contact tick, as before, and the
 visualization draws no slot whose `endTick` is set.

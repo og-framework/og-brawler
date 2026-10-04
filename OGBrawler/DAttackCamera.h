@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 #include "OGSimulation/OGExport.h"
+#include <algorithm>
 #include <vector>
+#include "glm/trigonometric.hpp"
 #include "glm/vec2.hpp"
 #include "glm/vec3.hpp"
 #include "OGSimulation/DPID.h"
@@ -73,6 +75,22 @@ OGSIM_OPTIMIZE_OFF
 namespace dAttackCameraBehaviour
 {
 	OGBRAWLER_API void integrate(float deltaSeconds, const DAttackCameraInput& input, DAttackCameraState& state);
+
+	// [og-attackstatetransition-cleanup task 7] The target pitch integrate() compares against
+	// glm::eulerAngles(boomRotation).y, from an Unreal FRotator pitch in degrees (negative looks
+	// down). Measured, not assumed: FRotator(-60, yaw, 0) copied raw into a glm::quat gives
+	// eulerAngles().y == +pi/3 for every yaw, hence the minus sign (DAttackCameraIsoSeedTest.cpp).
+	// Clamped to [1, 89] degrees because integrate() calls std::clamp(currentPitch, 0, targetPitch),
+	// which is undefined for a negative target, and divides by the target.
+	constexpr float kMinTargetPitchDegrees = 1.f;
+	constexpr float kMaxTargetPitchDegrees = 89.f;
+	static_assert(0.f < kMinTargetPitchDegrees && kMinTargetPitchDegrees < kMaxTargetPitchDegrees && kMaxTargetPitchDegrees < 90.f,
+		"integrate()'s target pitch must stay inside (0, 90) degrees: std::clamp(currentPitch, 0, target) needs target > 0");
+
+	inline float targetPitchFromUEPitchDegrees(float uePitchDegrees)
+	{
+		return glm::radians(std::clamp(-uePitchDegrees, kMinTargetPitchDegrees, kMaxTargetPitchDegrees));
+	}
 }
 OGSIM_OPTIMIZE_ON
 

@@ -278,6 +278,11 @@ unsigned int DAttackRadialSequence::getAttackPointCount() const
 	return static_cast<unsigned int>(m_attackPoints.size());
 }
 
+float DAttackRadialSequence::getAttackPointTime(unsigned int index) const
+{
+	return m_attackPoints[index].time;
+}
+
 unsigned int DAttackRadialSequence::getAttackSegmentCount() const
 {
 	return m_attackPoints.size() - 1;

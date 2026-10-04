@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- lint-external-ref: wasProjectileBlockedThisTick -- RETIRED by og-attackstatetransition-cleanup task 4: named here as one of the three signals task 20 moved. It must NOT resolve -->
 # `BrawlerHitDetectionSystem.h` — rationale
 
 <!-- lint-external-ref: impl/design_hit_detection_system.md -- the task-9 design document, in the og-netcode-v2-field-defects initiative workspace; that workspace is not part of this repository -->
@@ -201,7 +202,7 @@ after:   integrate(T) -> [physics step T] -> preIntegrate(T+1): detect+route -> 
 `integrate(T+1)`: state carried across a tick boundary off the wire. A resim replay starts at T+1,
 so a replay anchored at the end of T never re-ran T's pass and read the frontier's stale slice (the
 task 9 behaviour review's F7 for the guard block; the same hole in `wasHitThisTick` since T3 and in
-`wasProjectileBlockedThisTick` since T15). After the move the signal is produced and consumed inside
+`wasProjectileBlockedThisTick` since T15, a flag og-attackstatetransition-cleanup task 4 deleted). After the move the signal is produced and consumed inside
 T+1 and is recomputed from the restored end-of-T state. The machine reacts on the same tick as
 before: no added latency. og-simulation fires `preIntegrate` before `integrateAll` on the
 prediction, authority and resim step functions alike (`SimulationManager.h`), so it needed no edit.
@@ -240,7 +241,7 @@ move shifted nothing in the rig; the UE shift above is not visible to them):
 |---|---|---|---|---|---|
 | order-swap (`StunExitTickOutcomeIsIndependentOfIntegrateOrder`) | 15 | 39 (swing tick 24) | `GuardFlinch` 40 | same | same |
 | task 86 follow-up (`HitRouting.StunHitFiresOnce`) | 0 | 18 | `HitFlinch` 19 → 58; follow-up damaging 52; slack 6 | same | same |
-| task 87 projectile (`HitRouting.ProjectilePointBlankFollowUpWindow`) | fire 1 | 2 | follow-up damaging 38; stun ends 42; slack 4 | same | same |
+| task 87 projectile (HitRouting.ProjectilePointBlankFollowUpWindow, follow-up half retired 2026-10-04) | fire 1 | 2 | follow-up damaging 38; stun ends 42; slack 4 | same | same |
 
 ⚠ **R0, task 29: both rows are the values on the day of task 20, and both have since moved.**
 Re-measured 2026-09-26 (`-s` on the committed tree): the stun follow-up now reads `HitFlinch` 19 → 63,
@@ -249,6 +250,13 @@ follow-up damaging 52, slack 11, because the user re-tuned the forward/overhead 
 3, because task 17 moved the projectile's reaction one tick earlier
 (`BrawlerProjectileHitDetection-rationale.md` §3). "Same | same" still holds for what the table was
 built to show: task 20's move shifted nothing in the rigs.
+
+⚠ **The projectile row's follow-up is gone (og-attackstatetransition-cleanup task 4, user ruling
+2026-10-04).** That task lengthened the Hadouken commitment to 0.875 s, so the shooter's follow-up
+swing connected on tick 73, 32 ticks after the stun ends on tick 41, and the user dropped that combo.
+At today's 0.74167 s (45 ticks, the same initiative's task 6) it connects on tick 65, still 24 ticks
+late. The case kept its shot-only half, renamed `HitRouting.ProjectilePointBlankHitStunsOnce`
+(contact 2, `HitFlinch` 2 → 41). The row stays as the record of task 20's measurement.
 
 **Which tick the pass reduces.** The melee pass reads whatever end state the timeline holds,
 whatever the step kind. ⚠ Task 20 Rework (1) made routing branches 3 and 4 match a projectile slot's

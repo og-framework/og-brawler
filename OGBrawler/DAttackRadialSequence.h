@@ -73,6 +73,7 @@ public:
 	// every caller and this edit is legibility only.
 	OGBRAWLER_API float getDuration() const;
 	OGBRAWLER_API unsigned int getAttackPointCount() const;
+	OGBRAWLER_API float getAttackPointTime(unsigned int index) const;
 	OGBRAWLER_API unsigned int getAttackSegmentCount() const;
 
 	OGBRAWLER_API static glm::vec3 defaultUp() { return glm::vec3(0.0f, 0.0f, 1.0f);}

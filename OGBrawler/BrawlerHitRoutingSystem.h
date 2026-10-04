@@ -141,20 +141,6 @@ namespace brawlerHitRouting
 
             for (const auto& [attackerId, attackerPtr] : ordered)
             {
-                const auto& projDetected =
-                    attackerPtr->getAllState().getDerivedState()
-                        .get<brawlerProjectileSimulation::DerivedState>().detectedThisTick;
-                for (const auto& detected : projDetected)
-                {
-                    if (detected.outcome != brawlerProjectileSimulation::SlotOutcome::BlockedByGuard)
-                        continue;
-                    attackerPtr->editAllState().editDerivedState()
-                        .edit<brawlerInboundHit::DerivedState>().wasProjectileBlockedThisTick = true;
-                }
-            }
-
-            for (const auto& [attackerId, attackerPtr] : ordered)
-            {
                 if (attackerPtr->getAllState().getDerivedState()
                         .get<dAttackRadialSimulation::DerivedState>().getGuardBlockedThisTick())
                 {

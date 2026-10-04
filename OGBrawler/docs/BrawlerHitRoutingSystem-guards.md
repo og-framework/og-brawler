@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- lint-external-ref: wasProjectileBlockedThisTick -- RETIRED by og-attackstatetransition-cleanup task 4: named here only in a task-29 poison record. It must NOT resolve -->
 # `BrawlerHitRoutingSystem.h` — guards
 
 Every prohibition for the hit-routing system that the compiler does not already hold. Each entry
@@ -112,14 +113,14 @@ a correction repairs. ⚠ The sort is cross-peer only because the key is: it is 
 ```
 
 **The prohibition.** ⛔ Do not replace the assignment with per-field resets, and do not delete it.
-The slice holds three one-shot bools and the resolved reaction beside them (kind, speed, dwell,
+The slice holds three one-shot bools (two since og-attackstatetransition-cleanup task 4) and the resolved reaction beside them (kind, speed, dwell,
 direction; `BrawlerInboundHit-rationale.md` §2). Routing owns its whole lifecycle, and the
 assignment is what makes a field added later reset with the rest.
 
 **What breaks if the edit is made.** A field the reset does not name keeps the value an earlier
 pass wrote. A stale bool re-fires its transition on every later tick (a stale
 `wasGuardBlockedThisTick` recoils the attacker into `GuardFlinch` again whenever it attacks), and a
-stale reaction field is read by the next hit that does not overwrite it. Measured by poison (task 29, the real header swapped in, LLT rebuilt, `[@og]` run, restored): resetting only `wasHitThisTick` and `wasProjectileBlockedThisTick` fails 4 cases: `HitDetection.GuardBlockRoutesThroughTheInboundSlice`, `HitDetection.Behaviour.ReplayAnchoredAtTheEndOfTheBlockTickRecoils`, `HitDetection.Behaviour.ReplayWithoutItsOwnPreIntegrateLosesTheRecoil` and `HitRouting.PerAttackReactionTableIsAuthoritative`.
+stale reaction field is read by the next hit that does not overwrite it. Measured by poison (task 29, the real header swapped in, LLT rebuilt, `[@og]` run, restored): resetting only `wasHitThisTick` and `wasProjectileBlockedThisTick` (a field og-attackstatetransition-cleanup task 4 deleted) fails 4 cases: `HitDetection.GuardBlockRoutesThroughTheInboundSlice`, `HitDetection.Behaviour.ReplayAnchoredAtTheEndOfTheBlockTickRecoils`, `HitDetection.Behaviour.ReplayWithoutItsOwnPreIntegrateLosesTheRecoil` and `HitRouting.PerAttackReactionTableIsAuthoritative`.
 
 **Score (§9.1):** substitution on the tagged statement → `yes`; deletion → `yes`.
 
