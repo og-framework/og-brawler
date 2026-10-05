@@ -729,7 +729,7 @@ struct LocalCoopKeyNames
 };
 
 // ⛔G-01  docs/BrawlerJoinScreen-guards.md
-inline constexpr LocalCoopKeyNames kLocalCoopKeyNames{ "Tab", "Insert" };
+inline constexpr LocalCoopKeyNames kLocalCoopKeyNames{ "Tab", "End" };
 
 inline std::string localCoopHintText()
 {

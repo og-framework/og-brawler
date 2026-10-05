@@ -109,13 +109,16 @@ tests and writers excluded:
   right-stick-neutral threshold of `AimRelativeSwapped`), and `buildPlayerInput`, which loads it once and passes
   that one value to both the `resolveTriggeredActionId` call and
   `dInput::stickRouting::guardFreezeRequested` (the hold-guard freeze request;
-  og-brawler-3rdControllerMode task 5). `SimmableUpdateComponent`: the `pollInputHistory` and
+  og-brawler-3rdControllerMode task 5), and `onMoveStick`, which passes it to
+  `dInput::stickRouting::lastInputWasGamepadAfterStick` as the left stick's latch threshold
+  (og-attackstatetransition-cleanup task 13). `SimmableUpdateComponent`: the `pollInputHistory` and
   `captureRowFieldsOf` calls.
-* `g_aimStickDeadzone` — `UOGBrawlerInputCollectionComponent`: `buildAimDirection` and
-  `buildMoveDirectionWorld`.
+* `g_aimStickDeadzone` — `UOGBrawlerInputCollectionComponent`: `buildAimDirection`,
+  `buildMoveDirectionWorld`, and `onAim`, which passes it to the same latch function as the right
+  stick's threshold (og-attackstatetransition-cleanup task 13).
 
-`routeSticks` and `guardFreezeRequested` read no global; they take the deadzone as a parameter, so they
-are not readers. Neither is `BrawlerInputHistoryVisualization.h`, whose deadzone is a parameter too.
+`routeSticks`, `guardFreezeRequested` and `lastInputWasGamepadAfterStick` read no global; they take the
+deadzone as a parameter, so they are not readers. Neither is `BrawlerInputHistoryVisualization.h`, whose deadzone is a parameter too.
 
 ⛔ **Not convertible to a compile-time check.** The claim is a statement about *who reads a
 global across translation units*, and nothing in a header can count that. Probe arm CAND 5 adds

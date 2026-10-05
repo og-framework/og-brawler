@@ -126,9 +126,11 @@ moves the keys onto aim too. `AimRelativeSwapped` ignores this flag.
 > to mouse aim / camera forward like any other input source. Keyboard+mouse play is
 > unaffected either way (the latch m_lastMoveInputWasGamepad gates this).
 
-The latch is a member of `UOGBrawlerInputCollectionComponent`, false until a non-zero event from
-either gamepad stick or the D-pad, and cleared by a WASD move with no D-pad direction held, which is what makes the
-"keyboard+mouse is unaffected" half true rather than merely intended.
+The latch is a member of `UOGBrawlerInputCollectionComponent`. It starts false. A gamepad stick past its
+deadzone or a D-pad move sets it; a WASD move with no D-pad direction held, or the primary player's
+mouse cursor travelling a few pixels, clears it. That is what makes the "keyboard+mouse is unaffected"
+half true rather than merely intended. Until og-attackstatetransition-cleanup task 13 any non-zero
+stick event set it, and a resting pad's drift broke that half (§10).
 
 Since og-brawler-3rdControllerMode task 5, both toggles also shape one bit the simulation does
 see, still without the simulation reading either of them. `UOGBrawlerInputCollectionComponent::buildPlayerInput`
@@ -201,3 +203,133 @@ this file was singled out for conversion at all.
 The honest reader test — *"if I were about to make the edit `G-nn` forbids, would this tag stop
 me?"* — is answered per guard in the task's implementation notes, not here, because it is a
 measurement of the method rather than a fact about this code.
+
+## 9. The camera-look aim in AimRelative
+
+User decision (og-attackstatetransition-cleanup task 11): in AimRelative, while BlockLook is held, the
+look stick keeps turning the solo orbit camera, and the aim is the camera's forward, flattened.
+`dInput::stickRouting::cameraLookAim` in `InputMapping/StickRouting.h` is that decision as a pure
+function. It takes the scheme, the BlockLook button and a camera forward, and reads no global. It returns
+the unit horizontal part of the forward when the scheme is AimRelative and BlockLook is held, and
+`std::nullopt` otherwise. `UOGBrawlerInputCollectionComponent::buildAimDirection` calls it first, ahead
+of the aim stick, the move-stick fallback and the mouse; on `std::nullopt` the scheme's usual aim applies.
+
+**Since task 12, BlockLook is a toggle.** The 5 key or gamepad Y flips look mode once per press, and it
+starts off for a new pawn. "Held" in this section therefore means "look mode is on", and the parameter
+keeps its name `blockLookHeld`. The rule did not change: it reads the state, not the button.
+
+**AimRelative only.** `isAimRelativeFamily` is deliberately not the test: AimRelativeSwapped is unchanged
+until the user decides otherwise. There the look stick is `getAimStick`, which is the left stick while the
+right stick is in use. With both sticks in use, the left stick turns the camera AND aims relative to the
+camera forward, so the aim turns with the camera. With the left stick alone (the single-stick fallback)
+the left stick is routed to move and to aim, and the camera does not turn.
+
+**Which camera forward.** The caller passes `m_camForwardCache`, the camera manager's rotation that
+`updateGameThreadCache` reads at the start of the character's `Tick`. That is the view on screen, one
+frame old, not the boom this `Tick` is about to write. The reasons:
+
+* It is "where the camera looks" as the player sees it, also during a view-target blend and under the
+  shared iso camera, where the boom is not the view.
+* It is the basis every other branch of `buildAimDirection` and `buildMoveDirectionWorld` already uses,
+  so the movement while looking (below) is exactly the CameraRelative movement.
+* It needs no new value handed from the game thread to the physics thread.
+* The cost is one frame: at most one frame of the look stick's yaw rate.
+
+**A camera with no horizontal forward.** Below `kMinCameraLookAimHorizontalLength` (1e-3) the function
+returns `std::nullopt`. The orbit camera's steepest pitch, `dAttackCameraBehaviour::kHardPitchMaxDeg`
+(89°), still leaves a horizontal part of about 0.017, and a test pins that it aims. Only a view looking
+straight down has none.
+
+**What else changes while AimRelative + BlockLook is held.**
+
+* **Movement** rotates around the aim in AimRelative (`buildMoveDirectionWorld`), so it is
+  camera-relative while looking. The gamepad branch that skips the aim (the move stick feeding the aim)
+  is camera-relative through the same cache, so the two branches give the same direction.
+* **The move stick no longer turns the aim.** With the aim stick at rest, the gamepad fallback that
+  aimed along the move is skipped; the character faces the camera forward and strafes.
+* **The projectile's "back"** (`kBackShortcutStep`, checked by `inputSequence::stickMatchesStep`
+  against the aim) becomes a move opposite to the camera forward: the move stick pulled down.
+* **The wire** is unchanged: the same unit `aimDirection` in `SyncedPlayerInput`.
+* **The visualization** (the aim arcs and the mesh facing) reads `buildAimDirection`, so it shows the
+  camera forward.
+* **Under the shared iso camera** (two or more local players) the camera manager's view is the iso
+  camera, so the aim is the iso camera's forward, the top of the screen, and the look stick does not aim
+  while BlockLook is held. The keyboard-and-mouse path already behaved this way: BlockLook clears the
+  mouse aim, and the last fallback of `buildAimDirection` is the flattened camera forward.
+* **Threads.** `buildAimDirection` also runs on the physics thread (the sim input), where it now reads
+  `m_blockLook`, which the input handler writes on the game thread. That is the same unsynchronized
+  member read the sticks and the attack buttons already have.
+
+`StickRoutingTest.cpp` in og-brawler-tests pins the function: the four cases tagged [CameraLookAim].
+
+## 10. The gamepad latch
+
+**The bug (user PIE, og-attackstatetransition-cleanup task 13).** After using a pad, keyboard and mouse
+misbehaved: WASD set both the movement and the aim, WASD movement was not relative to where the mouse
+pointed, and the aim followed the mouse only while the brawler stood still.
+
+**The cause, confirmed in the code.** The latch gates the gamepad fallback (the move stick feeds the
+aim) in `UOGBrawlerInputCollectionComponent::buildAimDirection` and the matching camera-relative branch
+of `buildMoveDirectionWorld`. Before task 13, `onMoveStick` and `onAim` set it on any non-zero value.
+Three engine facts make that value non-zero every frame while a pad rests with slight drift:
+
+* the XInput device sends a stick value whenever it changes, not only outside its own deadzone
+  (XInputInterface.cpp, the analog send around line 294), so the drift reaches the key state raw;
+* the two 2D stick keys get no deadzone in Enhanced Input (§1.1 of the initiative's tpcamera research),
+  and an action with no triggers is Triggered on any non-zero value (EnhancedPlayerInput.cpp:518);
+* the bindings fire in the order they were bound (EnhancedPlayerInput.cpp:571), and `setupBindings`
+  binds Move before MoveStick and Aim.
+
+So every frame `onMove` cleared the latch for WASD, and the drift set it again straight after. While
+moving, the fallback aimed along the move and, in AimRelative, the move was camera-relative instead of
+relative to the aim. While standing still the move stick was below its deadzone, the fallback did not
+apply, and the mouse aimed. That is exactly the reported symptom.
+
+**The rule.** Three pure functions in `InputMapping/StickRouting.h` decide every write; the handlers
+only call them. None reads a global.
+
+* `lastInputWasGamepadAfterStick`: a stick sets the latch only past its deadzone, compared with `>`
+  like the fallback's own gate. The caller passes `g_moveStickDeadzone` for the left stick and
+  `g_aimStickDeadzone` for the right stick, per physical stick. A stick at or below its deadzone leaves
+  the latch alone; it never clears it.
+* `lastInputWasGamepadAfterMoveKeys`: a non-zero Move event (`moveKeysPressed`, the same 1e-4 per-axis
+  tolerance as the engine's near-zero test the handler used before) sets the latch to "a D-pad
+  direction is held". So WASD clears it and the D-pad sets it, as before. A release leaves it.
+* `lastInputWasGamepadAfterCursor`: mouse movement clears it (below).
+
+**The mouse signal: the cursor position, not the Look action.** The task offered both. The Look delta
+reaches the game only while the viewport holds mouse capture (SceneViewport.cpp, the delta
+accumulation around line 768). With the cursor shown, which is exactly when the mouse aims, the viewport
+releases capture on every mouse-up (SceneViewport.cpp, around lines 669-714), so after the first click
+the Look delta stops. The cursor position is updated on every mouse move whether or not the viewport has
+capture, and it is the very value the mouse aim deprojects. The aim direction itself would be a bad
+signal: it changes when the brawler or the camera moves under a still cursor.
+
+**The threshold and the anchor.** `kCursorLatchMinPixels` is 8 viewport pixels. It is measured from an
+anchor, not per frame, so a slow deliberate move still counts at any frame rate (1 pixel per frame
+crosses it on the 8th frame), and a jitter of a few pixels never does. While the latch says keyboard and
+mouse, the anchor follows the cursor; while the latch says gamepad, it stays put. The cursor must
+therefore travel 8 pixels from where it was when the gamepad took over. The first sample only sets the
+anchor. 8 pixels is far below any deliberate re-aim and above a few pixels of jitter; it is a
+judgement, not a measurement.
+
+**Who samples the cursor.** `UOGBrawlerInputCollectionComponent::updateGameThreadCache`, once per
+character `Tick`, on the game thread like the handlers, and only:
+
+* for the primary local player. Keyboard and mouse input go to that player only (the viewport sends a
+  key event to one local player, chosen by input device), so a couch player on a pad is never cleared
+  by another player's mouse;
+* while look mode is off. In look mode the cursor is hidden and the mouse does not aim.
+
+**Residual edges.** A frame that has both a stick past its deadzone and a mouse move ends with the
+mouse, because the pawn's `Tick` runs after the controller's input. That is one frame, and only when
+both devices are really in use. A cursor jump of 8 pixels or more with no hand on the mouse (a resize
+or a cursor warp) clears the latch once; the next stick push past its deadzone sets it again.
+
+**What it does not change.** The fallback and its two gates are unchanged, and so is the routing. A pad
+whose drift is above the deadzone still steals the aim, as it would without this latch. The wire is
+unchanged: the latch is UE-side only, and the simulation sees the resulting directions.
+
+`StickRoutingTest.cpp` in og-brawler-tests pins the three functions: the cases tagged [GamepadLatch],
+including the bug's frame order (WASD, then a drifting left stick, then a drifting right stick, every
+frame) and a mouse move beside a drifting pad.

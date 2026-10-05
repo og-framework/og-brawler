@@ -1,105 +1,129 @@
 #pragma once
 // SPDX-License-Identifier: BUSL-1.1
+// docs/DAttackCamera-rationale.md · docs/DAttackCamera-guards.md
 
 #include "OGSimulation/OGExport.h"
-#include <algorithm>
-#include <vector>
-#include "glm/trigonometric.hpp"
 #include "glm/vec2.hpp"
-#include "glm/vec3.hpp"
-#include "OGSimulation/DPID.h"
-#include <glm/gtc/quaternion.hpp>
-
-class DAttackCameraInput
-{
-public:
-
-	DAttackCameraInput(glm::vec3 rStickAxis, glm::vec2 mouseAxis, bool blockLook, float targetPitch, const DPIDSettings& pitchPIDSettings)
-		: m_rStickAxis(rStickAxis)
-		, m_mouseAxis(mouseAxis)
-		, m_blockLook(blockLook)
-		, m_targetPitch(targetPitch)
-		, m_pitchPIDSettings(pitchPIDSettings)
-	{
-	}
-
-	const glm::vec3& getRStickAxis() const { return m_rStickAxis; }
-	const glm::vec2& getMouseAxis() const { return m_mouseAxis; }
-	bool getBlockLook() const { return m_blockLook; }
-	float getTargetPitch() const { return m_targetPitch; }
-	const DPIDSettings& getPitchPIDSettings() const { return m_pitchPIDSettings; }
-
-private:
-	glm::vec3 m_rStickAxis;
-	glm::vec2 m_mouseAxis;
-	bool m_blockLook;
-	float m_targetPitch;
-
-	DPIDSettings m_pitchPIDSettings;
-};
-
-class DAttackCameraState
-{
-public:
-	DAttackCameraState()
-		: m_pitchPIDState()
-		, m_cameraTransform(glm::identity<glm::mat4>())
-		, m_cameraBoomTransform(glm::identity<glm::mat4>())
-		, m_cameraBoomLength(0.f)
-	{
-	}
-
-	const DPIDState& getPitchPIDState() const { return m_pitchPIDState; }
-	const glm::mat4& getCameraTransform() const { return m_cameraTransform; }
-	const glm::mat4& getCameraBoomTransform() const { return m_cameraBoomTransform; }
-	float getCameraBoomLength() const { return m_cameraBoomLength; }
-
-	void setPitchPIDState(const DPIDState& pitchPIDState) { m_pitchPIDState = pitchPIDState; }
-	void setCameraTransform(const glm::mat4& cameraTransform) { m_cameraTransform = cameraTransform; }
-	void setCameraBoomTransform(const glm::mat4& cameraBoomTransform) { m_cameraBoomTransform = cameraBoomTransform; }
-	void setCameraBoomLength(float cameraBoomLength) { m_cameraBoomLength = cameraBoomLength; }
-
-	DPIDState& editPitchPIDState() { return m_pitchPIDState; }
-private:
-
-	DPIDState m_pitchPIDState;
-
-	glm::mat4 m_cameraTransform;
-	glm::mat4 m_cameraBoomTransform;
-	float m_cameraBoomLength;
-};
-
-#include "OGSimulation/CompilerControl.h"
-OGSIM_OPTIMIZE_OFF
+#include <algorithm>
+#include <cmath>
 
 namespace dAttackCameraBehaviour
 {
-	OGBRAWLER_API void integrate(float deltaSeconds, const DAttackCameraInput& input, DAttackCameraState& state);
+inline constexpr float kMouseDegreesPerUnit = 2.5f;
+inline constexpr float kStickDeadzone = 0.15f;
+inline constexpr float kStickExponent = 1.5f;
+inline constexpr float kStickYawDegPerSec = 180.f;
+inline constexpr float kStickPitchDegPerSec = 110.f;
+inline constexpr float kPitchMinDeg = 10.f;
+inline constexpr float kPitchMaxDeg = 80.f;
+inline constexpr float kPullYawDegreesPerEFold = 20.f;
+inline constexpr float kPullMaxDegPerSec = 240.f;
+inline constexpr float kDominanceRatio = 0.f;
+inline constexpr float kVerticalIntentDegPerSec = 20.f;
+inline constexpr float kVerticalHoldoffSeconds = 0.f;
+inline constexpr float kMinPullYawDegreesPerEFold = 1.f;
 
-	// [og-attackstatetransition-cleanup task 7] The target pitch integrate() compares against
-	// glm::eulerAngles(boomRotation).y, from an Unreal FRotator pitch in degrees (negative looks
-	// down). Measured, not assumed: FRotator(-60, yaw, 0) copied raw into a glm::quat gives
-	// eulerAngles().y == +pi/3 for every yaw, hence the minus sign (DAttackCameraIsoSeedTest.cpp).
-	// Clamped to [1, 89] degrees because integrate() calls std::clamp(currentPitch, 0, targetPitch),
-	// which is undefined for a negative target, and divides by the target.
-	constexpr float kMinTargetPitchDegrees = 1.f;
-	constexpr float kMaxTargetPitchDegrees = 89.f;
-	static_assert(0.f < kMinTargetPitchDegrees && kMinTargetPitchDegrees < kMaxTargetPitchDegrees && kMaxTargetPitchDegrees < 90.f,
-		"integrate()'s target pitch must stay inside (0, 90) degrees: std::clamp(currentPitch, 0, target) needs target > 0");
+inline constexpr float kHardPitchMinDeg = 1.f;
+inline constexpr float kHardPitchMaxDeg = 89.f;
 
-	inline float targetPitchFromUEPitchDegrees(float uePitchDegrees)
-	{
-		return glm::radians(std::clamp(-uePitchDegrees, kMinTargetPitchDegrees, kMaxTargetPitchDegrees));
-	}
-}
-OGSIM_OPTIMIZE_ON
+inline constexpr float kBoomLengthAtTargetPitch = 900.f;
+inline constexpr float kBoomLengthAtHorizon = 400.f;
 
+static_assert(0.f < kHardPitchMinDeg && kHardPitchMinDeg < kHardPitchMaxDeg && kHardPitchMaxDeg < 90.f,
+	"The pitch must stay inside (0, 90) degrees below the horizon: boomLength divides by the target, and at 90 the "
+	"camera-relative move basis has no horizontal forward. Was the task-7 [1, 89] target clamp.");
+static_assert(kHardPitchMinDeg <= kPitchMinDeg && kPitchMinDeg < kPitchMaxDeg && kPitchMaxDeg <= kHardPitchMaxDeg,
+	"The default pitch limits must sit inside the hard limits.");
+static_assert(0.f <= kStickDeadzone && kStickDeadzone < 1.f, "stickCurve divides by (1 - deadzone).");
+static_assert(0.f < kMinPullYawDegreesPerEFold && kMinPullYawDegreesPerEFold <= kPullYawDegreesPerEFold && kPullMaxDegPerSec > 0.f,
+	"The pull divides by its e-fold (never below the minimum a host value is raised to), and the cap is positive.");
+static_assert(kVerticalHoldoffSeconds >= 0.f && kDominanceRatio >= 0.f,
+	"A hold-off of 0 and a dominance ratio of 0 switch those mechanisms off (task 10 defaults); negative values mean nothing.");
+static_assert(kBoomLengthAtHorizon < kBoomLengthAtTargetPitch, "The boom is longest at the target pitch.");
 
-class DAttackCameraBehaviour
+struct OrbitCameraSettings
 {
-public:
- 	OGBRAWLER_API DAttackCameraBehaviour(float test);
-private:
-	DAttackCameraBehaviour() = default;
+	float mouseDegreesPerUnit = kMouseDegreesPerUnit;
+	float stickDeadzone = kStickDeadzone;
+	float stickExponent = kStickExponent;
+	float stickYawDegPerSec = kStickYawDegPerSec;
+	float stickPitchDegPerSec = kStickPitchDegPerSec;
+	float pitchMinDeg = kPitchMinDeg;
+	float pitchMaxDeg = kPitchMaxDeg;
+	float pullYawDegreesPerEFold = kPullYawDegreesPerEFold;
+	float pullMaxDegPerSec = kPullMaxDegPerSec;
+	float dominanceRatio = kDominanceRatio;
+	float verticalIntentDegPerSec = kVerticalIntentDegPerSec;
+	float verticalHoldoffSeconds = kVerticalHoldoffSeconds;
+	bool invertMouseY = false;
+	bool invertStickY = false;
+	float mouseSens = 1.f;
+	float stickSens = 1.f;
 };
 
+struct OrbitCameraInput
+{
+	bool lookHeld = false;
+	glm::vec2 mouseUnits = glm::vec2(0.f);
+	glm::vec2 stick = glm::vec2(0.f);
+	float targetPitchDeg = 0.f;
+};
+
+struct OrbitCameraState
+{
+	float yawDeg = 0.f;
+	float pitchDeg = 0.f;
+	float holdoffSeconds = 0.f;
+};
+
+struct PitchLimits
+{
+	float minDeg;
+	float maxDeg;
+};
+
+inline PitchLimits pitchLimits(const OrbitCameraSettings& settings)
+{
+	const float minDeg = std::clamp(settings.pitchMinDeg, kHardPitchMinDeg, kHardPitchMaxDeg);
+	return PitchLimits{ minDeg, std::clamp(settings.pitchMaxDeg, minDeg, kHardPitchMaxDeg) };
+}
+
+inline float clampPitchDeg(float pitchDeg, const OrbitCameraSettings& settings)
+{
+	const PitchLimits limits = pitchLimits(settings);
+	return std::clamp(pitchDeg, limits.minDeg, limits.maxDeg);
+}
+
+inline float pitchDegFromUEPitchDegrees(float uePitchDegrees, const OrbitCameraSettings& settings)
+{
+	return clampPitchDeg(-uePitchDegrees, settings);
+}
+
+inline float wrapYawDeg(float yawDeg)
+{
+	return std::remainder(yawDeg, 360.f);
+}
+
+inline OrbitCameraState seedFromUERotation(float uePitchDegrees, float ueYawDegrees, const OrbitCameraSettings& settings)
+{
+	return OrbitCameraState{ wrapYawDeg(ueYawDegrees), pitchDegFromUEPitchDegrees(uePitchDegrees, settings), 0.f };
+}
+
+inline float stickCurve(float magnitude, const OrbitCameraSettings& settings)
+{
+	const float tilt = std::min(magnitude, 1.f);
+	if (!(tilt > settings.stickDeadzone) || !(settings.stickDeadzone < 1.f))
+		return 0.f;
+	return std::pow((tilt - settings.stickDeadzone) / (1.f - settings.stickDeadzone), settings.stickExponent);
+}
+
+inline float boomLength(float pitchDeg, float targetPitchDeg, const OrbitCameraSettings& settings)
+{
+	const float target = clampPitchDeg(targetPitchDeg, settings);
+	const float towardTarget = std::clamp(pitchDeg, 0.f, target) / target;
+	return kBoomLengthAtTargetPitch - (kBoomLengthAtTargetPitch - kBoomLengthAtHorizon) * (1.f - towardTarget);
+}
+
+OGBRAWLER_API OrbitCameraState integrate(float deltaSeconds, const OrbitCameraInput& input,
+	const OrbitCameraSettings& settings, const OrbitCameraState& state);
+} // namespace dAttackCameraBehaviour

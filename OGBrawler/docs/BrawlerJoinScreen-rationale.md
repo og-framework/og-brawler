@@ -358,7 +358,9 @@ failure needs both "what happened" and "what to do".
 
 ## 9. Local co-op — the hint and the limit notice
 
-**The hint:** `After joining: Tab adds a local player, Insert removes one`. Per the backlog it
+**The hint:** `After joining: Tab adds a local player, End removes one` (Insert until
+og-attackstatetransition-cleanup task 12 moved the leave key to BackSpace, and task 13 of the same
+initiative moved it to End). Per the backlog it
 states no limit. It is built from `kLocalCoopKeyNames`, whose two strings are the engine names of
 the keys `AOGBrawlerPlayerController::SetupInputComponent` binds (`OGBrawlerPlayerController.cpp`,
 the two `BindKey` lines for `JoinLocalPlayer` and `LeaveLocalPlayer`). Since task 12 those two lines

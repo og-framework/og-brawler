@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
 <!-- lint-external-ref: EKeys::Tab -- the engine's own key constant; owned by the host engine, not by this repository, and must not resolve here -->
-<!-- lint-external-ref: EKeys::Insert -- the engine's own key constant; owned by the host engine, not by this repository, and must not resolve here -->
+<!-- lint-external-ref: EKeys::End -- the engine's own key constant; owned by the host engine, not by this repository, and must not resolve here -->
 <!-- lint-external-ref: FKey::IsValid -- the engine's own key validity test (InputCore); owned by the host engine, not by this repository -->
 # `BrawlerJoinScreen.h` — guards
 
@@ -20,9 +20,11 @@ character (rationale §2.2), the recent-address separator can never occur inside
 
 **The prohibition.** `kLocalCoopKeyNames.addPlayer` and `.removePlayer` are the engine key names of
 the two keys that `AOGBrawlerPlayerController::SetupInputComponent` binds to
-`JoinLocalPlayer` and `LeaveLocalPlayer`: `EKeys::Tab` (engine name `"Tab"`) and `EKeys::Insert`
-(engine name `"Insert"`). ⛔ Do not edit either string to improve the wording ("Ins", "the Tab key",
-a translation), and do not change them without changing the two bindings in the same change. ⛔ Do
+`JoinLocalPlayer` and `LeaveLocalPlayer`: `EKeys::Tab` (engine name `"Tab"`) and `EKeys::End`
+(engine name `"End"`; it was the Insert key until og-attackstatetransition-cleanup task 12, then the
+BackSpace key until task 13 of the same initiative).
+⛔ Do not edit either string to improve the wording ("the End key", "END", "the Tab key", a
+translation), and do not change them without changing the two bindings in the same change. ⛔ Do
 not change a binding without changing this constant.
 
 **The consequence of getting it wrong.** The join screen tells a player which key adds a local

@@ -90,8 +90,8 @@ MappingContext buildDefaultContext()
 
 	// LeftAttack: Mouse Left + Gamepad Right Shoulder (RB)
 	// RB chosen over LT because LeftShoulder is taken by HoldGuard and the
-	// LT axis form is taken by BlockLook; RightShoulder was previously unbound.
-	// Gamepad_LeftTrigger is intentionally left unbound (freed for future use).
+	// LT axis form was then taken by BlockLook; RightShoulder was previously unbound.
+	// Both LT forms are unbound since BlockLook moved to Y (og-attackstatetransition-cleanup task 12).
 	{
 		ActionMapping mapping;
 		mapping.action = &LeftAttack;
@@ -113,13 +113,15 @@ MappingContext buildDefaultContext()
 		ctx.actionMappings.push_back(std::move(mapping));
 	}
 
-	// BlockLook: Left Alt + Gamepad Left Trigger Axis
+	// BlockLook: 5 + Gamepad Face Top (Y). A toggle, not a hold: the UE input component
+	// binds it on Started and flips look mode once per press
+	// (og-attackstatetransition-cleanup task 12; was Left Alt + LT, held).
 	{
 		ActionMapping mapping;
 		mapping.action = &BlockLook;
 		mapping.bindings = {
-			{ KeyId::Key_LeftAlt, KeyModifier::None },
-			{ KeyId::Gamepad_LeftTriggerAxis, KeyModifier::None },
+			{ KeyId::Key_5, KeyModifier::None },
+			{ KeyId::Gamepad_FaceTop, KeyModifier::None },
 		};
 		ctx.actionMappings.push_back(std::move(mapping));
 	}
