@@ -34,7 +34,8 @@ OGSIM_OPTIMIZE_OFF
 // computeAttackIndicatorGeometry helper the aim viz also consumes is untouched.
 //
 // Templated on the READER physics-body adapter concept (PhysicsBodyReaderAdapterType,
-// game-thread-safe const reads via ChaosPhysicsBodyReaderAdapter) alongside the
+// game-thread-safe const reads via the host's visualization reader: ChaosPhysicsBodyReaderAdapter
+// in the Chaos configuration, JoltPhysicsBodyReaderAdapter in the Jolt one) alongside the
 // SpatialQueryAdapterType / RendererFunctorType idiom the two target-viz files use.
 namespace dAttackBlockPredictionVisualization
 {
@@ -365,7 +366,10 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 		}
 
 		// Fetch the guard body's world transform via the GT-safe reader adapter — same signature
-		// as the sim's detector (detectRadialHits), but reading GT-interpolated state from the game thread.
+		// as the sim's detector (detectRadialHits), but reading the host's game-thread view: Chaos's
+		// GT-interpolated state; in the Jolt configuration the step's world between inline steps, or
+		// on a client that steps on a worker the game-thread shadow world restored from the newest
+		// saved step (the newest step's state either way).
 		const glm::mat4 guardTransform =
 			input.getPhysicsReader().getBodyTransform(queryReport[actorHit.guardHitIndex].bodyId);
 
