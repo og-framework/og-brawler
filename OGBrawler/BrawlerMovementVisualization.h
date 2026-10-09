@@ -54,14 +54,18 @@ OGSIM_OPTIMIZE_OFF
 // `USimmableUpdateComponent::TickComponent` runs on the RENDER clock. The values it hands this
 // function come from `SimulatableBrawler::getVizState()`, which is a whole-`AllState` COPY
 // taken by `updateVisualizationAll` in `ASimulationManagerUImpl::OnPostPhysicsStep` -- i.e.
-// once per completed SIMULATION tick, at 60 Hz (`AsyncFixedTimeStepSize`).
+// once per GAME FRAME, at the end of physics, every frame whether or not a sim tick ran (both
+// physics backends). The sim itself ticks at 60 Hz (`AsyncFixedTimeStepSize`).
 //
-//   STALE BY UP TO ONE SIM TICK (16.67 ms):
+//   STALE, AND BY A VARYING AMOUNT -- NOT A FIXED "ONE SIM TICK":
 //     `state.bodyState.position`, `state.velocity`, `state.flags` (frozen + support bits),
 //     `derivedState.surfaceNormal`, `derivedState.lastProbePoint`,
 //     `derivedState.lastSupportState`.
-//   At a render rate above 60 Hz, consecutive frames redraw the SAME snapshot unchanged. A
-//   marker that appears to freeze for a frame or two is the snapshot cadence, not the sim.
+//   They are the values of the newest tick the copy saw. A frame that ran several ticks (a
+//   catch-up after a hitch) shows only the last of them, and on a client whose ticks run on a
+//   worker task the newest tick can lag the game frame. At a render rate above 60 Hz,
+//   consecutive frames redraw the SAME tick's values. A marker that appears to freeze for a
+//   frame or two is the snapshot cadence, not the sim.
 //
 //   ⭐ NOT STALE, AND NOT AN APPROXIMATION: everything read out of `StaticData` -- `rideHeight`,
 //   `snapDistance`, the capsule dimensions, the gains. Those are authored once per session
