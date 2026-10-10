@@ -30,6 +30,7 @@ public:
 
     void updateVizState() { m_vizState = m_allState; }
     const simulatableBrawler::AllState& getVizState() const { return m_vizState; }
+    simulatableBrawler::AllState& editVizState() { return m_vizState; }
 
     // Per-character bindings (T33). Populated ONCE at registration time
     // (SimulationManagerUImpl::tryRegister) from the authoritative parentBodyId.
