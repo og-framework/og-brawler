@@ -221,6 +221,7 @@ struct PhysicsDeclaration
 {
 	static const PhysicalObjectDescriptor& descriptor() { return PhysicsSetup::body; }
 	static constexpr const char* name = "WeaponAxis";
+	static constexpr RenderCorrectionMode renderCorrection = RenderCorrectionMode::SnapInRootFrame;
 
 	template <typename GameStaticDataType>
 	static const StaticData& staticDataOf(const GameStaticDataType& gsd) { return gsd.m_attackSimulationStaticData; }
@@ -239,6 +240,13 @@ struct PhysicsDeclaration
 
 	RuntimeBindings bindings;
 };
+
+static_assert(renderCorrectionModeOf<PhysicsDeclaration>() == RenderCorrectionMode::SnapInRootFrame,
+	"dAttackRadialSimulation::PhysicsDeclaration must declare renderCorrection = RenderCorrectionMode::SnapInRootFrame, "
+	"spelt exactly: a misspelt member reads as Smooth. With it, the render drops the weapon's own correction error and "
+	"draws it at its corrected pose in the capsule's smoothed frame, so it stays in the character's hand. Smooth brings "
+	"back the rotation blend across swing phases: after a correction learned mid-swing the blade tip circles from the "
+	"idle pose into the swing plane over the smoothing time (og-simulationscheduler-withjolt design_weapon_circle section 6).");
 
 
 struct Dependencies {

@@ -181,6 +181,7 @@ struct PhysicsDeclaration
 {
 	static const PhysicalObjectDescriptor& descriptor() { return PhysicsSetup::body; }
 	static constexpr const char* name = "GuardAxis";
+	static constexpr RenderCorrectionMode renderCorrection = RenderCorrectionMode::SnapInRootFrame;
 
 	// Maps the GAME's aggregate static data to this sub-simulation's own slice.
 	// This is what makes body creation generic: the engine-side fold asks each
@@ -207,7 +208,14 @@ struct PhysicsDeclaration
 	RuntimeBindings bindings;
 };
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+static_assert(renderCorrectionModeOf<PhysicsDeclaration>() == RenderCorrectionMode::SnapInRootFrame,
+	"dAttackGuardSimulation::PhysicsDeclaration must declare renderCorrection = RenderCorrectionMode::SnapInRootFrame, "
+	"spelt exactly: a misspelt member reads as Smooth. With it, the render drops the guard's own correction error and "
+	"draws it at its corrected pose in the capsule's smoothed frame. Smooth would blend a corrected guard facing in over "
+	"the smoothing time, and the block-prediction predicate (wouldGuardBlock on the guard transform the render poses write "
+	"into a worker client's shadow world) would read that stale facing.");
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // [Task 62] Dependencies — OwnedDeps/ExternalDeps layout.
 struct Dependencies {

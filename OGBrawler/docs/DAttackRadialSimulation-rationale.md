@@ -77,6 +77,44 @@ name"* (measured, task 19).
 `PhysicalObjectDescriptor` aggregate. It is the rule's §6 annotation form, and it replaced a
 trailing `// shapes`.
 
+**`PhysicsDeclaration::renderCorrection` is `RenderCorrectionMode::SnapInRootFrame`.** It tells a
+host's render correction smoothing (og-simulation's `RenderCorrectionSmoother`) not to smooth the
+weapon. After a resimulation, the render keeps no error for this body: every frame it draws the
+weapon at its interpolated corrected pose, plus the offset the character's capsule (the root,
+`brawlerMovementSimulation::PhysicsDeclaration`) is currently being drawn with. The blade angle is
+therefore the corrected one from the first corrected frame, and the weapon stays in the character's
+hand while the capsule's own error decays. The capsule carries a `LinearBodyState`, so it has no
+rotation to compose; the smoother checks that of every root.
+
+* **Why not `Smooth`.** The smoother blends a rotation error out over its smoothing time (0.3 s by
+  default). For a remote swing the client learned from a correction, the shown pose is the idle
+  pose (blade up) and the corrected one is mid-swing in the horizontal plane, so the error is about
+  90° out of plane. Smoothed, the blade tip leaves the idle pose overhead and descends into the
+  swing plane over the whole smoothing time while the swing goes on: it appears to circle. The same
+  arc appears whenever the two poses lie in different planes (idle against swinging, a vertical
+  swing against a horizontal one). Snapping pops the blade into its plane instead, as the Chaos
+  build drew it (from the newest tick, unsmoothed).
+* **The position stays attached.** A snap in world space would leave the weapon behind the drawn
+  character by the capsule's decaying error. Drawing it in the capsule's frame keeps the handle, and
+  every indicator that reads the weapon body's position as the character's centre, on the
+  character.
+* **The guard declares the same mode** (`dAttackGuardSimulation::PhysicsDeclaration`), so the guard
+  facing follows a corrected aim at once. The movement capsule and the projectiles keep `Smooth`.
+* **A misspelt member is caught here.** `renderCorrectionModeOf` reads any declaration without the
+  member as `Smooth`, so a misspelling would silently restore the blend. The `static_assert` right
+  after the declaration requires `SnapInRootFrame`; its message names the circling. A misspelt
+  member was seen to fail it with C2338.
+* **Tests:** `DAttackRenderCorrectionPolicyTest.cpp` in og-brawler-tests runs the real
+  `fillRenderSnapshot`, `RenderCorrectionCapture` and `RenderCorrectionSmoother` on a one-brawler
+  storage.
+  `DAttack.RenderCorrection.ASwingLearnedFromACorrectionDrawsTheBladeInItsSwingPlaneOnEveryFrame`
+  holds the blade within 1° of its swing plane on every frame (90° on the first frame, decaying, with
+  the member removed). `DAttack.RenderCorrection.TheGuardFacesTheCorrectedAimFromTheFirstCorrectedFrame`
+  draws the guard at exactly its supplied rotation.
+  `DAttack.RenderCorrection.TheWeaponAndTheGuardKeepTheirOffsetFromTheSmoothedCapsule` keeps both
+  bodies' offsets from a smoothed capsule within 1e-3 cm (1.67 cm on the first frame with the
+  members removed) and the capsule byte-equal to a run where nothing snaps.
+
 ## 3. `DAttackHit`
 
 `hitRootBodyId` is the struck character's actor-level id, `SpatialQueryHit::rootBodyId`. The body
@@ -316,6 +354,7 @@ two rigs whose engine handles differ byte for byte. Planting the per-process roo
 | `integrate`'s Hadouken-sentinel return stays AHEAD of the `setInitialConditions` branch, or `setInitialConditions` indexes `attackSequences[kHadoukenSequenceSentinel]` out of bounds | **`OG_CHECK`** (`isRealAttackSequence` and in range) at the top of `setInitialConditions`. This is an ordering fence, and a tag cannot hold one (§9.1 clause E). Deleting the return trips the same check on the first Hadouken tick. | `setInitialConditions` called with the sentinel → abort with the message; called with sequence 0 → passes. `DAttackRadialAimLogTest.cpp`'s hadouken row also drives this branch through `integrate`. |
 | `RuntimeBindings` stays an alias | already compiler-held | §2 (C2607) |
 | `staticDataOf` stays a member template | already compiler-held | §2 (C2653) |
+| The weapon is drawn in its root's frame, not smoothed (`renderCorrection`) | **`static_assert`** after `PhysicsDeclaration` that `renderCorrectionModeOf` reads `SnapInRootFrame` | the member misspelt → **C2338** with the message (§2) |
 
 ## 7. `wouldGuardBlock` — the shared block predicate
 
