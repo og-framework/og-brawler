@@ -14,7 +14,8 @@ file is stale.** Fix this file; do not soften the header to match it.
 before it.
 
 ⛔ **This file is not the source of truth for any VALUE.** The ids and masks are in the
-header; the engine channel mapping is in `SimulationManagerUImpl.cpp`; the channel declarations
+header; the engine channel mapping is in the host game's two physics backends (`JoltBackendUImpl.cpp`,
+`ChaosBackendUImpl.cpp`); the channel declarations
 are in `Config/DefaultEngine.ini`. Where a value appears below it is there to make an argument
 readable.
 
@@ -35,8 +36,9 @@ Origin: `brawler-movement-simulation` tasks T1, T6, 11, 17, 39, 43, 53, 67 and 7
 
 Collision category assignments — DAttack-local sequential IDs. These are NOT engine channel
 numbers. The QUERY adapter is handed an explicit mapping from these IDs to the engine's native
-object type — `ChaosCategoryMapping`, built at the composition root in
-`SimulationManagerUImpl.cpp`'s `BeginPlay`. The body adapters (Chaos, Jolt) never see a category
+object type — `ChaosCategoryMapping`, built at the composition root's `BeginPlay` (in
+`ChaosBackendUImpl.cpp`; the Jolt configuration's static importer reads the same rows from
+`JoltBackendUImpl.cpp`). The body adapters (Chaos, Jolt) never see a category
 at all.
 
 ⭐ The guard that sits on this fact in the header is **G-01**.
