@@ -249,5 +249,5 @@ this struct's declaration is where that edit happens.** The provenance is in the
 It read *"from **THIS sub-simulation's** own `PhysicsDeclaration` bindings"*. This file declares no
 sub-simulation, and the sub-simulation its previous sentence named — `dAttackMachineSimulation` —
 has no `PhysicsDeclaration` at all. The source is the **movement** declaration, and the correct
-wording is already at the stamping site (`SimulationManagerUImpl.cpp:1280`). See
+wording is already at the stamping site (`SimulationManagerUImpl.cpp` :: `setCharacterBindings`; the wording is in `SimulationManagerUImpl-rationale.md` §10). See
 impl/r0_audit_BrawlerCharacterBindings.md §2.5.

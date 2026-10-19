@@ -30,6 +30,7 @@ public:
 
     void updateVizState() { m_vizState = m_allState; }
     const simulatableBrawler::AllState& getVizState() const { return m_vizState; }
+    simulatableBrawler::AllState& editVizState() { return m_vizState; }
 
     // Per-character bindings (T33). Populated ONCE at registration time
     // (SimulationManagerUImpl::tryRegister) from the authoritative parentBodyId.
@@ -220,10 +221,12 @@ void SimulatableBrawler::integrate(
 template <PhysicsBodyAdapter PhysAdapterT>
 void SimulatableBrawler::firstResimStep(PhysAdapterT& adapter, int32_t physicsStep)
 {
-    // Resim body correction is applied in the UE/Chaos layer
-    // (FSimulationManagerAsyncCallback::FirstPreResimStep_Internal) via
-    // FRewindData::SetTargetStateAtFrame. Direct adapter writes here bypass
-    // Chaos's rewind timeline and break ResimAsFollower bodies.
+    // Resim body correction is applied by the host, not here. The Jolt configuration's
+    // step driver pushes the restored body states through
+    // SimulationIntegrationExecutor::pushCorrectedBodyStatesAll before the first replayed
+    // step; the Chaos configuration writes them onto the particles in
+    // FSimulationManagerAsyncCallback::FirstPreResimStep_Internal. Direct adapter writes
+    // here would bypass both, and under Chaos break ResimAsFollower bodies.
     (void)adapter;
     (void)physicsStep;
 

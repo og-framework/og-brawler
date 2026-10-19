@@ -23,8 +23,8 @@ live in `CollisionCategoryConstants-rationale.md`. A guard is a prohibition plus
 of ignoring it, and nothing else.
 
 ⚠ **This file is not the source of truth for any VALUE.** The category ids and the masks live
-in the header; the engine channels live in `SimulationManagerUImpl.cpp` and
-`Config/DefaultEngine.ini`. Where a value appears below it is there to make an argument readable.
+in the header; the engine channels live in the host game's two per-engine bindings (`BrawlerJoltBindingUImpl.cpp`,
+`BrawlerChaosBindingUImpl.cpp`) and `Config/DefaultEngine.ini`. Where a value appears below it is there to make an argument readable.
 
 ---
 

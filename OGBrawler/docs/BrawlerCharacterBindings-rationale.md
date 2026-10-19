@@ -218,7 +218,7 @@ false.** This file declares no sub-simulation, and the sub-simulation named in t
 immediately before it — `dAttackMachineSimulation` — has **no `PhysicsDeclaration` of any kind**
 (the four that do are radial, guard, projectile and movement; `SimulatableBrawler.h:63-69`). The
 correct wording has been at the stamping site all along: *"the movement sub-simulation's OWN
-PhysicsDeclaration bindings"* (`SimulationManagerUImpl.cpp:1280`). This header inherited the phrase
+PhysicsDeclaration bindings"* (the stamp is `SimulationManagerUImpl.cpp` :: `setCharacterBindings`; the wording moved to `SimulationManagerUImpl-rationale.md` §10 and §13.4). This header inherited the phrase
 from `BrawlerMovementSimulation.h`, where "this sub-simulation" **was** correct, and kept it through
 the move.
 
@@ -234,7 +234,7 @@ character's existing root capsule instead of creating a body, which makes
 `bindings.ownBodyId == bindings.parentBodyId == capsuleBodyId` true **by construction**. It was a
 change of PROVENANCE only. The step-by-step design is architecture_movement_sim.md §4.2, *"The
 cutover, step by step — designed so the value never changes"* (initiative archive, not in this
-repository); the same argument is restated in the tree at `SimulationManagerUImpl.cpp:1286-1290`.
+repository); the same argument is restated in the tree at `SimulationManagerUImpl-rationale.md` §10 and §13.4.
 
 ⚠ ACharacter no longer appears in this tree at all — the pawn was later reparented from
 ACharacter to `APawn` and the character movement component deleted. The sentence above is closed
