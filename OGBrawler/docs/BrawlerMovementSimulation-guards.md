@@ -884,7 +884,7 @@ Was must-never-move **T3-11**.
 **What broke if it moved.** The diagnostic that guards the category map must **not** fire for categories 4 and 5, and `world`(4) is deliberately mapped to the same value as the unmapped fallback. Anyone tightening the diagnostic by value rather than by map presence breaks it silently.
 
 **Deleted, not relocated — the edit it forbids is typed in
-`Source/OGSimulationUnreal/ChaosSpatialQueryAdapter.h`, and that file already says it
+`Plugins/OGSimulation/Source/OGSimulationUnreal/ChaosSpatialQueryAdapter.h`, and that file already says it
 better.** At `:224-231` there: *“‘index in range’ and ‘category mapped’ are different
 questions, and neither the stored value nor the vector’s size can separate them. Every T40
 diagnostic keys on THIS mask; none of them keys on `m_toEngine.size()`.”* Presence
