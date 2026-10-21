@@ -20,8 +20,10 @@ integrate-scope prefix, and this conversion).
 
 `OGBLOG_G(fmt, …)` formats one line and hands it to `ogblog::g_sink`, a process-global
 `std::function` that is empty unless a host sets it. When it is empty the macro evaluates no argument
-and prints nothing. The only production host is the UE adapter: `ASimulationManagerUImpl::BeginPlay`
-installs `ogblogServer` or `ogblogClient` (`SimulationManagerUImpl.cpp` :: `ogblogServer`, `ogblogClient`). Both map a
+and prints nothing. The only production host is the UE adapter: the brawler's start-up hook
+`BrawlerSessionGameUImpl::installGameLoggers` installs `ogblogSink` (`SimulationManagerUImpl.cpp` :: `ogblogSink`), on
+both roles; until og-ue-simulationcomponentandmanagersplit task 27b `ASimulationManagerUImpl::BeginPlay` installed one of
+two token-identical lambdas, one per role. It maps a
 leading `[Verbose]` or `[Warning]` in the emitted string to that verbosity of
 `UE_LOG(LogOGBrawler, …)`, and log everything else at `Log`. They log the string **unstripped**, so the
 marker is visible in the log. The tests install their own capturing sinks.
@@ -53,7 +55,8 @@ It is the sink for og-brawler's sub-simulations and systems, and it is distinct 
 * ⚠ **The user list was stale.** "Future DAttackGuard" never logged: `DAttackGuardSimulation.h` has zero
   `OGBLOG_G` sites. The callers at task 16 are the machine (14 sites), the radial (9), the projectile
   (6), movement (4), the ring-out simulation (3) and score system (1), plus `OGBrawlerUECharacter.cpp` (1).
-* True as written: the `BeginPlay` install site, and the `[Verbose]` / `[Warning]` marker convention.
+* True as written: the `BeginPlay` install site (since task 27b the hook above, called from the session's `beginPlay`),
+  and the `[Verbose]` / `[Warning]` marker convention.
   `RouteOGMessage`, the `SIMLOG_G` sink, parses the same two markers.
 
 ## 2. The buffer size: 1024

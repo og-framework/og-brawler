@@ -242,7 +242,7 @@ time, in `ASimulationManagerUImpl::tryRegister`, … read after the physics-crea
 (before it, that id is still zero)."* F5a/F5c — an enumerated writer set plus an ordering
 precondition, and violating it is a runtime defect (a zero body id). But the stamp is typed in
 `Source/OGBrawlerUnreal/SimulationManagerUImpl.cpp`, and that file carries the contract in fuller
-form at the stamping site (`SimulationManagerUImpl.cpp` :: `setCharacterBindings`, `movementOwnBodyId`),
+form at the stamping site (`BrawlerRosterUImpl.cpp` :: `setCharacterBindings`, `movementOwnBodyId`; in the manager's `.cpp` until og-ue-simulationcomponentandmanagersplit task 23),
 including the `#if DO_CHECK` assertions that catch a zero id. **Nothing about
 this struct's declaration is where that edit happens.** The provenance is in the rationale doc §5.
 
@@ -250,5 +250,5 @@ this struct's declaration is where that edit happens.** The provenance is in the
 It read *"from **THIS sub-simulation's** own `PhysicsDeclaration` bindings"*. This file declares no
 sub-simulation, and the sub-simulation its previous sentence named — `dAttackMachineSimulation` —
 has no `PhysicsDeclaration` at all. The source is the **movement** declaration, and the correct
-wording is already at the stamping site (`SimulationManagerUImpl.cpp` :: `setCharacterBindings`; the wording is in `SimulationManagerUImpl-rationale.md` §10). See
+wording is already at the stamping site (`BrawlerRosterUImpl.cpp` :: `setCharacterBindings`; the wording is in `SimulationManagerUImpl-rationale.md` §10 and `BrawlerRosterUImpl-rationale.md` §2). See
 impl/r0_audit_BrawlerCharacterBindings.md §2.5.

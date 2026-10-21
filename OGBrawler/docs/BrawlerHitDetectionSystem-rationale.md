@@ -161,8 +161,8 @@ adapter by the hit's own body id, which is read (b) of §1:
 * **Adapters.** The executor constructs each system from the matching argument of its
   `std::piecewise_construct` constructor. The manager passes a constructed `System` built from
   `*m_physAdapter` and `*m_queryAdapter`, which are the same two adapters `m_integrationLayer` uses.
-  They are `std::optional`s emplaced per role, so the executor is too (G-10 here, G-75 in
-  `SimulationManagerUImpl-guards.md`). The system holds POINTERS rather than references so it
+  They are `std::optional`s emplaced per role, so the executor is too (G-10 here, G-01 in
+  `UESimulationSession-guards.md`, OGSimulationUnreal's; G-75 in `SimulationManagerUImpl-guards.md` until og-ue-simulationcomponentandmanagersplit task 24a). The system holds POINTERS rather than references so it
   stays copy- and move-assignable inside the executor's tuple.
 * **Lifecycle hooks** fill and drain one map (task 27): `m_targetIdByRootBodyId`, the capsule
   `BodyId` of every registered character to its `SimCharacterId` (the storage key, G-18). It is the

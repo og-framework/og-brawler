@@ -383,7 +383,7 @@ that were never sorted.
 
 ⛔ **It is deliberately not 4.**
 
-`ASimulationManagerUImpl::kPreDietCharacterCap` is **4**, and it is an **advisory** cap, not
+`BrawlerRosterUImpl::kPreDietCharacterCap` (the manager's until og-ue-simulationcomponentandmanagersplit task 23) is **4**, and it is an **advisory** cap, not
 an enforced one. Its own fence (grep `PreDietCap`) reads *"WARNING, not Log, and not an
 assert: an over-cap session still RUNS - report, do not crash"*, so a fifth character
 registers today, and `brawlerRingout::ScoreSystem`'s `onCharacterRegistered` gives it a

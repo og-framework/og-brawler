@@ -206,12 +206,12 @@ moved** — which is now the `static_assert` retired as `G-03`.
 ## 5. Where the value comes from — registration, and the T13 change of provenance
 
 `capsuleBodyId` is populated **once**, at registration time, in
-`ASimulationManagerUImpl::tryRegister` (`SimulationManagerUImpl.cpp` :: `tryRegister`, `setCharacterBindings`;
+`ASimulationManagerUImpl::tryRegister` (`SimulationManagerUImpl.cpp` :: `tryRegister`; `BrawlerRosterUImpl.cpp` :: `setCharacterBindings`, since og-ue-simulationcomponentandmanagersplit task 23;
 the single `setCharacterBindings` call is on the first-call branch). Its source is the **movement**
 sub-simulation's own `PhysicsDeclaration` bindings — `bindings.ownBodyId`, read **after** the
 physics-creation fold has run, because before the fold that id is still zero. The contract is enforced
-at the stamping site (`SimulationManagerUImpl.cpp` :: `setCharacterBindings`, `movementOwnBodyId`; its wording is in
-`SimulationManagerUImpl-rationale.md` §10 and §13.4) and is not tagged here; see
+at the stamping site (`BrawlerRosterUImpl.cpp` :: `setCharacterBindings`, `movementOwnBodyId`; its wording is in
+`SimulationManagerUImpl-rationale.md` §10 and `BrawlerRosterUImpl-rationale.md` §2, §13.4's brawler part until task 23) and is not tagged here; see
 `BrawlerCharacterBindings-guards.md` §H-2 for why.
 
 ⛔ **The pre-conversion header said "THIS sub-simulation's own `PhysicsDeclaration`", and that was
@@ -219,7 +219,7 @@ false.** This file declares no sub-simulation, and the sub-simulation named in t
 immediately before it — `dAttackMachineSimulation` — has **no `PhysicsDeclaration` of any kind**
 (the four that do are radial, guard, projectile and movement; `SimulatableBrawler.h:63-69`). The
 correct wording has been at the stamping site all along: *"the movement sub-simulation's OWN
-PhysicsDeclaration bindings"* (the stamp is `SimulationManagerUImpl.cpp` :: `setCharacterBindings`; the wording moved to `SimulationManagerUImpl-rationale.md` §10 and §13.4). This header inherited the phrase
+PhysicsDeclaration bindings"* (the stamp is `BrawlerRosterUImpl.cpp` :: `setCharacterBindings`; the wording moved to `SimulationManagerUImpl-rationale.md` §10 and `BrawlerRosterUImpl-rationale.md` §2). This header inherited the phrase
 from `BrawlerMovementSimulation.h`, where "this sub-simulation" **was** correct, and kept it through
 the move.
 
@@ -235,7 +235,7 @@ character's existing root capsule instead of creating a body, which makes
 `bindings.ownBodyId == bindings.parentBodyId == capsuleBodyId` true **by construction**. It was a
 change of PROVENANCE only. The step-by-step design is architecture_movement_sim.md §4.2, *"The
 cutover, step by step — designed so the value never changes"* (initiative archive, not in this
-repository); the same argument is restated in the tree at `SimulationManagerUImpl-rationale.md` §10 and §13.4.
+repository); the same argument is restated in the tree at `SimulationManagerUImpl-rationale.md` §10 and `BrawlerRosterUImpl-rationale.md` §2 (§13.4 of the manager's until og-ue-simulationcomponentandmanagersplit task 23).
 
 ⚠ ACharacter no longer appears in this tree at all — the pawn was later reparented from
 ACharacter to `APawn` and the character movement component deleted. The sentence above is closed
