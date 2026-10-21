@@ -206,11 +206,12 @@ moved** — which is now the `static_assert` retired as `G-03`.
 ## 5. Where the value comes from — registration, and the T13 change of provenance
 
 `capsuleBodyId` is populated **once**, at registration time, in
-`ASimulationManagerUImpl::tryRegister` (`SimulationManagerUImpl.cpp:1188`; the single
-`setCharacterBindings` call is at `:1309`, on the first-call branch). Its source is the **movement**
+`ASimulationManagerUImpl::tryRegister` (`SimulationManagerUImpl.cpp` :: `tryRegister`, `setCharacterBindings`;
+the single `setCharacterBindings` call is on the first-call branch). Its source is the **movement**
 sub-simulation's own `PhysicsDeclaration` bindings — `bindings.ownBodyId`, read **after** the
-physics-creation fold has run, because before the fold that id is still zero. The contract is stated
-in full at the stamping site (`:1278-1290`) and is not tagged here; see
+physics-creation fold has run, because before the fold that id is still zero. The contract is enforced
+at the stamping site (`SimulationManagerUImpl.cpp` :: `setCharacterBindings`, `movementOwnBodyId`; its wording is in
+`SimulationManagerUImpl-rationale.md` §10 and §13.4) and is not tagged here; see
 `BrawlerCharacterBindings-guards.md` §H-2 for why.
 
 ⛔ **The pre-conversion header said "THIS sub-simulation's own `PhysicsDeclaration`", and that was

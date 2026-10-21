@@ -242,7 +242,8 @@ time, in `ASimulationManagerUImpl::tryRegister`, … read after the physics-crea
 (before it, that id is still zero)."* F5a/F5c — an enumerated writer set plus an ordering
 precondition, and violating it is a runtime defect (a zero body id). But the stamp is typed in
 `Source/OGBrawlerUnreal/SimulationManagerUImpl.cpp`, and that file carries the contract in fuller
-form at `:1278-1290`, including the `#if DO_CHECK` assertions that catch a zero id. **Nothing about
+form at the stamping site (`SimulationManagerUImpl.cpp` :: `setCharacterBindings`, `movementOwnBodyId`),
+including the `#if DO_CHECK` assertions that catch a zero id. **Nothing about
 this struct's declaration is where that edit happens.** The provenance is in the rationale doc §5.
 
 ⛔ **The header's copy of H-2 was FALSE, and it is corrected in the rationale rather than moved.**

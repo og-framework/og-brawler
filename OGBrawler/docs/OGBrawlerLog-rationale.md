@@ -21,7 +21,7 @@ integrate-scope prefix, and this conversion).
 `OGBLOG_G(fmt, …)` formats one line and hands it to `ogblog::g_sink`, a process-global
 `std::function` that is empty unless a host sets it. When it is empty the macro evaluates no argument
 and prints nothing. The only production host is the UE adapter: `ASimulationManagerUImpl::BeginPlay`
-installs `ogblogServer` or `ogblogClient` (`SimulationManagerUImpl.cpp:913` and `:972`). Both map a
+installs `ogblogServer` or `ogblogClient` (`SimulationManagerUImpl.cpp` :: `ogblogServer`, `ogblogClient`). Both map a
 leading `[Verbose]` or `[Warning]` in the emitted string to that verbosity of
 `UE_LOG(LogOGBrawler, …)`, and log everything else at `Log`. They log the string **unstripped**, so the
 marker is visible in the log. The tests install their own capturing sinks.
@@ -48,7 +48,7 @@ It is the sink for og-brawler's sub-simulations and systems, and it is distinct 
 ```
 
 * ⛔ **`LogOGBrawler=Warning ; default` was false.** The category is declared
-  `DECLARE_LOG_CATEGORY_EXTERN(LogOGBrawler, Log, All)` (`SimulationManagerUImpl.h:67`), so the code
+  `DECLARE_LOG_CATEGORY_EXTERN(LogOGBrawler, Log, All)` (`SimulationManagerUImpl.h` :: `LogOGBrawler`), so the code
   default is `Log`. `Config/DefaultEngine.ini:362` ships `LogOGBrawler=Verbose`.
 * ⚠ **The user list was stale.** "Future DAttackGuard" never logged: `DAttackGuardSimulation.h` has zero
   `OGBLOG_G` sites. The callers at task 16 are the machine (14 sites), the radial (9), the projectile

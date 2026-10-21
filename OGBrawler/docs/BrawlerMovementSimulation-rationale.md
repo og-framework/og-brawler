@@ -549,8 +549,9 @@ They cannot disagree, because the bound is written once.
 > `AOGBrawlerUECharacter : public APawn` (`OGBrawlerUECharacter.h:49`), and the CMC was
 > retired from the gameplay path at task 15. ⭐ **The useful framing, from task 81's audit:
 > this is not a lone stale file, it is the LAST present-tense site.** Every other place in
-> the tree already reads *pawn* or past tense — `SimulationManagerUImpl.cpp:593` and `:1287`
-> both say *"the factory ADOPTS the pawn's own root capsule"*. **Owner: task 58.**
+> the tree already reads *pawn* or past tense — the two `SimulationManagerUImpl.cpp` comments that
+> said it, carried since into `SimulationManagerUImpl-rationale.md` §13.3 and §13.4, both say the
+> factory *"ADOPTS the pawn's"* own (§13.3) or existing (§13.4) *"root capsule"*. **Owner: task 58.**
 >
 > ⚠ **One `ACharacter` is NOT correctable by any comment pass**: it is inside the message of
 > a `static_assert` task 76 landed (*"…instead of adopting the ACharacter's own capsule…"*).
