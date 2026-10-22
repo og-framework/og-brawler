@@ -72,7 +72,7 @@ R0-corrected pre-conversion file):**
 
 **What breaks if it moves.** Per Taxonomy F5c an enumeration *is* a maintenance contract: a new
 site added without updating it silently breaks the invariant the count asserts. The omitted
-sites are the ones that matter. `SimmableUpdateComponent`'s input-history poll feeds the same
+sites are the ones that matter. `OGBrawlerSimulatableComponent`'s input-history poll feeds the same
 number into the visualization, so the deadzone is what the input-history display uses to decide
 "no input" — change the deadzone's meaning and you silently change what the meter renders as
 neutral, in a file the enumeration never named.
@@ -94,7 +94,7 @@ bytes, so no checker mistakes it for a span that moved):
 * **(b) The set was INCOMPLETE.** The measured readers of `g_moveStickDeadzone` /
   `g_aimStickDeadzone` are `OGBrawlerInputCollectionComponent`'s `buildAimDirection` and
   `buildMoveDirectionWorld`, its `resolveTriggeredActionId` call, and
-  `SimmableUpdateComponent`'s `pollInputHistory` and `captureRowFieldsOf` calls — a second FILE,
+  `OGBrawlerSimulatableComponent`'s `pollInputHistory` and `captureRowFieldsOf` calls — a second FILE,
   and a motion-matcher call that is not a direction build at all. The bytes above are the
   corrected ones.
 
@@ -111,7 +111,7 @@ tests and writers excluded:
   `dInput::stickRouting::guardFreezeRequested` (the hold-guard freeze request;
   og-brawler-3rdControllerMode task 5), and `onMoveStick`, which passes it to
   `dInput::stickRouting::lastInputWasGamepadAfterStick` as the left stick's latch threshold
-  (og-attackstatetransition-cleanup task 13). `SimmableUpdateComponent`: the `pollInputHistory` and
+  (og-attackstatetransition-cleanup task 13). `OGBrawlerSimulatableComponent`: the `pollInputHistory` and
   `captureRowFieldsOf` calls.
 * `g_aimStickDeadzone` — `UOGBrawlerInputCollectionComponent`: `buildAimDirection`,
   `buildMoveDirectionWorld`, and `onAim`, which passes it to the same latch function as the right

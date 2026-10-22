@@ -1,4 +1,6 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- lint-external-ref: SimulationManagerUImpl.cpp -- RENAMED by og-ue-simulationcomponentandmanagersplit task 30 to OGBrawlerSimulationManager.cpp; kept in the verbatim fence of §4a -->
+<!-- lint-external-ref: SimulationManagerUImpl.h -- RENAMED by og-ue-simulationcomponentandmanagersplit task 30 to OGBrawlerSimulationManager.h; kept in the verbatim header lines of §12 -->
 <!-- lint-external-ref: ASimulationManagerUImpl::m_systemsExec -- moved member inside a verbatim fence: the systems executor is UESimulationSession's m_systemsExec (a std::optional) since og-ue-simulationcomponentandmanagersplit task 24a; the fence is the code's text at its date -->
 # `BrawlerRingoutScoreSystem.h` — rationale
 
@@ -240,7 +242,7 @@ character, which is `0` by default whether or not the roster was ever seeded
 (`ScoreboardVisualizationUImpl.cpp` never touches `ScoreSystem`). **Seeding is not what
 makes the zero row appear.** What the seed actually buys is named in the same paragraph
 and is real: the unregister contract needs an entry to drop for a character that died to
-nobody, and `SimulationManagerUImpl.cpp`'s `checkf` over `hasScoreEntry` needs every
+nobody, and `OGBrawlerSimulationManager.cpp`'s `checkf` over `hasScoreEntry` needs every
 authority-registered id present before the push walks.
 
 <!-- header lines 251-254 -->

@@ -28,7 +28,7 @@ OGSIM_OPTIMIZE_OFF
 //   * It writes nothing, anywhere. No static, no singleton, no service call, no functor bound
 //     to sim-mutating behaviour -- §1's last bullet, the side channel the lint cannot see.
 //   * It adds no wire byte, no `StaticData` field and no `DerivedState` field. Deleting this
-//     header and its ONE call site in `SimmableUpdateComponent.cpp` leaves the simulation
+//     header and its ONE call site in `OGBrawlerSimulatableComponent.cpp` leaves the simulation
 //     byte-identical. That removability is the task's acceptance condition, not a nicety.
 //
 // ⚠ THE ONE SIM SYMBOL THIS FILE CALLS is `brawlerMovementSimulation::buildTangentFrame`, and
@@ -51,9 +51,9 @@ OGSIM_OPTIMIZE_OFF
 //////////////////////////////////////////////////////////////////////////////////////////////
 // ⚠⚠ RENDER CLOCK READING A SIM-TICK SNAPSHOT -- WHAT IS STALE, AND WHAT IS NOT.
 //
-// `USimmableUpdateComponent::TickComponent` runs on the RENDER clock. The values it hands this
+// `UOGBrawlerSimulatableComponent::TickComponent` runs on the RENDER clock. The values it hands this
 // function come from `SimulatableBrawler::getVizState()`, which is a whole-`AllState` COPY
-// taken by `updateVisualizationAll` in `ASimulationManagerUImpl::OnPostPhysicsStep` -- i.e.
+// taken by `updateVisualizationAll` in `AOGBrawlerSimulationManager::OnPostPhysicsStep` -- i.e.
 // once per GAME FRAME, at the end of physics, every frame whether or not a sim tick ran (both
 // physics backends). The sim itself ticks at 60 Hz (`AsyncFixedTimeStepSize`).
 //
@@ -305,7 +305,7 @@ inline unsigned int supportColor(uint8_t supportBits)
 //
 // Signature per the task: the sim slices arrive as `const&` and there is no mutable parameter
 // at all. Called once per render frame per character, from
-// `USimmableUpdateComponent::TickComponent`, behind `OGBrawler.Viz.Movement` (default 0).
+// `UOGBrawlerSimulatableComponent::TickComponent`, behind `OGBrawler.Viz.Movement` (default 0).
 //
 // ⚠ THE CVAR IS READ PER FRAME, AND THAT IS DELIBERATE -- DO NOT "FIX" IT INTO A ONE-TIME READ.
 // Task 16 established the one-time-read discipline for `StaticData` cvars, and it is right

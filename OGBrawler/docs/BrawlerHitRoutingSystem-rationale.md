@@ -69,7 +69,7 @@ and the `OGBrawlerTests` LLT flags.
 | property | what holds it | the edit, and the error |
 |---|---|---|
 | the four hooks (the pristine "present to satisfy the four-hook `SimulationSystem` concept") | the `SimulationSystemsExecutor` specialization's requires-clause, instantiated by the manager's `BrawlerSystemsExec` and by every rig | delete `postIntegrate` → `C2027`, use of the undefined primary template |
-| detection fires BEFORE routing in the same `preIntegrate` (branches 2-5 read what the detector wrote in this pass) | `static_assert(brawlerHitDetection::firesBefore<BrawlerSystemsExec, …>)` in `SimulationManagerUImpl.h`, and `HitDetection.FiresBeforeTraitSeesTheExecutorOrder` | a reversed `BrawlerSystemsExec` fails that assert; seen to fail by task 9 (`BrawlerHitDetectionSystem-rationale.md` §5) |
+| detection fires BEFORE routing in the same `preIntegrate` (branches 2-5 read what the detector wrote in this pass) | `static_assert(brawlerHitDetection::firesBefore<BrawlerSystemsExec, …>)` in `OGBrawlerSimulationManager.h`, and `HitDetection.FiresBeforeTraitSeesTheExecutorOrder` | a reversed `BrawlerSystemsExec` fails that assert; seen to fail by task 9 (`BrawlerHitDetectionSystem-rationale.md` §5) |
 | the slice stays off the wire | `SimulationDerivedComposite`'s `requires (!(Serializable<Ts> \|\| ...))`; moving it onto the `State` composite fails at the correction gate's `isSimilarTo` | a `SerializableFields` specialization → `C7602`; the slice on `simulatableBrawler::State` → `C7500` (`BrawlerInboundHit-rationale.md` §3) |
 | branch 2 iterating the per-swing ledger in place of `hitsThisTick`, literally | the element types: a ledger entry is a `SimCharacterId` | `C2228`, left of `.hitRootBodyId` must have class type. A rewrite would compile, so guards G-04 stands |
 
@@ -288,9 +288,10 @@ system-owned (the OGSim system-API design's §3.9 and its parent initiative's D8
 per-machine). It moved here from `ASimulationManagerUImpl::m_byRootBodyId`. The detector keeps a
 map with the same key and a `SimCharacterId` value (`BrawlerHitDetectionSystem-guards.md` G-18).
 
-* **`onCharacterRegistered`** fires after the character is inserted into storage (the manager's
-  `tryRegister`, `SimulationManagerUImpl-guards.md` G-69), so the view resolves it.
-* **`onCharacterUnregistered`** fires before it is erased (`SimulationManagerUImpl-guards.md` G-73,
+* **`onCharacterRegistered`** fires after the character is inserted into storage (`tryRegister`, the session's since
+  og-ue-simulationcomponentandmanagersplit task 28, `UESimulationSession-guards.md` G-25; the manager's G-69 before), so the
+  view resolves it.
+* **`onCharacterUnregistered`** fires before it is erased (`UESimulationSession-guards.md` G-26, the manager's G-73 before,
   which also skips a character that never reached storage). It erases by the stored pointer, not by a
   recomputed key, so no stale entry survives however the key was derived. ⚠ R0: the capsule id does
   not change over a registered lifetime, so a keyed erase would be equivalent today; the pointer walk

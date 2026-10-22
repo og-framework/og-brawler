@@ -26,7 +26,7 @@ appears below it is there to make an argument readable.
 
 **Read alongside:** `BrawlerInputPackaging-guards.md` — the prohibitions, by id.
 `VISUALIZATION_DISCIPLINE.md` — the mesh-only invariant that §6's render-echo
-rule serves. `SimmableUpdateComponent-rationale.md` — the UE-side caller that consumes both packers.
+rule serves. `OGBrawlerSimulatableComponent-rationale.md` — the UE-side caller that consumes both packers.
 
 Origin: the render-side input echo work of `og-netcode-v2-arch-latency` (T12, the packaging half of
 D5.4, and T13, the caller half), the design notes `proposal_ogbrawler_netcode.md` §2.3 and

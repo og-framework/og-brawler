@@ -40,7 +40,7 @@ in the header; the engine channels live in the host game's two per-engine bindin
 // one branch each; that site's own `⚠ KEEP IN SYNC` note is the one to read before typing.
 ```
 
-**What breaks if it moves.** **Written for this entry (task 67 guard, not on the must-never-move list).** The category constants are here; the engine mapping is in another module entirely, in a table that exists **twice** (`SimulationManagerUImpl.cpp`, the authority branch and the client branch). A category added here and nowhere else compiles, links, ships, and produces a query that matches nothing — `toEngineChannel` answers `ECollisionChannel(0)` for it, which is a legitimate channel (see G-03). The list of constants is the only place an editor looks.
+**What breaks if it moves.** **Written for this entry (task 67 guard, not on the must-never-move list).** The category constants are here; the engine mapping is in another module entirely, in a table that exists **twice** (`OGBrawlerSimulationManager.cpp`, the authority branch and the client branch). A category added here and nowhere else compiles, links, ships, and produces a query that matches nothing — `toEngineChannel` answers `ECollisionChannel(0)` for it, which is a legitimate channel (see G-03). The list of constants is the only place an editor looks.
 
 ---
 

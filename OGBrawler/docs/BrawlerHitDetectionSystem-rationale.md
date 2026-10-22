@@ -155,14 +155,14 @@ adapter by the hit's own body id, which is read (b) of §1:
   `BrawlerSystemsExec` lists this system FIRST, before `brawlerHitRouting::System`, whose branch 2
   reads the `hitsThisTick` written here and whose branch 5 reads `guardBlockedThisTick`. Both
   fire in `preIntegrate` since task 20, so the order holds in that pass.
-  `SimulationManagerUImpl.h` pins the order with a `static_assert` on `firesBefore` (§6), and that
+  `OGBrawlerSimulationManager.h` pins the order with a `static_assert` on `firesBefore` (§6), and that
   assert was seen to FAIL on a swapped order.
 * **Roles.** `AllRoles`, see G-09.
 * **Adapters.** The executor constructs each system from the matching argument of its
   `std::piecewise_construct` constructor. The manager passes a constructed `System` built from
   `*m_physAdapter` and `*m_queryAdapter`, which are the same two adapters `m_integrationLayer` uses.
   They are `std::optional`s emplaced per role, so the executor is too (G-10 here, G-01 in
-  `UESimulationSession-guards.md`, OGSimulationUnreal's; G-75 in `SimulationManagerUImpl-guards.md` until og-ue-simulationcomponentandmanagersplit task 24a). The system holds POINTERS rather than references so it
+  `UESimulationSession-guards.md`, OGSimulationUnreal's; G-75 in `OGBrawlerSimulationManager-guards.md` until og-ue-simulationcomponentandmanagersplit task 24a). The system holds POINTERS rather than references so it
   stays copy- and move-assignable inside the executor's tuple.
 * **Lifecycle hooks** fill and drain one map (task 27): `m_targetIdByRootBodyId`, the capsule
   `BodyId` of every registered character to its `SimCharacterId` (the storage key, G-18). It is the

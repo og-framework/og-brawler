@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- lint-external-ref: ASimulationManagerUImpl::tryRegister -- RENAMED by og-ue-simulationcomponentandmanagersplit task 30 to AOGBrawlerSimulationManager (the registration itself is UESimulationSession::tryRegister since task 28); kept in H-2's verbatim quote of the pre-conversion lines -->
 # `BrawlerCharacterBindings.h` — guards
 
 Every fence that stood in the header. Each entry has an **opaque, stable id**; in the header a
@@ -241,7 +242,8 @@ The invariant itself, the diagram and the history are in `BrawlerCharacterBindin
 time, in `ASimulationManagerUImpl::tryRegister`, … read after the physics-creation fold has run
 (before it, that id is still zero)."* F5a/F5c — an enumerated writer set plus an ordering
 precondition, and violating it is a runtime defect (a zero body id). But the stamp is typed in
-`Source/OGBrawlerUnreal/SimulationManagerUImpl.cpp`, and that file carries the contract in fuller
+`Source/OGBrawlerUnreal/BrawlerRosterUImpl.cpp` (the manager's `.cpp` until og-ue-simulationcomponentandmanagersplit task
+23), and that file carries the contract in fuller
 form at the stamping site (`BrawlerRosterUImpl.cpp` :: `setCharacterBindings`, `movementOwnBodyId`; in the manager's `.cpp` until og-ue-simulationcomponentandmanagersplit task 23),
 including the `#if DO_CHECK` assertions that catch a zero id. **Nothing about
 this struct's declaration is where that edit happens.** The provenance is in the rationale doc §5.
@@ -250,5 +252,5 @@ this struct's declaration is where that edit happens.** The provenance is in the
 It read *"from **THIS sub-simulation's** own `PhysicsDeclaration` bindings"*. This file declares no
 sub-simulation, and the sub-simulation its previous sentence named — `dAttackMachineSimulation` —
 has no `PhysicsDeclaration` at all. The source is the **movement** declaration, and the correct
-wording is already at the stamping site (`BrawlerRosterUImpl.cpp` :: `setCharacterBindings`; the wording is in `SimulationManagerUImpl-rationale.md` §10 and `BrawlerRosterUImpl-rationale.md` §2). See
+wording is already at the stamping site (`BrawlerRosterUImpl.cpp` :: `setCharacterBindings`; the wording is in `BrawlerSessionGameUImpl-rationale.md` §7.1 and `BrawlerRosterUImpl-rationale.md` §2, the manager's rationale §10 until og-ue-simulationcomponentandmanagersplit task 28). See
 impl/r0_audit_BrawlerCharacterBindings.md §2.5.

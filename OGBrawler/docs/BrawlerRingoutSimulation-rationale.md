@@ -230,7 +230,7 @@ the map. Respawn slot N is now PLAYER START N — placement becomes level design
 edit, and the authored table degrades into the FALLBACK for a level that has not been dressed yet.
 
 **Why the merge lives in this engine-free header and not in the UE layer that calls it.**
-`SimulationManagerUImpl.cpp` is a UE module file and the low-level-test target cannot reach it, so
+`OGBrawlerSimulationManager.cpp` is a UE module file and the low-level-test target cannot reach it, so
 any claim made there is verified by review and by a PIE run and by nothing else. The three
 properties that actually matter — that the result does NOT depend on the order the engine handed
 the actors over, that zero placements leave the authored table intact, and that a short list fills
@@ -546,7 +546,7 @@ authority-side bookkeeping that lives BESIDE the simulation, the same shape the 
 and for the same reason: a rollback must not be able to reach it. Now enforced — guard **G-01**.
 
 ⭐ **Why it is in this engine-free header rather than in the UE layer that calls it.**
-`SimulationManagerUImpl.cpp` is a UE module file and the low-level-test target cannot reach it. The
+`OGBrawlerSimulationManager.cpp` is a UE module file and the low-level-test target cannot reach it. The
 two properties that actually matter here — that two separate remote clients get DIFFERENT slots,
 and that a released slot is reused by a later join — are therefore assertions in
 `BrawlerRingoutSimulationTest.cpp` instead of prose in a review note. The UE layer holds the two

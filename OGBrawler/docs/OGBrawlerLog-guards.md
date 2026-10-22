@@ -96,7 +96,7 @@ integrate, and this block is the **one** place that reads it.
    Lines that run **outside** a scope (the ring-out score system, and `OGBrawlerUECharacter.cpp`'s
    `[Ringout.score.client]`) must keep authoring their own `id=`/`tick=`, because nothing inserts one.
 2. **Never move the insertion ahead of a leading `[Verbose]` or `[Warning]`.** The UE sink
-   (`ogblogSink` in `SimulationManagerUImpl.cpp`, one lambda for both roles since og-ue-simulationcomponentandmanagersplit
+   (`ogblogSink` in `OGBrawlerSimulationManager.cpp`, one lambda for both roles since og-ue-simulationcomponentandmanagersplit
    task 27b; two before) chooses the verbosity by
    `StartsWith(TEXT("[Verbose]"))` on the emitted string. A prefix at column 0 of
    `[Verbose][Radial.branch] …` silently promotes that line to `Log`. Those are the six

@@ -54,7 +54,7 @@ physics capsule. It is **consumed by four places** — `dAttackMachineSimulation
 (`DAttackMachineSimulation.h` :: `integrate3`), the `SimulatableBrawler` composite that owns it
 (`SimulatableBrawler.h:42-43`, `:62`), the hit-routing system through the composite's accessor
 (`BrawlerHitRoutingSystem.h` :: `onCharacterRegistered`), and the tests — and **written in exactly one**, the registration
-path in `SimulationManagerUImpl.cpp` (§5).
+path in `OGBrawlerSimulationManager.cpp` (§5).
 
 A file this small exists for a reason that has nothing to do with the struct: **it is a leaf, and
 being a leaf is the whole product.** Two headers that must not see each other both need this type,
@@ -206,12 +206,13 @@ moved** — which is now the `static_assert` retired as `G-03`.
 ## 5. Where the value comes from — registration, and the T13 change of provenance
 
 `capsuleBodyId` is populated **once**, at registration time, in
-`ASimulationManagerUImpl::tryRegister` (`SimulationManagerUImpl.cpp` :: `tryRegister`; `BrawlerRosterUImpl.cpp` :: `setCharacterBindings`, since og-ue-simulationcomponentandmanagersplit task 23;
-the single `setCharacterBindings` call is on the first-call branch). Its source is the **movement**
+`tryRegister` (`UESimulationSession.h` :: `tryRegister`, the session's since og-ue-simulationcomponentandmanagersplit task 28,
+the manager's before; `BrawlerRosterUImpl.cpp` :: `setCharacterBindings`, since task 23, called through the brawler's hook
+`BrawlerSessionGameUImpl::afterBodiesCreated`; the single `setCharacterBindings` call is on the first-call branch). Its source is the **movement**
 sub-simulation's own `PhysicsDeclaration` bindings — `bindings.ownBodyId`, read **after** the
 physics-creation fold has run, because before the fold that id is still zero. The contract is enforced
 at the stamping site (`BrawlerRosterUImpl.cpp` :: `setCharacterBindings`, `movementOwnBodyId`; its wording is in
-`SimulationManagerUImpl-rationale.md` §10 and `BrawlerRosterUImpl-rationale.md` §2, §13.4's brawler part until task 23) and is not tagged here; see
+`BrawlerSessionGameUImpl-rationale.md` §7.1 and `BrawlerRosterUImpl-rationale.md` §2; the manager's rationale §10 until task 28, §13.4's brawler part until task 23) and is not tagged here; see
 `BrawlerCharacterBindings-guards.md` §H-2 for why.
 
 ⛔ **The pre-conversion header said "THIS sub-simulation's own `PhysicsDeclaration`", and that was
@@ -219,7 +220,7 @@ false.** This file declares no sub-simulation, and the sub-simulation named in t
 immediately before it — `dAttackMachineSimulation` — has **no `PhysicsDeclaration` of any kind**
 (the four that do are radial, guard, projectile and movement; `SimulatableBrawler.h:63-69`). The
 correct wording has been at the stamping site all along: *"the movement sub-simulation's OWN
-PhysicsDeclaration bindings"* (the stamp is `BrawlerRosterUImpl.cpp` :: `setCharacterBindings`; the wording moved to `SimulationManagerUImpl-rationale.md` §10 and `BrawlerRosterUImpl-rationale.md` §2). This header inherited the phrase
+PhysicsDeclaration bindings"* (the stamp is `BrawlerRosterUImpl.cpp` :: `setCharacterBindings`; the wording moved to `BrawlerSessionGameUImpl-rationale.md` §7.1 and `BrawlerRosterUImpl-rationale.md` §2, the manager's rationale §10 until og-ue-simulationcomponentandmanagersplit task 28). This header inherited the phrase
 from `BrawlerMovementSimulation.h`, where "this sub-simulation" **was** correct, and kept it through
 the move.
 
@@ -235,7 +236,7 @@ character's existing root capsule instead of creating a body, which makes
 `bindings.ownBodyId == bindings.parentBodyId == capsuleBodyId` true **by construction**. It was a
 change of PROVENANCE only. The step-by-step design is architecture_movement_sim.md §4.2, *"The
 cutover, step by step — designed so the value never changes"* (initiative archive, not in this
-repository); the same argument is restated in the tree at `SimulationManagerUImpl-rationale.md` §10 and `BrawlerRosterUImpl-rationale.md` §2 (§13.4 of the manager's until og-ue-simulationcomponentandmanagersplit task 23).
+repository); the same argument is restated in the tree at `BrawlerSessionGameUImpl-rationale.md` §7.1 (the manager's rationale §10 until og-ue-simulationcomponentandmanagersplit task 28) and `BrawlerRosterUImpl-rationale.md` §2 (§13.4 of the manager's until task 23).
 
 ⚠ ACharacter no longer appears in this tree at all — the pawn was later reparented from
 ACharacter to `APawn` and the character movement component deleted. The sentence above is closed
@@ -246,11 +247,13 @@ history about task 13, not a description of a class you can grep for.
 ⚠ **History, closed at task 17.** While two independent sources for the capsule id coexisted, an
 assertion watched them agree. Task 17 deleted the tripwire **and the second source with it**:
 PendingRegistration::parentBodyId is gone. The record today —
-`SimulationManagerUImpl.h` :: `PendingRegistration`, `simulatable`, `bodiesCreated`, `inputProvider`, `isAuthority`
-(the struct, then its four members) — has no such member. The header comment that recorded the
+`UESimulationSession.h` :: `PendingRegistration`, `simulatable`, `bodiesCreated`, `inputProvider`, `isAuthority`
+(the struct, then its four members; the session's since og-ue-simulationcomponentandmanagersplit task 28, the manager's
+`OGBrawlerSimulationManager.h` before) — has no such member. The header comment that recorded the
 removal sat above that struct until 2026-09-22, when it was carried out of the header into
-`SimulationManagerUImpl-rationale.md`: its §10 *Registration and unregistration* restates it under
-**The capsule body id**, and its §12 *The header's declaration comments, carried* keeps it verbatim.
+`OGBrawlerSimulationManager-rationale.md`: its §10 *Registration and unregistration* restated it under
+**The capsule body id** (since task 28 that paragraph is `BrawlerSessionGameUImpl-rationale.md` §7.1), and its §12 *The
+header's declaration comments, carried* keeps it verbatim.
 
 **The identity is still asserted, one layer down**, by a check neither task touched:
 `ChaosPhysicsFactory::createPhysicalObject`'s adopt-root arm ends in

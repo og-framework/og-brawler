@@ -111,7 +111,7 @@ skips. Consequences for this entry, stated plainly:
   `preIntegrate(T+1)`, this clear at the top of `integrate(T+1)`). Deleting it would no longer
   re-fire a hit in production, because the detector's own clear runs first on every pass. What it
   still protects: every single-character rig that calls `integrate` and the detector directly, and
-  the reversed-order outcome the `SimulationManagerUImpl.h` `firesBefore` message names (routing
+  the reversed-order outcome the `OGBrawlerSimulationManager.h` `firesBefore` message names (routing
   before detection reads an EMPTY list because this clear ran; without it, routing would read the
   previous pass's list and route every hit one tick late instead of never).
 

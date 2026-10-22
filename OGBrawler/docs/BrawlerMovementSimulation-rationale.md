@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- lint-external-ref: SimulationManagerUImpl.cpp -- RENAMED by og-ue-simulationcomponentandmanagersplit task 30 to OGBrawlerSimulationManager.cpp; kept in §7's verbatim carried comment -->
 <!-- ------------------------------------------------------------------ -->
 <!-- LINT ESCAPES for `tools/lint/doc_anchor_lint.ps1`.                  -->
 <!--                                                                     -->
@@ -550,8 +551,8 @@ They cannot disagree, because the bound is written once.
 > `AOGBrawlerUECharacter : public APawn` (`OGBrawlerUECharacter.h:49`), and the CMC was
 > retired from the gameplay path at task 15. ⭐ **The useful framing, from task 81's audit:
 > this is not a lone stale file, it is the LAST present-tense site.** Every other place in
-> the tree already reads *pawn* or past tense — the two `SimulationManagerUImpl.cpp` comments that
-> said it, carried since into `SimulationManagerUImpl-rationale.md` §13.3 and §13.4, both say the
+> the tree already reads *pawn* or past tense — the two `OGBrawlerSimulationManager.cpp` comments that
+> said it, carried since into `OGBrawlerSimulationManager-rationale.md` §13.3 and §13.4, both say the
 > factory *"ADOPTS the pawn's"* own (§13.3) or existing (§13.4) *"root capsule"*. **Owner: task 58.**
 > (The §13.4 sentence is `BrawlerRosterUImpl-rationale.md` §2 since og-ue-simulationcomponentandmanagersplit task 23.)
 >
