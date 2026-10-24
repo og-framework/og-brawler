@@ -21,7 +21,7 @@ integrate-scope prefix, and this conversion).
 `OGBLOG_G(fmt, …)` formats one line and hands it to `ogblog::g_sink`, a process-global
 `std::function` that is empty unless a host sets it. When it is empty the macro evaluates no argument
 and prints nothing. The only production host is the UE adapter: the brawler's start-up hook
-`BrawlerSessionGameUImpl::installGameLoggers` installs `ogblogSink` (`OGBrawlerSimulationManager.cpp` :: `ogblogSink`), on
+`BrawlerSessionGameUImpl::installGameLoggers` installs `ogblogSink` (`BrawlerSessionGameUImpl.cpp` :: `ogblogSink`), on
 both roles; until og-ue-simulationcomponentandmanagersplit task 27b `AOGBrawlerSimulationManager::BeginPlay` installed one of
 two token-identical lambdas, one per role. It maps a
 leading `[Verbose]` or `[Warning]` in the emitted string to that verbosity of
