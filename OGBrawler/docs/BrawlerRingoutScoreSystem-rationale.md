@@ -242,7 +242,8 @@ character, which is `0` by default whether or not the roster was ever seeded
 (`ScoreboardVisualizationUImpl.cpp` never touches `ScoreSystem`). **Seeding is not what
 makes the zero row appear.** What the seed actually buys is named in the same paragraph
 and is real: the unregister contract needs an entry to drop for a character that died to
-nobody, and `OGBrawlerSimulationManager.cpp`'s `checkf` over `hasScoreEntry` needs every
+nobody, and the `checkf` over `hasScoreEntry` in `BrawlerRosterUImpl.cpp` :: `pushRingoutScores` (the manager's
+`OGBrawlerSimulationManager.cpp` until og-ue-simulationcomponentandmanagersplit task 23) needs every
 authority-registered id present before the push walks.
 
 <!-- header lines 251-254 -->

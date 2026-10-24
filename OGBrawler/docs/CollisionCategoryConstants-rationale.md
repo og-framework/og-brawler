@@ -82,7 +82,9 @@ says so at the site.
 ### 4.1 The mapping exists
 
 ⭐ [movement-sim task 17] THE MAPPING EXISTS: task 39 mapped `world -> ECC_WorldStatic` at BOTH
-ChaosCategoryMapping tables in OGBrawlerSimulationManager.cpp's BeginPlay.
+ChaosCategoryMapping tables in OGBrawlerSimulationManager.cpp's BeginPlay (history: that mapping is the
+one Chaos table `BrawlerChaosBindingUImpl.cpp` :: `categoryChannels` today, re-pointed by
+og-ue-simulationcomponentandmanagersplit task 36).
 
 ⚠ And it cannot be verified by reading the mapping back — that is **G-03**, the strongest
 guard on this header. `ChaosSpatialQueryAdapter.cpp` is the authority: its `ambiguousGapMask`
@@ -97,7 +99,7 @@ and its `static_assert` truth table both exist for this one ambiguity.
 ⭐ [movement-sim task 17] THIS CATEGORY IS LIVE, AND THE THREE SENTENCES THAT SAID OTHERWISE ARE
 GONE. All three halves of that old claim have landed:
 
-* task 43 MAPPED it — `character -> ECC_GameTraceChannel6` at both ChaosCategoryMapping tables in OGBrawlerSimulationManager.cpp's BeginPlay;
+* task 43 MAPPED it — `character -> ECC_GameTraceChannel6` at both ChaosCategoryMapping tables in OGBrawlerSimulationManager.cpp's BeginPlay (history: the one Chaos table `BrawlerChaosBindingUImpl.cpp` :: `categoryChannels` today, task 36);
 * task 53 DECLARED the channel — one `+DefaultChannelResponses=(...)` row in Config/DefaultEngine.ini: Channel=ECC_GameTraceChannel6, DefaultResponse=ECR_Block, Name="BrawlerCharacter";
 * task 11 took the movement sim LIVE — its PhysicsDeclaration ships in the SimulatableBrawler composite and runs for every character in every session.
 

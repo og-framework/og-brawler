@@ -54,7 +54,8 @@ physics capsule. It is **consumed by four places** — `dAttackMachineSimulation
 (`DAttackMachineSimulation.h` :: `integrate3`), the `SimulatableBrawler` composite that owns it
 (`SimulatableBrawler.h:42-43`, `:62`), the hit-routing system through the composite's accessor
 (`BrawlerHitRoutingSystem.h` :: `onCharacterRegistered`), and the tests — and **written in exactly one**, the registration
-path in `OGBrawlerSimulationManager.cpp` (§5).
+path, `BrawlerRosterUImpl.cpp` :: `setCharacterBindings`, reached from the session's `tryRegister` through the brawler's
+hook `BrawlerSessionGameUImpl::afterBodiesCreated` (§5; `OGBrawlerSimulationManager.cpp` until og-ue-simulationcomponentandmanagersplit task 23).
 
 A file this small exists for a reason that has nothing to do with the struct: **it is a leaf, and
 being a leaf is the whole product.** Two headers that must not see each other both need this type,
