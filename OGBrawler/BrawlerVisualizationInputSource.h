@@ -40,7 +40,7 @@
 //
 // Why this rule lives in the core rather than inline at the call site:
 //   * it is the substance of T13, and og-brawler-tests cannot link the UE
-//     translation unit (SimmableUpdateComponent.cpp) that applies it. Expressed
+//     translation unit (OGBrawlerSimulatableComponent.cpp) that applies it. Expressed
 //     here it is directly testable, exactly like T12's packers.
 //   * both input-carrying viz sites must agree; one shared definition makes
 //     divergence between them impossible rather than merely unlikely.

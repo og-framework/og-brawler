@@ -95,9 +95,10 @@ integrate, and this block is the **one** place that reads it.
    Those headers belong to another initiative, so task 16 recorded the duplication and did not edit them.
    Lines that run **outside** a scope (the ring-out score system, and `OGBrawlerUECharacter.cpp`'s
    `[Ringout.score.client]`) must keep authoring their own `id=`/`tick=`, because nothing inserts one.
-2. **Never move the insertion ahead of a leading `[Verbose]` or `[Warning]`.** Both UE sinks
-   (`ogblogServer` and `ogblogClient` in `SimulationManagerUImpl.cpp`) choose the verbosity by
-   `StartsWith(TEXT("[Verbose]"))` on the emitted string. A prefix at column 0 of
+2. **Never move the insertion ahead of a leading `[Verbose]` or `[Warning]`.** The UE sink
+   (`ogblogSink` in `BrawlerSessionGameUImpl.cpp` since og-ue-simulationcomponentandmanagersplit task 33, in
+   `OGBrawlerSimulationManager.cpp` before; one lambda for both roles since task 27b, two before) chooses the verbosity
+   by `StartsWith(TEXT("[Verbose]"))` on the emitted string. A prefix at column 0 of
    `[Verbose][Radial.branch] …` silently promotes that line to `Log`. Those are the six
    `[Radial.branch]` lines, the highest-volume line in the tree (~267/s), which task 15 made
    Verbose-only. The `static_assert`s on `integrateScopePrefixOffset` fail the build on this edit, so

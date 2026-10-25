@@ -304,7 +304,8 @@ correction arrives, and a client's replay re-detects nothing either.
 constructed with, and both must be the objects the per-character integrate uses: the body adapter
 that holds the guard transform the target's integrate wrote, and the query adapter whose shapes the
 guard sub-simulation toggled. ⛔ Never a game-thread reader. The UE composition root's version of this
-guard is `SimulationManagerUImpl-guards.md` G-75, which names the concrete wrong adapter.
+guard is `UESimulationSession-guards.md` G-01 (OGSimulationUnreal's; `OGBrawlerSimulationManager-guards.md` G-75 until
+og-ue-simulationcomponentandmanagersplit task 24a), which names the concrete wrong adapter.
 
 **What breaks if the edit is made.** The detector reads a DIFFERENT view of the target's guard
 than the one the target's integrate wrote, which is task 9's read (b) reintroduced.

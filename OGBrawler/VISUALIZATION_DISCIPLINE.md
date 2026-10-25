@@ -213,7 +213,7 @@ Sim-state **type** headers (`DAttackMachineSimulation.h`,
 
 ### 4.1 The transitive reach through the composition root — RULED
 
-`OGBrawlerUEHUD.cpp` includes `SimulationManagerUImpl.h`, and that header includes
+`OGBrawlerUEHUD.cpp` includes `OGBrawlerSimulationManager.h`, and that header includes
 `OGBrawler/BrawlerHitRoutingSystem.h` to name the fourth-peer system the manager owns.
 So the HUD does compile against a hitbox-resolution header, transitively. Raised
 during review of the input-history panel, judged acceptable there, and **confirmed**
@@ -228,12 +228,12 @@ here so it is not re-litigated:
    reaching the composition root at all, so the poll's owner would have to hand the
    ring to the HUD — a side channel from a sim-adjacent owner into visualization,
    which is exactly §1's last bullet. The cure is worse than the finding.
-3. **The reach is pre-existing and universal.** `SimulationManagerUImpl.h` is the
+3. **The reach is pre-existing and universal.** `OGBrawlerSimulationManager.h` is the
    module's composition root and is the only direct hitbox-resolution include anywhere
    in `Source/OGBrawlerUnreal`; eight files in the module include it and all inherit
    the same transitive reach. Singling out the HUD would move no risk.
 4. **The reach is `const`.** The HUD's only handle on the manager is a
-   `const ASimulationManagerUImpl*` local in `DrawHUD`, so "reads only" is structural
+   `const AOGBrawlerSimulationManager*` local in `DrawHUD`, so "reads only" is structural
    rather than promised.
 
 ⚠ **The lint cannot see this either way, so the ruling has to live in prose.** A

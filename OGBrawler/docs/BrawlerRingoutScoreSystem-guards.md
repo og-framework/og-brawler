@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- lint-external-ref: ASimulationManagerUImpl::m_authorityRegisteredIds -- retired qualified name inside the verbatim fence of retired G-05: the set is BrawlerRosterUImpl::m_authorityRegisteredIds since og-ue-simulationcomponentandmanagersplit task 23 -->
 # `BrawlerRingoutScoreSystem.h` — guards
 
 Every prohibition that stood in the header. Each entry has an **opaque, stable id**; in
@@ -88,7 +89,7 @@ table would then change nothing observable.
 ⚠ **This is a SPELLING fence** — `operator[]` and `find` produce the same answer whenever
 the roster is seeded — so no expression distinguishes them and no assertion can be
 written. It is also the one line whose insert behaviour a UE-layer caller depends on:
-`SimulationManagerUImpl.cpp`'s `pushRingoutScoresToCharacters` carries a `checkf` over
+`BrawlerRosterUImpl.cpp`'s `pushRingoutScores` (in the manager's `.cpp` until og-ue-simulationcomponentandmanagersplit task 23) carries a `checkf` over
 `hasScoreEntry` precisely because an insert here would rehash on the physics thread under
 its game-thread walk. Changing this line means re-reading that argument.
 

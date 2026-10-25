@@ -173,12 +173,12 @@ public:
     // `StaticData` — which is what every LLT rig and every test peer builds — is BYTE-FOR-BYTE
     // the object it was, and the whole test tree stays a measurement of the shipped constants
     // rather than of a parameter list. The ONE caller that passes anything is
-    // `ASimulationManagerUImpl::m_staticData`, fed by `readMovementStaticDataCVars()`.
+    // `AOGBrawlerSimulationManager::m_staticData`, fed by `readMovementStaticDataCVars()`.
     //
     // ⚠ WHY THESE FIVE AND NOT THE OTHERS. Four are the cvars ruling #3 made a ONE-TIME read
     // (`OGBrawler.MovementModel`, `.MoveSpeed`, `.StepPeriodTicks`, `.StepSpeed`); the fifth is
     // gravity, which is not a taste knob but a value that MUST AGREE WITH THE ENGINE'S — see
-    // the `checkf` in `ASimulationManagerUImpl::BeginPlay`. The hover gains are deliberately
+    // the `checkf` in `AOGBrawlerSimulationManager::BeginPlay`. The hover gains are deliberately
     // NOT here: their valid region is two-dimensional and is checked, coupled, in
     // `brawlerMovementSimulation::StaticData`'s constructor. Read the `HoverFrequency` entry in
     // `DAttackMachineSimulationRuntimeTweakables.cpp`'s refused-name table before adding them.
@@ -382,7 +382,7 @@ public:
     // any copy or move would rebind those references to the source instance and
     // dangle once it is destroyed. This is the type-level guarantee behind the
     // "constructed in place once, never moved" ownership invariant documented at
-    // ASimulationManagerUImpl::m_staticData (the canonical instance's home).
+    // AOGBrawlerSimulationManager::m_staticData (the canonical instance's home).
     StaticData(const StaticData&) = delete;
     StaticData(StaticData&&) = delete;
     StaticData& operator=(const StaticData&) = delete;

@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- lint-external-ref: SimulationManagerUImpl.cpp -- RENAMED by og-ue-simulationcomponentandmanagersplit task 30 to OGBrawlerSimulationManager.cpp; kept in §7's verbatim carried comment -->
 <!-- ------------------------------------------------------------------ -->
 <!-- LINT ESCAPES for `tools/lint/doc_anchor_lint.ps1`.                  -->
 <!--                                                                     -->
@@ -13,6 +14,7 @@
 <!-- lint-external-ref: impl/impl_notes_seam_27.md -- brawler-movement-simulation initiative archive; private working material, not distributed with this submodule -->
 <!-- lint-external-ref: DetachGateIsVacuousUntilJumpLands -- a RETIRED token -- task 27 DELETED this Catch2 case and replaced it with XYKnockbackDoesNotDetach; the prose exists in order to say the name is gone, so a resolving name would falsify it -->
 <!-- lint-external-ref: paramName -- not an identifier at all: it is the PLACEHOLDER inside the `/*paramName=*/` call-site annotation convention (CommentExtractionRule v2 section 1.4), and the real names are the constructor parameters it stands in for -->
+<!-- lint-external-ref: ASimulationManagerUImpl::m_staticData -- moved member inside carried text: the static data is UESimulationSession's m_staticData since og-ue-simulationcomponentandmanagersplit task 24a, still a by-value member constructed with the actor, before BeginPlay installs the ogblog sink, so the carried ordering reason still holds -->
 <!-- lint-external-ref: dWorld -- an identifier from a REJECTED alternative spelling, never in shipped code -- section 26 names `glm::vec2(dot(dWorld, u), dot(dWorld, v))` as the wrong edit the derivation tag exists to stop; a resolving name would mean the wrong edit had landed -->
 <!-- lint-external-ref: UCharacterMovementComponent -- UE 5.6 engine symbol -- C:/dev/UnrealEngine is outside every scan root by initiative rule, so this can never resolve here -->
 <!-- lint-external-ref: UCharacterMovementComponent::ComputeFloorDist -- UE 5.6 engine symbol -- C:/dev/UnrealEngine is outside every scan root by initiative rule, so this can never resolve here -->
@@ -549,8 +551,10 @@ They cannot disagree, because the bound is written once.
 > `AOGBrawlerUECharacter : public APawn` (`OGBrawlerUECharacter.h:49`), and the CMC was
 > retired from the gameplay path at task 15. ⭐ **The useful framing, from task 81's audit:
 > this is not a lone stale file, it is the LAST present-tense site.** Every other place in
-> the tree already reads *pawn* or past tense — `SimulationManagerUImpl.cpp:593` and `:1287`
-> both say *"the factory ADOPTS the pawn's own root capsule"*. **Owner: task 58.**
+> the tree already reads *pawn* or past tense — the two `OGBrawlerSimulationManager.cpp` comments that
+> said it, carried since into `OGBrawlerSimulationManager-rationale.md` §13.3 and §13.4, both say the
+> factory *"ADOPTS the pawn's"* own (§13.3) or existing (§13.4) *"root capsule"*. **Owner: task 58.**
+> (The §13.4 sentence is `BrawlerRosterUImpl-rationale.md` §2 since og-ue-simulationcomponentandmanagersplit task 23.)
 >
 > ⚠ **One `ACharacter` is NOT correctable by any comment pass**: it is inside the message of
 > a `static_assert` task 76 landed (*"…instead of adopting the ACharacter's own capsule…"*).

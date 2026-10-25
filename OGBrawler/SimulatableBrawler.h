@@ -33,7 +33,7 @@ public:
     simulatableBrawler::AllState& editVizState() { return m_vizState; }
 
     // Per-character bindings (T33). Populated ONCE at registration time
-    // (SimulationManagerUImpl::tryRegister) from the authoritative parentBodyId.
+    // (OGBrawlerSimulationManager::tryRegister) from the authoritative parentBodyId.
     // Consumed by the machine sub-sim's integrate3 (the Hadouken trigger reads the
     // capsule transform on-demand from it). [movement-sim task 62] Defined in
     // BrawlerCharacterBindings.h, the leaf header — it is NOT in BrawlerMovementSimulation.h

@@ -157,7 +157,7 @@ imported that symptom onto a design that cannot produce it.
 - 8 is a playtest-size ruling, not a derivation: it is the scoreboard's row count (`kScoreboardMaxRows = 8u`) and two full local-co-op clients.
 - The engine allows more: 4 local players per client and 16 players per server. The 9th concurrent character still gets `kNoFreeSlot` and the loop above, which is why the next raise is a ruling, not a bug fix.
 
-**How it is tied to the cap now.** `ASimulationManagerUImpl::kPreDietCharacterCap` stays **4**, because it is the packet-budget number. `SimulationManagerUImpl.h` asserts `kPreDietCharacterCap <= kMaxSpawnPoints`, so the cap can never exceed the table. Characters 5-8 register, get real slots, and trigger the cap's advisory `Warning`, which is the truthful "above the tested size" signal. When the wire diet deletes the cap, this constant stays sized by the playtest ruling.
+**How it is tied to the cap now.** `BrawlerRosterUImpl::kPreDietCharacterCap` (the manager's until og-ue-simulationcomponentandmanagersplit task 23) stays **4**, because it is the packet-budget number. `BrawlerRosterUImpl.h` asserts `kPreDietCharacterCap <= kMaxSpawnPoints`, so the cap can never exceed the table. Characters 5-8 register, get real slots, and trigger the cap's advisory `Warning`, which is the truthful "above the tested size" signal. When the wire diet deletes the cap, this constant stays sized by the playtest ruling.
 
 **Not on the wire.** The table (`StaticData::spawnPoints`) is not serialized, and the slot rides as a `uint32_t` whose size does not change. So the raise moves no byte and no offset, and `correctionStateBuffer::kWireFormatVersion` was not bumped. What did change is the MEANING of the values 4-7 (and `kNoFreeSlot`'s value, 4 → 8). With five or more characters, a mixed old/new pair disagrees about where the 5th+ respawns: a correction snap, not a crash, and the old build death-loops there anyway.
 
@@ -230,7 +230,7 @@ the map. Respawn slot N is now PLAYER START N — placement becomes level design
 edit, and the authored table degrades into the FALLBACK for a level that has not been dressed yet.
 
 **Why the merge lives in this engine-free header and not in the UE layer that calls it.**
-`SimulationManagerUImpl.cpp` is a UE module file and the low-level-test target cannot reach it, so
+`OGBrawlerSimulationManager.cpp` is a UE module file and the low-level-test target cannot reach it, so
 any claim made there is verified by review and by a PIE run and by nothing else. The three
 properties that actually matter — that the result does NOT depend on the order the engine handed
 the actors over, that zero placements leave the authored table intact, and that a short list fills
@@ -546,7 +546,7 @@ authority-side bookkeeping that lives BESIDE the simulation, the same shape the 
 and for the same reason: a rollback must not be able to reach it. Now enforced — guard **G-01**.
 
 ⭐ **Why it is in this engine-free header rather than in the UE layer that calls it.**
-`SimulationManagerUImpl.cpp` is a UE module file and the low-level-test target cannot reach it. The
+`OGBrawlerSimulationManager.cpp` is a UE module file and the low-level-test target cannot reach it. The
 two properties that actually matter here — that two separate remote clients get DIFFERENT slots,
 and that a released slot is reused by a later join — are therefore assertions in
 `BrawlerRingoutSimulationTest.cpp` instead of prose in a review note. The UE layer holds the two

@@ -149,7 +149,7 @@ static_assert(SimulationSystem<brawlerRingout::ScoreSystem, simulatableBrawler::
     "kRoleAffinity, plus preIntegrate / postIntegrate / onCharacterRegistered / "
     "onCharacterUnregistered taking (step|id, view, staticData). "
     "Asserted at the definition, not only where SimulationSystemsExecutor instantiates it, "
-    "because that instantiation is in SimulationManagerUImpl.h - a UE module file the "
+    "because that instantiation is in OGBrawlerSimulationManager.h - a UE module file the "
     "low-level-test target cannot compile - so the diagnostic would otherwise appear only in "
     "an Editor build.");
 
