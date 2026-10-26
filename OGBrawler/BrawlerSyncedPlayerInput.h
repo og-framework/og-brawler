@@ -11,6 +11,7 @@
 #include "OGSimulation/SimulationComposite.h"
 #include "OGSimulation/SimulationComparisonGlm.h"
 #include "OGSimulation/SimulationFieldDescriptors.h"
+#include "OGSimulation/SimulationFrame.h"
 
 namespace simulatableBrawler
 {
@@ -27,7 +28,7 @@ struct SyncedPlayerInput
 
     static constexpr SyncedPlayerInput zero()
     {
-        return SyncedPlayerInput{ .aimDirection = glm::vec3(0.f, 0.f, 1.f) };
+        return SyncedPlayerInput{ .aimDirection = simFrame::kUp };
     }
 };
 
@@ -86,8 +87,8 @@ static_assert(std::is_trivially_copyable_v<simulatableBrawler::SyncedPlayerInput
     "slot on one thread while another thread writes it, and a member that owned memory would turn "
     "that tear into a crash.");
 
-static_assert(simulatableBrawler::SyncedPlayerInput::zero().aimDirection == glm::vec3(0.f, 0.f, 1.f),
-    "simulatableBrawler::SyncedPlayerInput::zero() aims at (0,0,1), never SyncedPlayerInput{}: it is "
+static_assert(simulatableBrawler::SyncedPlayerInput::zero().aimDirection == simFrame::kUp,
+    "simulatableBrawler::SyncedPlayerInput::zero() aims at simFrame::kUp, never SyncedPlayerInput{}: it is "
     "the WIRE VALUE every peer neutral-fills a tick with, so changing it makes peers on different "
     "builds disagree about the neutral input. Was guard G-02 of BrawlerSyncedPlayerInput-guards.md.");
 

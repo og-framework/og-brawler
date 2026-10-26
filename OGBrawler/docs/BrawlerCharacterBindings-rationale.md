@@ -187,7 +187,7 @@ They are spread across three namespaces and the global scope. **No one sub-simul
 contains them**, which is exactly why the type belongs in the shared, composite-level
 `simulatableBrawler` — where OGBrawlerHadouken T33 originally declared it
 (`SimulatableBrawlerTypes.h`, before T35 moved it out) and where the rest of the composite-level
-vocabulary lives: `SimulatableBrawlerTypes.h:50`, `BrawlerInputPackaging.h:13`,
+vocabulary lives: `SimulatableBrawlerTypes.h:59`, `BrawlerInputPackaging.h:13`,
 `BrawlerMotionMatching.h:82`, `BrawlerVisualizationInputSource.h:65`.
 
 ⚠ **A sentence in `BrawlerMovementSimulation.h` still carries the false form of this
@@ -268,7 +268,7 @@ removal dropped a duplicate, not the only witness. ⚠ Neither was ever a Shippi
 ## 6. The unfiled OGBrawlerHadouken T34 migration, and why its case is weaker than it looks
 
 **The fact is still true.** Radial (`dAttackRadialSimulation::integrate`'s attachment block), guard
-(`DAttackGuardSimulation.h:257`) and projectile (`BrawlerProjectileSimulation.h:474`) still read a
+(`DAttackGuardSimulation.h:262`) and projectile (`BrawlerProjectileSimulation.h:474`) still read a
 bare `bindings.parentBodyId`, while the machine sub-simulation takes a `CharacterBindings`. Folding
 a bindings field into every sub-simulation's `RuntimeBindings` would remove that duplication.
 
@@ -282,7 +282,7 @@ The only specification is one prose paragraph, in the OGBrawlerHadouken initiati
 `:962` reads *"Open architectural note (parked, not in T33 scope) — T34"*); and the host initiative
 is itself parked, at *"PHASE 2 COMPLETE — AWAITING USER APPROVAL FOR PHASE 3"* — which is stated in
 that initiative's current_state.md, not its backlog. It is an **UNFILED, PARKED** task, not
-scheduled work. `SimulatableBrawlerTypes.h:39` says the same thing in the tree.
+scheduled work. `SimulatableBrawlerTypes.h:41` says the same thing in the tree.
 
 ⚠ The pre-conversion header said *"every other mention tags it 'T34 parked'"*. **Three of eight
 do.** The conclusion is unaffected — a section heading that calls the whole note parked is better

@@ -14,6 +14,7 @@
 #include "OGSimulation/SpatialQueryAdapter.h"
 #include "OGSimulation/SpatialQueryResult.h"
 #include "OGSimulation/QueryGeometry.h"
+#include "OGSimulation/SimulationFrame.h"
 
 #include "OGSimulation/CompilerControl.h"
 OGSIM_OPTIMIZE_OFF
@@ -93,20 +94,20 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 	                               * glm::mat4_cast(radialState.bodyState.rotation);
 	const glm::vec3 rootTranslation = glm::vec3(rootTransform[3]);
 
-	// GuardFlinch indicator: 50 cm blue (colorId 2) sphere on the character's position
+	// GuardFlinch indicator: 0.5 m blue (colorId 2) sphere on the character's position
 	// while DAttackState::GuardFlinch is active. Matches the body-hit indicator size
-	// (drawPoint = 50 cm red sphere) so both hit and guard-flinch indicators read at the
+	// (drawPoint = 0.5 m red sphere) so both hit and guard-flinch indicators read at the
 	// same scale.
 	if (machineSimulationState.m_currentState == DAttackState::GuardFlinch)
-		rendererFunctor.drawSphere(rootTranslation, 50.f, 2);
+		rendererFunctor.drawSphere(rootTranslation, 0.5f, 2);
 
-	// [hit-resolution T4] HitFlinch indicator: 50 cm red (colorId 0) sphere on the
+	// [hit-resolution T4] HitFlinch indicator: 0.5 m red (colorId 0) sphere on the
 	// character's position while DAttackState::HitFlinch is active. Mirrors the
 	// GuardFlinch render exactly — uses radialState.bodyState.position (rootTranslation)
 	// so the sphere follows the target through the flinch duration. Default lifetime
 	// (single-frame draw) keeps the moving sphere trail-free, same as GuardFlinch.
 	if (machineSimulationState.m_currentState == DAttackState::HitFlinch)
-		rendererFunctor.drawSphere(rootTranslation, 50.f, 0);
+		rendererFunctor.drawSphere(rootTranslation, 0.5f, 0);
 
 	// Legacy per-enemy inner-circle arc indicators (outlined + solid). Preserved
 	// behind DAttackTargetVisualization.legacyEnemyRangeArcsEnabled CVar (default
@@ -120,7 +121,7 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 	                                * glm::mat4_cast(guardState.bodyState.rotation);
 	const glm::vec3 guardTranslation = glm::vec3(guardTransform[3]);
 	const glm::mat3x3 guardRotation = glm::mat3x3(guardTransform);
-	glm::vec3 guardForward = glm::vec3(guardTransform[0]);
+	glm::vec3 guardForward = simFrame::forwardColumn(guardTransform);
 	//rendererFunctor.drawSolidBox(guardTranslation, guardRotation, glm::vec3(30.f, 30.f, 5.f), 2);
 	//rendererFunctor.drawLine(guardTranslation, guardTranslation + guardForward * 100.f, 2, 1.f);
 
@@ -140,11 +141,12 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 	for (const auto& result : queryReport)
 	{
 		glm::vec3 collidingPosition = result.objectPosition;
-		collidingPosition.z = rootTranslation.z;
+		collidingPosition = simFrame::withHeight(collidingPosition, simFrame::height(rootTranslation));
 		const glm::vec3 collisionDirection = collidingPosition - rootTranslation;
 		const glm::vec3 normalizedCollisionDirection = glm::normalize(collisionDirection);
 		glm::vec4 normalizedCollisionDirection4(normalizedCollisionDirection, 0.f);
-		const glm::vec3 ortogonalCollisionDirection = glm::cross(normalizedCollisionDirection, glm::vec3(0.f, 0.f, 1.f));
+		constexpr glm::vec3 up = simFrame::kUp;
+		const glm::vec3 ortogonalCollisionDirection = simFrame::kChartOrientation * glm::cross(normalizedCollisionDirection, up);
 		//rendererFunctor.drawLine(collidingPosition + ortogonalCollisionDirection* staticData.getAttackCircle().getOuterRadius(), collidingPosition - ortogonalCollisionDirection * staticData.getAttackCircle().getOuterRadius(), 2, 1.f);
 
 
@@ -159,7 +161,7 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 		//rendererFunctor.drawLine(closeGuardPoint, collidingPosition, 2, 1.f);
 
 		const glm::vec3 guardAxis = glm::cross(normalizedCollisionDirection, input.getAimDirection());
-		dAttackVisualizationUtils::drawSegmentOutline(rendererFunctor, rootTranslation, normalizedCollisionDirection, guardAxis, shieldAngle * 2.f, staticData.getAttackCircle().getInnerRadius(), 0.f, 2, 1.f);
+		dAttackVisualizationUtils::drawSegmentOutline(rendererFunctor, rootTranslation, normalizedCollisionDirection, guardAxis, shieldAngle * 2.f, staticData.getAttackCircle().getInnerRadius(), 0.f, 2, 0.01f);
 		glm::mat4 leftMiddlePointShieldRotation = glm::rotate(glm::mat4(1.f), middlePointShieldAngle, guardAxis);
 		glm::vec3 leftMiddlePointDirection = glm::vec3(leftMiddlePointShieldRotation * normalizedCollisionDirection4);		
 		glm::mat4 rightMiddlePointShieldRotation = glm::rotate(glm::mat4(1.f), middlePointShieldAngle, -guardAxis);
@@ -173,7 +175,7 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 			{
 				//dAttackVisualizationUtils::drawSegmentOutline(rendererFunctor, rootTranslation, normalizedCollisionDirection, guardAxis, shieldAngle*2.f, arcRadius, 0.f, 2, 1.f);
 
-				dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, rootTranslation, normalizedCollisionDirection, guardAxis, shieldAngle * 2.f, staticData.getAttackCircle().getInnerRadius(), 1.0f, 2, 1.f);
+				dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, rootTranslation, normalizedCollisionDirection, guardAxis, shieldAngle * 2.f, staticData.getAttackCircle().getInnerRadius(), 0.01f, 2, 0.01f);
 				const float segmentLength = shieldAngle * 2.f * staticData.getAttackCircle().getInnerRadius();
 				//dAttackVisualizationUtils::drawArcTriangle(rendererFunctor, rootTranslation, normalizedCollisionDirection, guardAxis, shieldAngle * 2.f, staticData.getAttackCircle().getInnerRadius(), 2);
 			
@@ -189,7 +191,7 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 				glm::vec3 middlePointDirection = glm::vec3(middlePointShieldRotation * normalizedCollisionDirection4);
 				//dAttackVisualizationUtils::drawSegmentOutline(rendererFunctor, rootTranslation, middlePointDirection, guardAxis, shieldAngleDiff, arcRadius, 0.f, 2, 1.f);
 
-				dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, rootTranslation, middlePointDirection, guardAxis, shieldAngleDiff, staticData.getAttackCircle().getInnerRadius(), 1.f, 2, 1.f);
+				dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, rootTranslation, middlePointDirection, guardAxis, shieldAngleDiff, staticData.getAttackCircle().getInnerRadius(), 0.01f, 2, 0.01f);
 
 				glm::vec4 middlePointDirection4(middlePointDirection, 0.f);
 

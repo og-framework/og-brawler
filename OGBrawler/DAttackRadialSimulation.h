@@ -28,6 +28,7 @@
 #include "OGBrawler/BrawlerSyncedPlayerInput.h"
 #include "OGBrawlerLog.h"
 #include "OGSimulation/OGAssert.h"
+#include "OGSimulation/SimulationFrame.h"
 
 #include "OGSimulation/CompilerControl.h"
 OGSIM_OPTIMIZE_OFF
@@ -92,7 +93,7 @@ struct PhysicsSetup
 		},
 		{   /*shapes*/
 			ShapeDescriptor{
-				SphereGeometry{30.f},
+				SphereGeometry{0.3f},
 				CollisionCategories::single(collisionCategory::body)
 			}
 		}
@@ -231,7 +232,8 @@ struct PhysicsDeclaration
 	}
 	static glm::vec3 attachmentOffset(const StaticData& sd) {
 		(void)sd;
-		return glm::vec3(0.f, 0.f, 30.f);
+		constexpr glm::vec3 offset = simFrame::kUp * 0.3f;
+		return offset;
 	}
 
 	using StateType = dAttackRadialSimulation::State;
@@ -269,9 +271,9 @@ inline bool wouldGuardBlock(
 	const glm::mat4& guardTransform,
 	const glm::vec3& guardOverlapPosition)
 {
-	const glm::vec3 guardForward = glm::vec3(guardTransform[0]);
+	const glm::vec3 guardForward = simFrame::forwardColumn(guardTransform);
 	glm::vec3 collidingPosition = guardOverlapPosition;
-	collidingPosition.z = attackerRoot.z;
+	collidingPosition = simFrame::withHeight(collidingPosition, simFrame::height(attackerRoot));
 	const glm::vec3 collisionDirection = attackerRoot - collidingPosition;
 	const glm::vec3 normalizedCollisionDirection = glm::normalize(collisionDirection);
 	const float shieldAngle      = 0.25f;
@@ -288,9 +290,9 @@ inline bool wouldGuardBlock(
 		}
 		else
 		{
-			if (guardAxis.z > 0.f && (activeAttackSequence == 0 || activeAttackSequence == 2))
+			if (simFrame::turnComponent(guardAxis) > 0.f && (activeAttackSequence == 0 || activeAttackSequence == 2))
 				return true;
-			if (guardAxis.z < 0.f && (activeAttackSequence == 1 || activeAttackSequence == 3))
+			if (simFrame::turnComponent(guardAxis) < 0.f && (activeAttackSequence == 1 || activeAttackSequence == 3))
 				return true;
 		}
 	}
@@ -338,7 +340,8 @@ void setInitialConditions(float deltaSeconds,
 	glm::mat4 initialWorldTransform = glm::translate(glm::mat4(1.0f), rootTranslation) * initialSequenceRotationMatrix * initialAimRotationMatrix;
 
 	physics.setBodyTransform(bindings.ownBodyId, initialWorldTransform);
-	physics.setBodyAngularVelocity(bindings.ownBodyId, glm::vec3(0.f, 0.f, activeAttackSequence.getInitialVelocity()));
+	constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
+	physics.setBodyAngularVelocity(bindings.ownBodyId, turnAxis * activeAttackSequence.getInitialVelocity());
 }
 
 template <typename PhysicsBodyAdapterType>
@@ -355,7 +358,8 @@ void setIdlePose(float deltaSeconds,
 	const glm::mat4x4 rootTransform = physics.getBodyTransform(bindings.ownBodyId);
 	glm::vec3 rootTranslation = glm::vec3(rootTransform[3]);
 
-	glm::mat4 upAlignmentTransform = glm::rotate(glm::mat4(1.f), glm::pi<float>()*0.5f, glm::vec3(0.0f, -1.0f, 0.0f));
+	constexpr glm::vec3 idleAxis = glm::cross(simFrame::kForward, simFrame::kUp);
+	glm::mat4 upAlignmentTransform = glm::rotate(glm::mat4(1.f), glm::pi<float>()*0.5f, idleAxis);
 	upAlignmentTransform[3] = glm::vec4(rootTranslation, 1.f);
 	physics.setBodyTransform(bindings.ownBodyId, upAlignmentTransform);
 }
@@ -380,7 +384,7 @@ void applyTorque(float deltaSeconds,
 	glm::vec3 worldSequenceRotationAxis = glm::vec3(rootTransform * localSequenceRotationAxis4);
 
 	const glm::vec3& inertiaTensor = physics.getBodyInertiaTensor(bindings.ownBodyId);
-	physics.addBodyTorque(bindings.ownBodyId, worldSequenceRotationAxis * a * inertiaTensor.z);
+	physics.addBodyTorque(bindings.ownBodyId, worldSequenceRotationAxis * a * simFrame::alongUp(inertiaTensor));
 }
 
 

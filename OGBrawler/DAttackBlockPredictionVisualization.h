@@ -14,6 +14,7 @@
 #include "OGSimulation/SpatialQueryAdapter.h"
 #include "OGSimulation/SpatialQueryResult.h"
 #include "OGSimulation/QueryGeometry.h"
+#include "OGSimulation/SimulationFrame.h"
 
 #include "OGSimulation/CompilerControl.h"
 OGSIM_OPTIMIZE_OFF
@@ -145,13 +146,14 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 	// spans [aim ± π/3, aim ± π/2]. Positive rotation about +Z is CCW from above,
 	// matching computeAttackIndicatorGeometry's threshold-rotation convention.
 	const glm::vec3 aimDirectionXY = glm::normalize(
-		glm::vec3(input.getAimDirection().x, input.getAimDirection().y, 0.f));
+		simFrame::flatten(input.getAimDirection()));
 	glm::vec3 wedgeCenterDirectionXY = attackGeometry.attackDirectionXY;
 	if (attackGeometry.kind != dAttackVisualizationUtils::AttackDirectionKind::Forward)
 	{
 		const bool isLeft = attackGeometry.kind == dAttackVisualizationUtils::AttackDirectionKind::Left;
 		const float wedgeCenterOffset = (isLeft ? 1.f : -1.f) * 5.f * glm::pi<float>() / 12.f;
-		const glm::mat4 wedgeRot = glm::rotate(glm::mat4(1.f), wedgeCenterOffset, glm::vec3(0.f, 0.f, 1.f));
+		constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
+		const glm::mat4 wedgeRot = glm::rotate(glm::mat4(1.f), wedgeCenterOffset, turnAxis);
 		wedgeCenterDirectionXY = glm::vec3(wedgeRot * glm::vec4(aimDirectionXY, 0.f));
 	}
 
@@ -174,15 +176,15 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 	//     starts at the orthogonal (±5π/12 from aim) — far from the aim direction, so
 	//     the peripheral alone wouldn't clearly identify the sector.
 	const float areaAngularWidth = glm::pi<float>() / 6.f;	// TOTAL angle (±π/12 per side), uniform for all predicted sequences.
-	const glm::vec3 areaNormal(0.f, 0.f, 1.f);				// flat ground-plane wedge, matching the wedge direction's XY-plane semantics
+	constexpr glm::vec3 areaNormal = simFrame::kTurnAxis;				// flat ground-plane wedge, matching the wedge direction's horizontal-plane semantics
 
-	// PIE-tuned segment radii (in cm; assume innerRadius = 90, outerRadius = 300):
-	//   peripheralMid  = 45   — split within the peripheral [0, innerRadius] region
-	//   swingBandMid   = 125  — end of primary swing band (segment 3 outer edge; also blue arc outer edge)
-	//   swingBandOuter = 160  — reach-limit fade edge (segment 4 outer edge)
+	// PIE-tuned segment radii (in m; assume innerRadius = 0.9, outerRadius = 3):
+	//   peripheralMid  = 0.45 — split within the peripheral [0, innerRadius] region
+	//   swingBandMid   = 1.25 — end of primary swing band (segment 3 outer edge; also blue arc outer edge)
+	//   swingBandOuter = 1.6  — reach-limit fade edge (segment 4 outer edge)
 	const float peripheralMid  = innerRadius * 0.5f;
-	const float swingBandMid   = 125.f;
-	const float swingBandOuter = 160.f;
+	const float swingBandMid   = 1.25f;
+	const float swingBandOuter = 1.6f;
 
 	struct WedgeSegment
 	{
@@ -204,7 +206,7 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 		for (const auto& seg : forwardSegments)
 			dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, attackerRoot,
 				wedgeCenterDirectionXY, areaNormal, areaAngularWidth,
-				seg.outerR, seg.innerR, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/, 1.f, seg.alpha);
+				seg.outerR, seg.innerR, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/, 0.01f, seg.alpha);
 	}
 	else
 	{
@@ -218,7 +220,7 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 		for (const auto& seg : sideSegments)
 			dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, attackerRoot,
 				wedgeCenterDirectionXY, areaNormal, areaAngularWidth,
-				seg.outerR, seg.innerR, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/, 1.f, seg.alpha);
+				seg.outerR, seg.innerR, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/, 0.01f, seg.alpha);
 	}
 
 	// (4b) Sweep-direction indicator — a thin amber arc line + 3 small chevrons
@@ -229,12 +231,12 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 	// Only drawn for L/R attacks (forward attack is a thrust, no sweep motion).
 	if (attackGeometry.kind != dAttackVisualizationUtils::AttackDirectionKind::Forward)
 	{
-		const float kSweepArcRadius            = 115.f;                    // radius (cm) at which the arc + chevrons sit
+		const float kSweepArcRadius            = 1.15f;                    // radius (m) at which the arc + chevrons sit
 		const float kSweepNearWedgeAng         = glm::pi<float>() / 3.f;   // 60° — arc's wedge-side end
 		const float kSweepNearAimAng           = 0.f;                       // arc ends ON the aim direction vector
 		const float kSweepChevronNearAimAng    = glm::pi<float>() / 12.f;  // 15° — chevron aim-side end (chevrons stop short of the aim line so the last chevron doesn't overlap it)
-		const float kSweepChevronSize          = 20.f;                     // equilateral side (cm)
-		const float kSweepArcThickness         = 1.f;                      // debug-line thickness for the arc
+		const float kSweepChevronSize          = 0.2f;                     // equilateral side (m)
+		const float kSweepArcThickness         = 0.01f;                      // debug-line thickness for the arc
 		const float kSweepChevronHeight        = kSweepChevronSize * 0.5f * 1.7320508f;  // (√3/2)·side
 
 		// Sign convention: left attack = +Z rotation from aim (CCW), right = -Z (CW).
@@ -244,10 +246,11 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 		const float chevronAimSideAngle     = sign * kSweepChevronNearAimAng;
 		const float arcMidAngle             = (wedgeSideAngle + arcAimSideAngle) * 0.5f;
 		const float arcHalfAngle            = std::abs(wedgeSideAngle - arcAimSideAngle) * 0.5f;
+		constexpr glm::vec3 turnAxis        = simFrame::kTurnAxis;
 
 		// Arc line — drawCircleArc spans ±arcHalfAngle around arcMidDir.
 		{
-			const glm::mat4 rot = glm::rotate(glm::mat4(1.f), arcMidAngle, glm::vec3(0.f, 0.f, 1.f));
+			const glm::mat4 rot = glm::rotate(glm::mat4(1.f), arcMidAngle, turnAxis);
 			const glm::vec3 arcMidDir = glm::vec3(rot * glm::vec4(aimDirectionXY, 0.f));
 			rendererFunctor.drawCircleArc(attackerRoot, arcMidDir, kSweepArcRadius, arcHalfAngle, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/, kSweepArcThickness);
 		}
@@ -259,14 +262,14 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 			const float t = static_cast<float>(i) / 2.f;   // 0, 0.5, 1
 			const float chevronAngle = wedgeSideAngle + t * (chevronAimSideAngle - wedgeSideAngle);
 
-			const glm::mat4 radialRot = glm::rotate(glm::mat4(1.f), chevronAngle, glm::vec3(0.f, 0.f, 1.f));
+			const glm::mat4 radialRot = glm::rotate(glm::mat4(1.f), chevronAngle, turnAxis);
 			const glm::vec3 radialDir = glm::vec3(radialRot * glm::vec4(aimDirectionXY, 0.f));
 			const glm::vec3 chevronCenter = attackerRoot + radialDir * kSweepArcRadius;
 
 			// Tangent toward aim = rotate radial by (-sign · π/2) about +Z.
 			// For left (sign=+1): tangent = rotate(radial, -π/2) = CW rotation → moves toward smaller +θ = toward aim.
 			// For right (sign=-1): tangent = rotate(radial, +π/2) = CCW → moves toward smaller |θ| (from -60° to -15°) = toward aim.
-			const glm::mat4 tangentRot = glm::rotate(glm::mat4(1.f), -sign * glm::pi<float>() * 0.5f, glm::vec3(0.f, 0.f, 1.f));
+			const glm::mat4 tangentRot = glm::rotate(glm::mat4(1.f), -sign * glm::pi<float>() * 0.5f, turnAxis);
 			const glm::vec3 tangentDir = glm::vec3(tangentRot * glm::vec4(radialDir, 0.f));
 
 			// Chevron triangle: apex at (2/3)·height in tangentDir from center, base at
@@ -359,8 +362,8 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 		{
 			const glm::vec3 defenderBodyPos = queryReport[actorHit.bodyHitIndex].objectPosition;
 			const glm::vec3 relative = defenderBodyPos - attackerRoot;
-			const glm::vec2 relativeXY(relative.x, relative.y);
-			const glm::vec2 aimXY(aimDirectionXY.x, aimDirectionXY.y);
+			const glm::vec2 relativeXY = simFrame::planar(relative);
+			const glm::vec2 aimXY = simFrame::planar(aimDirectionXY);
 			if (glm::dot(relativeXY, aimXY) < 0.f)
 				continue;
 		}
@@ -398,13 +401,13 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 	if (anyDefenderBlocks)
 	{
 		// Blue block arc (PIE-tuned): sits on the SAME radial range as the amber swing-band
-		// segment 3 (innerRadius = 90 cm → swingBandMid = 120 cm). When the block condition
+		// segment 3 (innerRadius = 0.9 m → swingBandMid = 1.25 m). When the block condition
 		// fires, the blue arc overlays the amber segment 3 exactly, reading as "the primary
 		// swing band changing state" rather than a separate visual element. Same angular
 		// center/width as the amber wedge.
 		dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, attackerRoot,
 			wedgeCenterDirectionXY, areaNormal, areaAngularWidth,
-			swingBandMid, innerRadius, 2 /*Blue*/, 1.f, blueArcAlpha);
+			swingBandMid, innerRadius, 2 /*Blue*/, 0.01f, blueArcAlpha);
 	}
 }
 

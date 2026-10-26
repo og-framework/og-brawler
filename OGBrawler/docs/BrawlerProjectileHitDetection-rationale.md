@@ -47,7 +47,11 @@ statement for statement. Its operands:
 ⚠ **R0, 2026-09-24.** The guard transform claim was re-read from `dAttackGuardSimulation::integrate`:
 it writes `rotate(aimAngle, aimRotationAxis)`, the rotation that takes the default forward to the
 aim, with the root translation in column 3, on every tick. Column 0 is the aim only because the
-default forward is the X axis; that value was not re-read here. "The front cone" is the MIDDLE
+default forward is the X axis; that value was not re-read here. *(og-sim-metres-yup task 5a: the
+forward is now read as `simFrame::forwardColumn(guardTransform)` (`SimulationFrame.h`), the column at
+`kForward`'s index with `kForward`'s sign. In the Z-up frame it was routed in that was column 0, bit for bit, so the
+classification was unchanged; in the Y-up frame (shipped since og-sim-metres-yup task 19) it is column 2 negated, where column 0 would be the
+guard's right.)* "The front cone" is the MIDDLE
 section since T31 (`StaticData::guardMiddleSectionHalfAngle`, 0.25 rad), not the radial's outer
 cone.
 

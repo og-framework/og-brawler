@@ -112,8 +112,8 @@ float overload, so no build or test here fails on it. That is why a person has t
 **R0 (verified 2026-09-23).** The guard sub-simulation's copy
 (`DAttackGuardSimulation.h`, `aimEqualsForward`) is byte-identical. The test exists:
 `DAttackAbs.MachineNearPoleAimTakesTheEpsilonBandBranch` drives the legacy `integrate`, which calls
-the same `setRadialSimulationInitialConditions`, and it expects `axis.z` +1 under the float overload
-and -1 under the int one.
+the same `setRadialSimulationInitialConditions`, and it expects the axis's `simFrame::turnComponent` +1 under the
+float overload and -1 under the int one.
 
 **Placement.** A substitution on the tagged statement.
 
@@ -263,7 +263,7 @@ held trigger before it.
 **R0 (verified 2026-10-03).** The client zeroes `moveDirectionWorld` below `g_moveStickDeadzone`
 (`UOGBrawlerInputCollectionComponent::buildMoveDirectionWorld`), so a stick under the deadzone reaches
 the simulation as the zero vector, and the epsilon only has to reject that zero.
-`inputSequence::stickMatchesStep` gates on the length of `moveDirectionWorld`'s XY. ⚠ The 2D stick
+`inputSequence::stickMatchesStep` gates on the length of `moveDirectionWorld`'s ground-plane part. ⚠ The 2D stick
 (`PlayerInputView::moveDirection`, the wire's `moveStick`) is **not** zeroed: the client packs the
 routed raw stick (`dInput::stickRouting::routeSticks` applies the deadzone only to pick a source in
 one scheme). This predicate does not read it.
@@ -440,10 +440,11 @@ unequal to the value-initialised input). The prohibition on the wire value is ca
 **R0 (verified 2026-09-23).** `SimulationComposite::zero()` folds each slice's `zero()`, and
 `simulatableBrawler::getZeroPlayerInput()` is `return PlayerInput::zero();`: true. Two parts of the
 quote are not:
-* `(0,0,1)` is **+Z, `defaultUp`** in this header's own frame (`defaultForward` is `(1,0,0)`). It is
-  not "forwards".
+* `(0,0,1)` was **+Z, the up axis** in the Z-up frame this was written in (`defaultForward` was `(1,0,0)`). It is
+  not "forwards". (Since og-sim-metres-yup task 19 the aim is `simFrame::kUp` = `(0,1,0)`, and the local the fence
+  names is `turnAxis`, `simFrame::kTurnAxis`.)
 * For **this** slice, "a value-initialised (0,0,0) aim would reach normalize()" is not what separates
-  the two values. Every read of the machine aim projects it onto XY first (the Hadouken trigger,
+  the two values. Every read of the machine aim projects it onto the ground plane first (the Hadouken trigger,
   `setRadialSimulationInitialConditions` and `dAttackDirection::classify`), and `(0,0,1)` and `(0,0,0)`
   project to the same zero vector. The neutral input also presses no attack button, so it reaches
   none of those reads. The prohibition stands on the other two reasons: the wire value and the test

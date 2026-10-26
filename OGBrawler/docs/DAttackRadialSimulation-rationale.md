@@ -149,7 +149,7 @@ data only". **Half of it is per-SWING.** It is off-wire (derived) state holding 
 
 | member | lifetime | cleared by | filled by |
 |---|---|---|---|
-| `guardHits` | **one detection pass** (task 20; was the swing). Positions where the weapon met another character's guard. The visualization draws them as 15 cm blue (colorId 2) spheres. | the detector, first thing in each pass (`BrawlerHitDetectionSystem-guards.md` G-13); `deactivate()` no longer clears it | the detector, beside `guardBlockedThisTick` |
+| `guardHits` | **one detection pass** (task 20; was the swing). Positions where the weapon met another character's guard. The visualization draws them as 0.15 m blue (colorId 2) spheres. | the detector, first thing in each pass (`BrawlerHitDetectionSystem-guards.md` G-13); `deactivate()` no longer clears it | the detector, beside `guardBlockedThisTick` |
 | `hitsThisTick` | **one tick**: the signal routing consumes | the detector (G-13 there) and the top of `integrate` (G-04) | the detector (`registerAttackHit`) |
 | `guardBlockedThisTick` | **one tick** | the detector (G-13 there) and the top of `integrate` (G-05) | the detector, on a block |
 
@@ -362,18 +362,21 @@ A pure function with no side effects. It is shared by the detector
 (`brawlerHitDetection::detectRadialHits`) and the attacker-side block-prediction visualization
 (`dAttackBlockPredictionVisualization`). It returns true if and only if a swing of
 `activeAttackSequence`, from a pivot at `attackerRoot`, would be blocked by a guard body whose world
-transform is `guardTransform` (its forward is column 0) and whose query overlap position is
+transform is `guardTransform` (its forward is `simFrame::forwardColumn(guardTransform)`, §10) and
+whose query overlap position is
 `guardOverlapPosition` (`SpatialQueryHit::objectPosition` of the guard-category hit). The overlap
-point is flattened to the pivot's height. `td` is the angle between the guard's forward and the
+point takes the pivot's height. `td` is the angle between the guard's forward and the
 direction from the guard to the attacker. Inside `shieldAngle = 0.25f` only sequence 4 is blocked.
-Between that and `outerShieldAngle = pi/2`, the sign of the cross product's z picks sequences
-{0, 2} or {1, 3}. The positive outer gate is guard G-03.
+Between that and `outerShieldAngle = pi/2`, the sign of the cross product's component along the
+turn axis (`simFrame::turnComponent`, its −y in the shipped frame) picks sequences {0, 2} or {1, 3}.
+The positive outer gate is guard G-03.
 
 ⛔ **Corrected at task 19** (§A, pristine lines 361-374 and 387):
 * **`attackerRoot` is the attacker's WEAPON-AXIS body position**, not "the attacker's own body
   position". The radial's `bindings.ownBodyId` is the `WeaponAxis` body, which `integrate` places at
-  the parent (capsule) position plus `attachmentOffset` (0, 0, 30). In XY it coincides with the
-  character, and the predicate flattens z.
+  the parent (capsule) position plus `attachmentOffset` (`(0, 0.3, 0)` in the shipped frame: 0.3 m up).
+  In the ground plane it coincides with the character, and the predicate replaces the overlap
+  point's height with the pivot's.
 * **The two callers read it differently.** The shipped text wrote
   "`State::bodyState.position / physics.getBodyTransform(bindings.ownBodyId)[3]`" as if they were
   one value. The detector passes the live transform, read after `integrate`'s attachment write. The
@@ -447,12 +450,57 @@ pinned by `DAttackRadialAimLogTest.cpp`.
 | 13 | 564-565 | Attacking->Idle exit "fires naturally next tick" | after the 0.3 s Hadouken commitment (§8; 0.875 s since og-attackstatetransition-cleanup task 4, 0.74167 s since its task 6) |
 | 14 | 254-255 | `zero()` cannot be constexpr, because glm is "build-flag dependent" | true of glm in principle; constexpr compiles on every flag set probed (§5) |
 | 15 | 563 | the branch keeps "the weapon idle" | it writes no pose, and the weapon is already idle (§8) |
-| 16 | 251 | the neutral aim `(0,0,1)` is "forwards" | it is +Z (`defaultUp`); `defaultForward()` is `(1,0,0)` (guard G-01) |
-| 17 | 251-252 | "a value-initialised (0,0,0) aim would reach normalize()" | every reader projects to XY first, where both are the zero vector; the guard substitutes `defaultForward`. Only the test-tag half of the fence is true (guard G-01) |
+| 16 | 251 | the neutral aim `(0,0,1)` is "forwards" | it was +Z (defaultUp, now `turnAxis()`); `defaultForward()` was `(1,0,0)` (guard G-01; Z-up frame) |
+| 17 | 251-252 | "a value-initialised (0,0,0) aim would reach normalize()" | every reader projects to the ground plane first, where both are the zero vector; the guard substitutes `defaultForward`. Only the test-tag half of the fence is true (guard G-01) |
 
 Inbound citations elsewhere that this conversion made stale, or found already stale, are listed in
 the task-19 implementation notes. `DAttackRadialSimulation.h:450` and `:680` were fixed where they
 stood. `DAttackMachineSimulation.h`'s own copy was handed to task 18.
+
+## 10. The frame routing through `simFrame`
+
+Every axis literal and component pick in this header goes through og-simulation's frame vocabulary,
+`simFrame` (`OGSimulation/SimulationFrame.h`). In the Z-up, centimetre frame it was routed in ( the
+shipped knobs until og-sim-metres-yup tasks 17 and 19) each routed expression gave the same bits as the literal it replaced, so the swing and the predicate are
+unchanged, apart from the zero signs of the aim rotation axis the machine stores (the first
+bullet). They also stay right when the frame changes.
+
+* **A frame constant that enters arithmetic is held in a `constexpr` local** (`offset`, `turnAxis`,
+  `idleAxis` here). That is the constant-folding form: a runtime `const` copy of a `simFrame`
+  constant is not folded into the arithmetic the way the literal it replaced was. It does not pin
+  the sign of an exact-zero result under `/fp:fast`. The aim rotation axis this header stores
+  (`initialAimRotationAxis`, written by the machine) has exact-zero components whose signs come
+  from how the compiler optimises the machine's cross product, not from the source; three builds
+  gave three results (`DAttackMachineSimulation-rationale.md` §16). The brawler golden trace
+  therefore compares `+0` and `-0` as equal and counts that field separately.
+* **Lengths.** The body sphere is `0.3f` (metres; task 5b's wrapped 30 cm, unwrapped by task 22),
+  and `attachmentOffset` returns `simFrame::kUp * 0.3f`. A positive scale of an axis keeps its `+0`
+  components, so this was the literal `(0, 0, 30)` bit for bit in the Z-up frame. The two query-volume radii
+  derive from the attack circle's outer radius, which `SimulatableBrawlerTypes.h` authors in metres.
+* **`wouldGuardBlock` reads the guard's forward with `simFrame::forwardColumn(guardTransform)`.**
+  The guard sub-simulation builds its pose by rotating `kForward` onto the aim, so the guard's
+  forward is the transform's column at the forward index, with the forward axis's sign. That was
+  column 0 in the Z-up frame; it is column 2 negated in the Y-up frame.
+* **The overlap point takes the pivot's height** through `simFrame::withHeight` and
+  `simFrame::height`.
+* **The side test reads `simFrame::turnComponent(guardAxis)`.** `guardAxis` is a cross product,
+  a pseudovector. Its component along the turn axis has the same sign in every frame. Its `z` was
+  that component only in the Z-up frame. With `.z` left in a Y-up build, `guardAxis` lies along
+  Y and its z is a signed zero, so neither side test passes and no side swing is blocked.
+* **`setInitialConditions` writes the initial angular velocity as
+  `turnAxis * activeAttackSequence.getInitialVelocity()`, with `turnAxis` the turn axis.** A negative scale would give
+  the axis's two zero components a `-0`, where the replaced literal `(0, 0, v)` had `+0`. That never
+  happens: `getInitialVelocity()` returns the first entry of the sequence's velocity table, which
+  the `DAttackRadialSequence` constructor pushes as `0.f` before any other, so every swing starts at
+  rest and the product is `+0` in all three components.
+* **`setIdlePose` turns a quarter turn about `idleAxis`, `glm::cross(simFrame::kForward, simFrame::kUp)`**,
+  `(0, -1, 0)` in the Z-up frame (`(1, 0, 0)` in the Y-up frame). Constant evaluation gives it `+0` in its
+  other two components, like the literal. A rotation axis is a pseudovector, so it is written as a cross
+  product of frame axes and follows a change of handedness by itself.
+* **`applyTorque` scales by `simFrame::alongUp(inertiaTensor)`**, the up entry of the inertia
+  diagonal (its `y` in the shipped frame, `z` in the Z-up one).
+* **Logs.** The `[Radial.*]` lines print no length. `[Radial.setInitialConditions]` prints the aim
+  rotation axis as stored, which is its og components.
 
 ---
 

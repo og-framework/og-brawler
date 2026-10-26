@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 #include "BrawlerMovementSimulation.h"
+#include "OGSimulation/SimulationFrame.h"
 
 #include "glm/vec3.hpp"
 #include "glm/common.hpp"        // glm::abs
@@ -138,28 +139,28 @@ inline constexpr unsigned int kColorVelocity      = 12u;
 inline constexpr unsigned int kColorErrorAbove    = 14u;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// DRAW GEOMETRY CONSTANTS. Lengths are CENTIMETRES (the project's world unit) unless the name
-// says otherwise, so every one of them is comparable to `rideHeight` (10) and the capsule
-// radius (42) by eye.
+// DRAW GEOMETRY CONSTANTS. Lengths are METRES (the simulation's world unit) unless the name
+// says otherwise, so every one of them is comparable to `rideHeight` (0.1) and the capsule
+// radius (0.42) by eye.
 
 // The velocity ray is drawn as a DISPLACEMENT, not as a scaled arrow: its length is where the
 // body would be in `kVelocityRaySeconds` at this velocity. That keeps it a physical quantity a
-// reader can measure against the capsule instead of an arbitrary gain -- a 600 cm/s walk draws
-// 60 cm (~1.5 capsule radii), a 2000 cm/s terminal fall draws 200 cm.
+// reader can measure against the capsule instead of an arbitrary gain -- a 6 m/s walk draws
+// 0.6 m (~1.5 capsule radii), a 20 m/s terminal fall draws 2 m.
 inline constexpr float kVelocityRaySeconds = 0.1f;
 
 // The four frame rays. `n` and `up` are drawn LONGER than `u` and `v` so the pair whose
 // divergence matters most is the pair that reads first.
-inline constexpr float kNormalRayLength  = 60.f;
-inline constexpr float kTangentRayLength = 45.f;
+inline constexpr float kNormalRayLength  = 0.6f;
+inline constexpr float kTangentRayLength = 0.45f;
 
 // Band marks are drawn as two crossed horizontal arms; see `drawLevelMark` for what the two
 // arms mean. Half-lengths, in the same units as the capsule radius.
-inline constexpr float kLongArmHalfLength  = 42.f;
-inline constexpr float kShortArmHalfLength = 21.f;
+inline constexpr float kLongArmHalfLength  = 0.42f;
+inline constexpr float kShortArmHalfLength = 0.21f;
 
-inline constexpr float kThinLine  = 1.f;
-inline constexpr float kThickLine = 3.f;
+inline constexpr float kThinLine  = 0.01f;
+inline constexpr float kThickLine = 0.03f;
 
 // The capsule outline's tessellation. 12 segments per horizontal ring, 6 per cap quarter --
 // enough to read as a capsule, cheap enough that the whole outline is ~50 line calls.
@@ -213,8 +214,8 @@ void drawCapsuleOutline(const RendererFunctorType& renderer,
                         float radius, float halfHeight,
                         unsigned int colorId, float thickness)
 {
-    const glm::vec3 axisX(1.f, 0.f, 0.f);
-    const glm::vec3 axisY(0.f, 1.f, 0.f);
+    constexpr glm::vec3 axisX = simFrame::kForward;
+    constexpr glm::vec3 axisY = simFrame::kRight;
 
     // Hemisphere centres. `halfHeight - radius` is the cylinder's half-length; it is zero for a
     // sphere-shaped capsule and never negative for a legal one.
@@ -275,8 +276,8 @@ void drawLevelMark(const RendererFunctorType& renderer,
                    const glm::vec3& probeReferenced, const glm::vec3& bodyReferenced,
                    unsigned int colorId, float thickness)
 {
-    const glm::vec3 axisX(1.f, 0.f, 0.f);
-    const glm::vec3 axisY(0.f, 1.f, 0.f);
+    constexpr glm::vec3 axisX = simFrame::kForward;
+    constexpr glm::vec3 axisY = simFrame::kRight;
     renderer.drawLine(probeReferenced - axisX * kLongArmHalfLength,
                       probeReferenced + axisX * kLongArmHalfLength, colorId, thickness);
     renderer.drawLine(bodyReferenced - axisY * kShortArmHalfLength,
@@ -373,7 +374,7 @@ void visualize(const Input<RendererFunctorType>& input,
     // `v = cross(n, u)` is horizontal and IS perpendicular to both; `u` is not. Task 57 had to
     // add a DUAL-BASIS decomposition (`decomposeVelocity`) because plain dot products against
     // this frame double-count, and the two halves of that were live defects: a fall leaked into
-    // the tangential channel and DIVERGED to 1.5e5 cm/s on a slope landing, and a walk leaked
+    // the tangential channel and DIVERGED to 1.5e3 m/s on a slope landing, and a walk leaked
     // into the vertical channel where the servo damped it.
     //
     // ⛔ SO DRAWING A TIDY ORTHOGONAL TRIAD HERE WOULD HIDE THE EXACT PROPERTY BEHIND THIS
@@ -388,8 +389,8 @@ void visualize(const Input<RendererFunctorType>& input,
     // no walkable ground, and the frame fell back to world up". That fallback is the sim's, not
     // this draw's.
     const glm::vec3 n = derivedState.surfaceNormal;
-    glm::vec3 u(1.f, 0.f, 0.f);
-    glm::vec3 v(0.f, 1.f, 0.f);
+    glm::vec3 u = simFrame::kForward;
+    glm::vec3 v = simFrame::kRight;
     brawlerMovementSimulation::buildTangentFrame(n, u, v);
 
     // ⛔ `lastProbePoint` IS ZERO WHEN THE SWEEP FOUND NOTHING -- that is step 2's own spelling
@@ -425,8 +426,9 @@ void visualize(const Input<RendererFunctorType>& input,
     //
     // ⭐ VERIFIED NUMERICALLY, NOT ONLY DERIVED (task 18, 2026-09-08). The sim's own sweep
     // arithmetic and this reconstruction were run against an analytic plane at 0, 30 and 45
-    // degrees with the shipped 42 / 96 / 1 geometry: the two agree to 3.6e-15 cm at every
-    // angle, and the probe-minus-body gap comes out 0 / 0.154701 / 0.414214 cm -- the same
+    // degrees with the shipped geometry (then 42 / 96 / 1 cm, now 0.42 / 0.96 / 0.01 m): the two agree
+    // to 3.6e-15 cm at every angle, and the probe-minus-body gap comes out 0 / 0.154701 / 0.414214 cm
+    // (0 / 0.00154701 / 0.00414214 m) -- the same
     // `s * (sec(theta) - 1)` closed form `BrawlerMovementSimulation.h`'s `kProbeShrink` block
     // states, reproduced independently here rather than transcribed from it.
     //
@@ -478,17 +480,17 @@ void visualize(const Input<RendererFunctorType>& input,
     //
     //          s * (sec(theta) - 1)      MORE clearance than the body actually has
     //
-    // -- 0 flat, 0.155 cm at 30 degrees, 0.414 cm at the 45-degree `maxSlopeAngleDeg` cap, at
+    // -- 0 flat, 0.00155 m at 30 degrees, 0.00414 m at the 45-degree `maxSlopeAngleDeg` cap, at
     // the shipped `kProbeShrink`. Two consequences, and both are drawn:
     //   * the character SETTLES that much lower than `rideHeight` on a slope, because the servo
     //     is closing the PROBE's error, not the body's;
     //   * the probe LETS GO that much sooner, so the body-referenced detach edge sits that much
     //     closer to the body than the nominal reach.
     // ⛔ It is not removable by a different offset -- zeroing it needs a slope-dependent
-    // `offset.z = -s / n.z` and a static descriptor cannot express one. A viz that averaged the
+    // `offset.y = -s / n.y` (y is up) and a static descriptor cannot express one. A viz that averaged the
     // two marks would erase a real measured property of the shipped probe, so `drawLevelMark`
-    // draws them as two arms of one glyph: long arm along world X is the PROBE-referenced
-    // level, short arm along world Y is the BODY-referenced one. Flat ground draws a clean plus
+    // draws them as two arms of one glyph: long arm along world forward is the PROBE-referenced
+    // level, short arm along world right is the BODY-referenced one. Flat ground draws a clean plus
     // sign. ⚠ The separation is sub-centimetre by construction, so it reads at close range and
     // not across the arena; the property the draw guarantees is that the two are never merged.
     const float cosTheta  = glm::dot(n, up);
@@ -511,8 +513,8 @@ void visualize(const Input<RendererFunctorType>& input,
     // the user found all of them BY FEEL because nothing drew it.
     //
     // WHAT IS DRAWN: a bar along `up`, from the measured contact level to the ride-height mark.
-    // Its LENGTH is |e| in centimetres, directly comparable to `rideHeight` (10 cm) and to the
-    // capsule radius (42 cm) already on screen. Its COLOUR is the sign, and the sign is not a
+    // Its LENGTH is |e| in metres, directly comparable to `rideHeight` (0.1 m) and to the
+    // capsule radius (0.42 m) already on screen. Its COLOUR is the sign, and the sign is not a
     // cosmetic distinction -- the two arms of the law are genuinely different:
     //
     //     e >= 0   EMERALD   below ride height: the full spring-damper runs and the servo is
@@ -524,8 +526,8 @@ void visualize(const Input<RendererFunctorType>& input,
     //                        a different statement from emerald and deserves its own colour.
     //
     // ⚠ A ONE-TICK AMBER FLICKER WHILE WALKING IS EXPECTED AND IS NOT A DEFECT: a tick that
-    // lands a float hair above ride height gets gravity alone and falls |gravity|*dt^2 = 0.272
-    // cm before the servo takes it back. Task 57 predicted that ripple and priced it; this draw
+    // lands a float hair above ride height gets gravity alone and falls |gravity|*dt^2 = 0.00272
+    // m before the servo takes it back. Task 57 predicted that ripple and priced it; this draw
     // is where it becomes visible.
     const float servoError = staticData.rideHeight - clearance;
     const glm::vec3 contactLevel = bodyBottom - up * clearance;
@@ -535,8 +537,8 @@ void visualize(const Input<RendererFunctorType>& input,
     // The contact level itself, as a short cross, so the bar has a foot a reader can see even
     // when |e| is small enough that the bar is a dot.
     {
-        const glm::vec3 axisX(1.f, 0.f, 0.f);
-        const glm::vec3 axisY(0.f, 1.f, 0.f);
+        constexpr glm::vec3 axisX = simFrame::kForward;
+        constexpr glm::vec3 axisY = simFrame::kRight;
         renderer.drawLine(contactLevel - axisX * kShortArmHalfLength,
                           contactLevel + axisX * kShortArmHalfLength, errorColor, kThickLine);
         renderer.drawLine(contactLevel - axisY * kShortArmHalfLength,

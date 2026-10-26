@@ -147,7 +147,7 @@ measurements under them, describe it as it stood. Their live successors:
 * the input the codecs deserialize is `SyncedPlayerInput`, whose fields are not `const` either;
 * its field order is held by the descriptor-tuple `static_assert` in `BrawlerSyncedPlayerInput.h`,
   not by an initializer's argument count;
-* the neutral input's `(0,0,1)` aim, and its difference from the value-initialised aim, are
+* the neutral input's `simFrame::kUp` aim, and its difference from the value-initialised aim, are
   `static_assert`s in the same header (`BrawlerSyncedPlayerInput-rationale.md` §5).
 
 <!-- header lines 73 -->
@@ -180,8 +180,9 @@ anywhere but last breaks `zero()`'s five-argument initializer (`C2440`, measured
 > triggeredActionId is left to its default member initialiser (0) by C++20
 > parenthesized aggregate init, exactly as the pre-fold call site did.
 
-The prohibition in that block was guard **G-01** (retired by task 4), with its R0: `(0,0,1)` is
-`defaultUp`, and for this slice the normalize argument does not separate the two values.
+The prohibition in that block was guard **G-01** (retired by task 4), with its R0: `(0,0,1)` was the
+up axis then (the turn axis, `turnAxis` since og-sim-metres-yup task 22), and for this slice the normalize argument
+does not separate the two values.
 
 ---
 
@@ -738,7 +739,7 @@ Verified against the tree on 2026-09-23.
 | 3 | 41-42, 378, 514, 850 | `HitFlinch` dwells for `kHitFlinchDuration` | it dwells for `State::m_flinchDuration`, copied from the routed reaction |
 | 4 | 41 | the veto transitions `Idle`/`Attacking` → `HitFlinch` | `integrate3`'s veto fires from any state |
 | 5 | 21 | `BrawlerInboundHit.h` is zero-dependency | it includes `glm/vec2.hpp` and `HitReaction.h`; it reaches nothing that includes this header |
-| 6 | 89 | `(0,0,1)` is "forwards" | it is `defaultUp`; forward is `(1,0,0)` |
+| 6 | 89 | `(0,0,1)` is "forwards" | it was the up (turn) axis, defaultUp then; forward was `(1,0,0)` (Z-up frame) |
 | 7 | 89-90 | a `(0,0,0)` aim would reach `normalize()` (as what separates the two) | every read of this slice's aim XY-projects first, where both are the zero vector |
 | 8 | 153-154 | 42 × (1/60) lands BELOW `0.7f` | it lands exactly on `0.7f`; the duration is `0.70000005f` |
 | 9 | 197-198 | `m_attackEndTick` is written only on radial edges, at three sites | three sites, two of them radial edges |
@@ -866,18 +867,18 @@ the blocker's reaction, its input delay and its swing up to the hit:
   the start time of the segment holding the aim (local angle 0), counted with `swingTickCount`. For
   the side swings (sequences 0 and 1) that segment starts at keyframe time 0.4 s: k = 24. For the
   forward swing (sequence 4) it starts at 0.3 s: k = 18. The slower side swing binds. Distance
-  decides whether the swing reaches at all (90 to 300 cm), never when it hits.
+  decides whether the swing reaches at all (0.9 to 3 m), never when it hits.
 * **D_in = 6**, the input delay. An input captured on tick c is applied on c plus the larger of the
   session floor and the connection tier's delay (`ConnectionTierTable.h`, `ServerInputDelayQueue.h`).
   The shipped floor is `RelayDelayFloorTicks=6` in `Config/DefaultEngine.ini`, so every player's
   press lands 6 ticks late. It is a config value, not a sim constant: the pin names it as an
   assumption and does not read the config.
 * **r = 10**, the reaction budget: 167 ms from seeing the block to pressing.
-* **f = 5**, the flight to the farthest block the lock guarantees. The shot spawns 60 cm ahead of its
-  shooter and moves 800 cm/s, 13.33 cm per tick. Its sphere (radius 40) meets the blocker's guard
-  sphere (radius 40, 30 cm above the capsule centre) roughly 64 to 77.5 cm before the blocker's
+* **f = 5**, the flight to the farthest block the lock guarantees. The shot spawns 0.6 m ahead of its
+  shooter and moves 8 m/s, 0.1333 m per tick. Its sphere (radius 0.4) meets the blocker's guard
+  sphere (radius 0.4, 0.3 m above the capsule centre) roughly 0.64 to 0.775 m before the blocker's
   centre. So a block f ticks after the shot happens with the blocker at about
-  60 + 13.33·f + (64 to 77.5) cm: for f = 5, 1.9 to 2.0 m.
+  0.6 + 0.1333·f + (0.64 to 0.775) m: for f = 5, 1.9 to 2.0 m.
 
 The numbers k, D_in and the flight formula come from og-attackstatetransition-cleanup task 3's
 research (its §5 and §6). r is the user's choice (task 3's option B: 40 ticks from the block). The
@@ -932,3 +933,44 @@ HitRouting.ProjectilePointBlankFollowUpWindow, lost its follow-up half; its shot
 numbers that rule it out are pinned absolutely instead
 (`DAttack.AttackTransitions.CommitmentIs45Ticks`, and the 0.65 line in
 `HitRouting.ProjectileHitStunsInPlace`). Bringing the combo back means re-choosing one of them.
+
+---
+
+## 16. The frame routing through `simFrame`
+
+The aim reads, the fallback axes and the Hadouken's spawn offset go through og-simulation's frame
+vocabulary, `simFrame` (`OGSimulation/SimulationFrame.h`). In the Z-up frame they were routed in (Z up,
+centimetres; the shipped knobs until og-sim-metres-yup tasks 17 and 19) each routed expression gave the same bits
+as the literal it replaced in IEEE arithmetic. The exception is not a property of any expression: the signs of the exact zeros in the
+aim rotation axis (the second bullet).
+
+* **`setRadialSimulationInitialConditions`** flattens the aim with `simFrame::flatten`, which sets
+  the up component to `+0`, the same bits as the replaced `glm::vec3(aim.x, aim.y, 0.f)`.
+  `defaultForward` is `simFrame::kForward`. `turnAxis` (defaultUp until og-sim-metres-yup task 22) is
+  `simFrame::kTurnAxis`: it is the rotation axis taken when the aim lies along ±forward, where
+  `cross(defaultForward, aimDirection)` vanishes (guard G-03's band). It was up in the Z-up frame; in the
+  shipped Y-up frame it is `(0, -1, 0)`, so task 22 renamed it.
+* **Both are `constexpr` locals: the constant-folding form, which does not fix the zero signs.**
+  A vocabulary constant that enters arithmetic (a cross or matrix product, a rotation axis) is used
+  through a `constexpr` local or as the `static constexpr` member itself, because a runtime copy
+  (`const glm::vec3 defaultForward(simFrame::kForward)`) is not folded into the arithmetic the way
+  the literal it replaced was. What no form of this source fixes is the sign of the zeros in
+  `glm::normalize(glm::cross(defaultForward, aimDirection))`. In the Z-up frame its x and y were
+  exact zeros for every flattened aim (`defaultForward` has zero y and z, the aim a `+0` z), and
+  under `/fp:fast` the compiler may rewrite `0 - x` as `-x`, which turns a `+0` into a `-0`,
+  depending on how the function is inlined. Measured in the OGBrawlerTests build for an aim along
+  +Y, three trees gave three results: `(-0, 0, 1)` with runtime `const` copies, `(0, 0, 1)` with
+  `constexpr` locals in this function only, and `(0, -0, 1)` with `constexpr` locals at every
+  routed site (the shipped form). That tree also gave `(0, -0, 1)` with this function's three lines
+  put back exactly as they were before the routing (the literals and the literal aim flatten). A
+  scratch `cl` copy of the function gave `+0` in every variant, so the inlining context decides,
+  not the expression. The brawler golden trace therefore compares `+0` and `-0` as equal in exact
+  mode and counts such differences separately (its `[GoldenTrace.signedZero]` line). In the shipped
+  form it counts 321 axial-vector values (tag `a`, one per field and sample) that differ only in
+  the sign of a zero, the first in this field at tick 40, and no other bit differs.
+* **`launchHadouken`** flattens the aim the same way, and a degenerate aim falls back to
+  `aimFallback`, a `constexpr` copy of `simFrame::kForward`. The spawn offset along up is
+  `simFrame::withHeight(glm::vec3(0.f), projSD.spawnHeightOffset)` (the field was spawnZOffset until
+  og-sim-metres-yup task 22). It starts from `+0` and places one value, so it is the replaced literal
+  `(0, 0, offset)` bit for bit for either sign of the offset. `simFrame::kUp * projSD.spawnHeightOffset` would
+  give `-0` components for a negative offset.

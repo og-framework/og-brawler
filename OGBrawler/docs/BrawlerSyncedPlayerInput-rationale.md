@@ -96,9 +96,14 @@ are empty.
 
 Two `static_assert`s at the foot of the header hold the values that tell the neutral input apart:
 
-* `zero()`'s aim is `(0,0,1)`. It is the wire value every peer fills a tick with when it has no
-  input, so changing it, or making `zero()` return `SyncedPlayerInput{}`, makes peers on different
-  builds disagree about the neutral input. The message names the guard it replaced, G-02.
+* `zero()`'s aim is `simFrame::kUp` (`SimulationFrame.h`), which is `(0,1,0)` in the shipped frame (`(0,0,1)` until
+  og-sim-metres-yup task 19).
+  It is the wire value every peer fills a tick with when it has no input, so changing it, or making
+  `zero()` return `SyncedPlayerInput{}`, makes peers on different builds disagree about the neutral
+  input. The message names the guard it replaced, G-02. Since og-sim-metres-yup task 5a both the value
+  and the assertion are written as `simFrame::kUp`, so the neutral aim follows the axis frame and the
+  assertion holds in both frames. The axis flip therefore changes this wire value, which the input
+  wire's version must record.
 * The value-initialised aim differs from `zero()`'s. The resolution and net-sync tests tell the
   neutral input from a default-constructed one by this field (`isGameZeroInput`), so equal values
   would let those controls pass while testing nothing. The message names G-01.
@@ -117,7 +122,8 @@ Task 4 spelled the three vector defaults `glm::vec3(0.f)` and `glm::vec2(0.f)` (
 `{}`) and made `zero()` `constexpr`. Measured on the OGBrawlerTests build after that change:
 
 * a default aim equal to `zero()`'s fails the inequality assertion (`C2338`), and nothing else;
-* a `zero()` aim of `(0,1,0)` fails the `(0,0,1)` assertion (`C2338`), and nothing else;
+* a `zero()` aim other than `simFrame::kUp` fails the `kUp` assertion (`C2338`), and nothing else (measured at the
+  Z-up knobs with `(0,1,0)` against `(0,0,1)`);
 * respelling the aim's default back to `{}` is `C2131` on the inequality assertion, so that edit is
   loud as well;
 * respelling `moveStick` alone back to `{}` compiles, because neither assertion reads it.
@@ -126,10 +132,12 @@ The run-time pins are `SimulatableBrawler.SyncedPlayerInput.ZeroSerializesToTheC
 39 bytes of `zero()`) and `SimulatableBrawler.SyncedPlayerInput.ZeroIsNotValueInitialised` (the two
 aims differ, field-wise and on the wire).
 
-### 5.1 What the `(0,0,1)` aim is not
+### 5.1 What the `kUp` aim is not
 
 These corrections came with the retired guards and their predecessors on the per-sub-simulation
-input types (re-verified 2026-10-03). They forbid no edit.
+input types (re-verified 2026-10-03). They forbid no edit. They were written in the Z-up frame, where the
+aim `simFrame::kUp` was `(0,0,1)` and "XY" was the ground plane; since og-sim-metres-yup task 19 the aim is
+`(0,1,0)`, the ground plane is XZ and forward is `(0,0,-1)`. Read them with that map.
 
 * `(0,0,1)` is **+Z**, not "forwards". `DAttackRadialSequence::defaultForward()` is `(1,0,0)`.
 * Neither `(0,0,1)` nor `(0,0,0)` is the safer aim for a reader. No reader uses the raw aim: the

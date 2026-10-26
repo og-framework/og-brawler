@@ -89,6 +89,17 @@ can therefore never be read here without its correction attached, and nothing ha
 by being moved. ⛔ Where the correction belongs to another task or needs a user ruling, the note
 says so and the text is left alone.
 
+⚠ **Units and frame of the carried text (og-sim-metres-yup, 2026-10-26).** Every carried paragraph was
+written while the simulation ran in UE centimetres with Z up (x forward, y right). Since og-sim-metres-yup
+tasks 17 and 19 it runs in **metres with Y up** (forward −Z, right +X, up +Y), and task 22 wrote every
+authored constant in the header as a metre literal (`rideHeight` `0.1f`, `kProbeShrink` `0.01f`, gravity
+`-9.8f`, …). So read a carried length, speed or acceleration as centimetres: divide it by 100 for the
+value in today's code (`500 cm` is the `5.f` metres, `980` is `9.8`, `30 000 cm/s²` is `300`). Angles,
+ticks, ratios and the servo's gains (`k`, `c`, ω, ζ) are unit-free and unchanged. Read a carried axis
+through the frame's names: X is forward (`simFrame::kForward`), Y is right (`kRight`), Z is up (`kUp`),
+"XY" is the ground plane and `.z` is `simFrame::height`. The editorial notes below that compare the
+shipped frame with the Y-up frame were written before the flips; they are updated to say "the Z-up frame".
+
 **Origin:** `brawler-movement-simulation` tasks 1, 5, 8, 11, 13, 14, 15, 16, 17, 19, 22, 27, 31,
 39, 43, 46, 47, 49, 50, 51, 54, 56, 57, 62, 64, 65, 68, 75, 76 and 81; user rulings #5, #13,
 #14(c), #16(a), #17(b), #26(a), #27(A), #28 and #29.
@@ -726,7 +737,7 @@ The speed became **per attack**: `HitReactionSpec::knockbackSpeed`, authored in
 `launchDecel` remains here, and that is the split the design argues for — **the decel is the LAW
 and the speed is the HIT**. The closed form therefore reads
 `spec.knockbackSpeed² / (2·sd.launchDecel)` and is per attack; at the shipped right/left rows it
-is still exactly 500 cm.
+is still exactly 5 m.
 
 ⚠ **THE CONSTRUCTOR CALL SHIFTED, AND IT IS NEARLY ALL `float`.** Removing one argument from a
 21-argument positional call reassigns every constant after it and **compiles cleanly**. The call in
@@ -951,6 +962,18 @@ than riding a defect fix. Do not fold it in here; do not delete this paragraph e
 > `transform * offsetTransform` (ChaosSpatialQueryAdapter.cpp:503).
 
 
+> ### R0-25 — the spelling below is history since og-sim-metres-yup task 5a (2026-10-25); the property holds
+>
+> The drop is now built as `glm::vec4(simFrame::withHeight(glm::vec3(0.f), -kProbeShrink), 1.f)`
+> and the check reads it back as `simFrame::height(glm::vec3(probeOffset[3]))`, the signed pick along
+> `simFrame::kUp` (`SimulationFrame.h`). In the Z-up frame that pick was `.z` with no negation, and
+> in the Y-up frame it is `.y`, also with no negation, so the check computes the same floats as the
+> `+ probeOffset[3].z` the paragraph names (its up component), and the exactness argument is unchanged: `a + h` with `h == -s` is `a - s`. `withHeight` on a `+0` vector
+> keeps the other two components `+0`, as the literal `(0, 0, -kProbeShrink)` did; `-kUp * kProbeShrink`
+> would have made them `-0`. `kProbeShrink` itself is `0.01f` (metres) since og-sim-metres-yup task 22; task 5a
+> had written it a wrapped `1.f`, which was 1 cm.
+
+
 <!-- header lines 678-689 -->
 > ⛔ [movement-sim task 76] THE SHRINK AND THE DROP ARE ONE TERM, AND THIS READS BOTH.
 > `probeBottom == bodyBottom` holds only while the volume is dropped by exactly the
@@ -982,6 +1005,19 @@ than riding a defect fix. Do not fold it in here; do not delete this paragraph e
 ---
 
 ## 11. `kWorldUp` — the servo's axis
+
+> ### R0-24 — "the one place the up direction is spelled", the task-49 grep and "written component-wise" are history since og-sim-metres-yup task 5a (2026-10-25)
+>
+> `kWorldUp` is now `inline constexpr glm::vec3 kWorldUp = simFrame::kUp;`, and its assertion is the
+> whole-object `static_assert(kWorldUp == simFrame::kUp, …)`. The message keeps its "world up" wording
+> (user ruling Q5 of og-sim-metres-yup, 2026-10-25). The up direction is spelled once for the whole
+> simulation, in `SimulationFrame.h`'s axis tables, so this header holds no `0.f, 0.f, 1.f` at all and
+> task 49's one-hit grep now finds none. Its intent, no second spelling of up here, still holds.
+> `kWorldUp` stays the one name the servo reads (the paragraph's list of readers is unchanged), and the
+> value was the same `(0, 0, 1)` in the Z-up frame and is `(0, 1, 0)` since the flip to Y up (task 19). The
+> component-wise form below compared against a
+> literal the frame would no longer match after the axis flip; comparing against `simFrame::kUp` holds in
+> both frames.
 
 
 <!-- header lines 721-731 -->
@@ -1218,6 +1254,9 @@ of the ordinary-join margin — a quarter of everything that was left. ~2.5 byte
 > `BrawlerMovementVisualization.h:356` reads it (`position + state.velocity * …`), and
 > `BrawlerMovementSimulationTest.cpp` names it at dozens of sites — `:378` READS it (the
 > write on that line targets `bodyState.position`) and `:447` is a genuine **write**.
+> *(Dated record: the three line numbers above are the 2026-09-11 files' and no longer point at those
+> statements; the files have moved since. The finding stands: the test file still reads and writes
+> `state.velocity`.)*
 >
 > ⭐ The argument the sentence supports — that nothing writes `state.velocity` between step
 > 5 and the next step 6′ **inside the tick** — is sound, and that is the claim to keep. The
@@ -1328,6 +1367,19 @@ of the ordinary-join margin — a quarter of everything that was left. ~2.5 byte
 > Move `current` toward `target` by at most `maxDelta`. The genre's law for every decaying
 > quantity (launch decel, braking); exact at the endpoint, so a brake reaches EXACTLY zero
 > rather than asymptotically approaching it.
+
+
+> ### R0-26 — "world +X", "world XY" and "+Y" below name the Z-up frame's axes; since og-sim-metres-yup task 5a (2026-10-25) the code names them through `simFrame`
+>
+> The reference is `simFrame::kForward` unless `glm::abs(simFrame::planar(n).x) >= 0.9f`, then
+> `simFrame::kRight`; `v` is `simFrame::kChartOrientation * glm::cross(n, u)`; the placeholders `u`,
+> `v` that `integrate` passes in start as `kForward`, `kRight`. In the Z-up frame these were `+X`,
+> `+Y`, `n.x` and `+1`, so every float was unchanged. `planar(n).x` is the forward component, a
+> signed pick and not a dot product, so the comparison is the one the code made before, `glm::abs(n.x) < 0.9f`. The factor
+> is routing rule 4: in the Y-up frame `cross(n, u)` comes out as `-kRight` on flat ground, and
+> `kChartOrientation` (`-1` there) turns it back to `kRight`, so the frame keeps the chart's
+> (forward, right) order. "Right-handed" below is the Z-up frame's reading of the basis; what
+> holds in both frames is that `(u, v)` follow `(kForward, kRight)` on flat ground. §26 relies on it.
 
 
 <!-- header lines 1063-1070 -->
@@ -1594,6 +1646,8 @@ block the acceptance criterion names, alongside `THE SERVO IS ONE-SIDED` (34 lin
 > ⛔ *"`kFlagHasCommand` IS READ HERE, and this is its only reader."* Measured 2026-09-11,
 > the constant is READ at **four** sites outside this header —
 > `BrawlerMovementSimulationTest.cpp:343`, `:1512`, `:1532` and `SimulatableBrawlerTest.cpp:903`.
+> *(Dated record: those line numbers are the 2026-09-11 files' and no longer point at the reads; the files have moved
+> since. The finding stands: both test files still read `kFlagHasCommand`, e.g. the rig's `hasCommandBit()`.)*
 > ⭐ The true and useful form is the one the initiative already converged on for the
 > symmetrical claim in the sibling file: **this is the one line in production code that
 > turns the bit into behaviour.** Carried verbatim, flagged.
@@ -2007,7 +2061,8 @@ axis was already vertical, so the steady-state perpendicular gap is identical be
 > ⚠ The `+/-380 cm/s per tick` in the forbidden-variants fence — now guard **G-10** — is
 > quoted from `design_ledge_fall_and_landing.md` §1b, which states the same figure and does
 > not derive it either. Re-derived here: it is `c·dt` times the chase speed,
-> `2ζω · dt · 400` = `57.04 × (1/60) × 400` = **380.27**. ⭐ Name the TERM and the number
+> `2ζω · dt · 400` = `57.04 × (1/60) × 400` = **380.27** (cm/s, as the fence was written; with the chase speed
+> in metres, 4 m/s, the same term is 3.8027 m/s per tick). ⭐ Name the TERM and the number
 > survives a gain change instead of silently lying about one.
 
 
@@ -2186,11 +2241,11 @@ them *at the field*, which is where a person adding a field looks.
 
 **Where the formula comes from, and why the obvious alternative is wrong.**
 
-`hitDirectionXY` is a **world XY unit vector**, resolved once by `brawlerHitRouting::System` as
-`normalise(XY(target position − attacker position))`. *(⚠ R0, og-netcode-v2-field-defects task 29:
+`hitDirectionXY` is a **unit vector in the (forward, right) chart** (the Z-up frame's world XY), resolved
+once by `brawlerHitRouting::System` as `normalise(XY(target position − attacker position))`. *(⚠ R0, og-netcode-v2-field-defects task 29:
 that was task 27's rule. Since movement-sim task 83 a melee knockback's direction is the swing
 tangent's XY, with this rule as the fallback, and a projectile's is its `spawnDir`
-(`BrawlerHitRoutingSystem-rationale.md` §4). It is still a world XY unit vector, which is all this
+(`BrawlerHitRoutingSystem-rationale.md` §4). It is still a (forward, right) unit vector, which is all this
 derivation uses.)* `velocityUV` is a pair of **tangent-frame
 channels**, `(a, b)` such that step 5 composes `a·u + b·v + c·up`. Writing `d.x` into `a` and
 `d.y` into `b` therefore looks like a type error, and it is not — it is exact, and it is exact
@@ -2207,12 +2262,23 @@ v = cross(n, u)                                    ⇒  v = (0, 1, 0)
 
 **`u`’s horizontal projection is X-aligned by construction and `v` is horizontal.** The map from
 world XY to `(a, b)` is therefore the identity on components, and because `u` and `v` are
-orthonormal the MAGNITUDE is preserved exactly: a 2000 cm/s shove is 2000 cm/s along the face.
+orthonormal the MAGNITUDE is preserved exactly: a 20 m/s shove is 20 m/s along the face.
+
+**In the frame's own terms (og-sim-metres-yup task 5a).** The derivation above is written in the
+Z-up frame (the shipped frame until og-sim-metres-yup task 19), where forward is `+X`, right is `+Y`
+and `kChartOrientation` is `+1`. The code says the
+same thing frame-independently: the reference is `kForward` (unless `|planar(n).x| >= 0.9`), and
+`v = kChartOrientation * cross(n, u)`, so on any reachable normal `u` projects onto `kForward` and `v`
+is `kRight`. `hitDirectionXY` is a chart value, (forward, right). Its two components therefore land
+on the channels that compose back along `kForward` and `kRight`, and the identity map holds in both
+frames. Without the factor, the Y-up frame's `cross(n, u)` is `-kRight`, and every knockback would
+leave mirrored across the forward axis. That is the case the deferred probe P-5a of og-sim-metres-yup
+checks.
 
 ⛔ **THE REFLEX EDIT THIS TAG EXISTS TO STOP** is the projection,
 `glm::vec2(dot(dWorld, u), dot(dWorld, v))`. It is the spelling every other world→frame
 conversion in this file uses, it is dimensionally innocent, and it is WRONG here: `dot(dWorld, u)`
-is `d.x·cos θ`, so on a 30° face the character launches at 1732 cm/s instead of 2000 and
+is `d.x·cos θ`, so on a 30° face the character launches at 17.32 m/s instead of 20 and
 covers 3.75 m instead of the user’s 5. ⭐ **It is also invisible on flat ground**, where
 `θ = 0` and the two spellings agree exactly — which is why the case that discriminates them is
 `BrawlerMovement.SlopeKnockbackStaysOnSlope` and not any of the seven flat-ground knockback cases.
@@ -2231,11 +2297,12 @@ plane. Reading one as a precedent for the other is the mistake.
 **Decay, the other half of the arm:** `moveTowards(currentUV, glm::vec2(0.f), sd.launchDecel * dt)`
 — the Smash law, constant deceleration to rest, and `moveTowards` returns the TARGET once the
 remaining distance is inside one step, so the slide lands on exactly 0.000000 instead of
-overshooting into a backwards crawl. `v² / (2a)` = 500 cm at the shipped pair. ⭐ The step
-count is a FLOAT fact, not an arithmetic one: `4000·(1/60)` is 66.666664, so thirty steps leave
-8e-5 cm/s behind and the thirty-FIRST takes it to zero.
-`BrawlerMovement.LaunchedDecelsAtLaunchDecel` pins that, and asserts the closed form against the
-shipped constants rather than restating 500.
+overshooting into a backwards crawl. `v² / (2a)` = 5 m at the shipped pair. ⭐ The step
+count is a FLOAT fact, not an arithmetic one: `40·(1/60)` is `0.6666667f` (`0x3f2aaaab`, rounded up), and
+thirty float steps from 20 leave about 6e-7 m/s behind (emulated in float32; in centimetres it was
+`4000·(1/60)` = 66.666664 and 8e-5 cm/s), so the thirty-FIRST takes it to zero.
+`BrawlerMovement.LaunchedDecelsAtLaunchDecel` pins that (tick 32), and asserts the closed form against the
+shipped constants rather than restating 5.
 
 ---
 
@@ -2312,7 +2379,7 @@ What survives the measurement, and it is why the ratio form is the one that ship
 labelled as such because the measured divergence is **none**.
 
 **⛔ The two tangent-plane channels ONLY.** The vertical channel, gravity and the `Supported`
-servo run afterwards unchanged, so a slide off a ledge becomes an ordinary fall with the same XY
+servo run afterwards unchanged, so a slide off a ledge becomes an ordinary fall with the same horizontal
 ramp. **That is intended** — user ruling, 2026-09-20: the slide may carry a character over the
 ring-out edge, there is no edge gate, no speed gate and no `Unsupported` refusal. The sim has no
 notion of an edge, an attack is a commitment, and being hit at the edge is already lethal.

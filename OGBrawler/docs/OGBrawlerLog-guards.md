@@ -59,7 +59,8 @@ call site at once. The correct responses are to raise `kLineBufferBytes`, or to 
 ⚠ **The check is only as sound as its fail-closed default.** `kUnbounded` is what the checker returns
 for anything it cannot bound. The self-tests at the end of the `detail` namespace assert that result
 for six shapes (`%llu`, a 64-bit argument, `%e`, a `%s` given an `int`, and too few or too many
-arguments). A "fix" that returns a guess instead of `kUnbounded` fails the build there. That half
+arguments), and for seven `*` shapes since og-sim-metres-yup task 5a (rationale §4.1). A "fix" that
+returns a guess instead of `kUnbounded` fails the build there. That half
 needs no guard (rationale §6).
 
 ⚠ **Since task 16 the check charges every literal `kIntegrateScopePrefixMaxBytes` (30) on top of its
@@ -163,6 +164,14 @@ than 32 bytes. That is typed at the call site, not here, so a tag on `kMaxString
 where nobody makes that edit. Where the rule is enforced today: `DAttackMachineSimulation.h`
 `static_assert`s that every `dAttackStateName` fits. The movement sub-simulation's `supportName`
 lambda returns at most 14 characters, and nothing asserts that. Rationale §3 has the bound.
+
+**H-2 — a `%.*f` precision argument must not exceed `kMaxStarPrecision` (9).** The check charges a
+`*` precision 9 fraction digits, whatever the argument's run-time value (rationale §4.1). The wrong
+edit is a new `OGBLOG_G(… %.*f …)` in some other header whose precision argument can exceed 9. That
+is typed at the call site, so a tag on `kMaxStarPrecision` would sit where nobody makes it. Pass
+`simFrame::lengthDecimals(n)` with n ≤ 7. Every caller at og-sim-metres-yup task 5a passes n ≤ 3.
+Nothing asserts it at the call site; an over-long line is clipped by `std::vsnprintf`, never written
+past the buffer.
 
 ---
 

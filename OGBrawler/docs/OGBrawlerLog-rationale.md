@@ -65,7 +65,9 @@ It is the sink for og-brawler's sub-simulations and systems, and it is distinct 
 `[Warning][Movement.hover]` at 551 characters, and raised it from 256. Task 7's measurement found that the
 old 256 could already clip three lines at their worst case (`[Movement.hover]` 551, `[Movement.surface]`
 299, `[Radial.setInitialConditions]` 266). Since task 16 every line is also charged the 30-character
-prefix (§5), so the widest charged line is 581, still under 1024.
+prefix (§5), so the widest charged line is 581, still under 1024. Since og-sim-metres-yup task 5a the
+lengths in both lines print through `%.*f` (§4.1), each charged 50: `[Movement.hover]` (three lengths) is
+575, 605 charged, and `[Movement.surface]` (`clearance=`) is 305; both numbers computed by the checker itself.
 
 The comment this replaces, verbatim (the prohibition in the same block is guards G-01):
 
@@ -99,7 +101,8 @@ argument **type** can produce. Each number comes from this derivation:
 | `%f` `%F` | `float` | 1 + 39 + point + fraction | sign, every integer digit of `FLT_MAX` (39), the point, the fraction (default 6) |
 | `%f` `%F` | `double` | 1 + 309 + point + fraction | as above with `DBL_MAX` (309 integer digits) |
 | `%s` | `const char*` | `kMaxStringArgBytes` or a smaller precision | §3 |
-| anything else | — | `kUnbounded` | length modifiers `h l ll z j t L`, `*`, unknown conversions, the end of the string |
+| `%.*f` `%.*F` | an `int` precision, then `float` / `double` | as `%f` with fraction `kMaxStarPrecision` (9): 50 / 320 | §4.1 |
+| anything else | — | `kUnbounded` | length modifiers `h l ll z j t L`, a `*` width, a `*` precision on any conversion but `f`/`F` or with a non-`int` argument, unknown conversions, the end of the string |
 
 `inf` and `nan` print shorter than any finite bound. A field width counts when it exceeds the bound.
 
@@ -117,6 +120,29 @@ The comments this section replaces, verbatim: the two trailing labels `// "-2147
 The self-tests at the end of the `detail` namespace pin 10, 11, 45 (`%.4f` float), 40 (`%.0f`),
 315 (`%.4f` double) and 32, every value hand-derived. An edit to a bound that does not also edit its
 self-test fails the build.
+
+### 4.1 The `*` precision — og-sim-metres-yup task 5a
+
+A simulation length prints with `%.*f` and `simFrame::lengthDecimals(n)` (`SimulationFrame.h`), so that
+its decimals follow the length unit: n at 100 units per metre, n + 2 at 1. The precision is then a
+run-time `int` argument, which the format string cannot show. The checker therefore:
+- consumes one argument for the `*`, which must classify as `Int32` (any other argument, or none, is
+  `kUnbounded`), and then the conversion's own argument as for `%f`;
+- charges the fraction `kMaxStarPrecision` (9) digits, whatever the run-time value, so `%.*f` costs
+  1 + 39 + 1 + 9 = 50 with a `float` and 1 + 309 + 1 + 9 = 320 with a `double`;
+- accepts a `*` precision only on `f`/`F`; a `*` width stays `kUnbounded`.
+
+**Why 9 covers every caller.** The routed lines pass `lengthDecimals(0)`, `lengthDecimals(2)` and
+`lengthDecimals(3)` (`[Movement.hover]`'s `maxAccel=`, its `rideHeight=`/`snapDistance=`, `[Movement.teleport]`,
+`[Ringout.respawn]`, `[Ringout.death]`; and `[Movement.surface]`'s `clearance=`), so the largest run-time
+precision is 3 + 2 = 5 at 1 unit per metre. The cap is a convention, like the `%s` bound of §3: the
+argument is a run-time value, and guards §H-2 holds the rule for callers. A precision above the cap would
+make the line longer than the check charged; `std::vsnprintf` then truncates it to the buffer and
+returns the would-be length (measured with MSVC 14.38: an 8-byte buffer given `"%.*f"`, 5,
+`123456.789f` held `123456.` and the call returned 12). It clips; it does not overflow.
+
+The self-tests pin 50, 320 and a mixed `"x=%.*f y=%u"` (2 + 50 + 3 + 10), and assert `kUnbounded` for a
+`*` precision with a `float`, a 64-bit or a missing argument, a `*` width, and `%.*s` and `%.*u`.
 
 ## 5. The integrate-scope prefix — og-netcode-v2-field-defects task 16
 
@@ -178,8 +204,8 @@ off-thread integrate must never read another thread's scope.
 These comments were deleted, because code or a compile-time check already says what they said:
 
 * `kUnbounded`'s fail-closed rule is enforced by the six fail-closed self-tests (`%llu`, a 64-bit
-  argument, `%e`, a `%s` given an `int`, too few and too many arguments) and the final
-  `!fitsLineBuffer("%u", TypeList<>{})`. The deleted comment, verbatim:
+  argument, `%e`, a `%s` given an `int`, too few and too many arguments), the seven `*` ones of §4.1,
+  and the final `!fitsLineBuffer("%u", TypeList<>{})`. The deleted comment, verbatim:
   ```
   // Returned for anything the check cannot bound: an unknown conversion, a length
   // modifier, a `*` width/precision, a 64-bit integer, an unsupported argument type, or

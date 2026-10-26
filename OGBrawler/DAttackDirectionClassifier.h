@@ -45,6 +45,7 @@
 #include "glm/ext/scalar_constants.hpp"
 
 #include "OGBrawler/DAttackSequenceId.h"
+#include "OGSimulation/SimulationFrame.h"
 
 namespace dAttackDirection
 {
@@ -80,8 +81,8 @@ inline unsigned int classify(const glm::vec3& aimDirection,
 		return kForwardSequenceId;
 
 	const glm::vec3 moveN  = glm::normalize(moveDirectionWorld);
-	const glm::vec3 moveXY = glm::normalize(glm::vec3(moveN.x, moveN.y, 0.f));
-	const glm::vec3 aimXY  = glm::normalize(glm::vec3(aimDirection.x, aimDirection.y, 0.f));
+	const glm::vec3 moveXY = glm::normalize(simFrame::flatten(moveN));
+	const glm::vec3 aimXY  = glm::normalize(simFrame::flatten(aimDirection));
 
 	// Both terms XY-projected. Using the 3D aim here inflates the angle by aim's
 	// downward z (mouse-on-floor projection from a capsule above z=0) and trips the
@@ -105,7 +106,7 @@ inline unsigned int classify(const glm::vec3& aimDirection,
 		return kForwardSequenceId;
 
 	// --- SIDE region: the only place the sign is meaningful. ------------------
-	const float signedAngle = glm::sign(glm::cross(aimXY, moveXY).z) * angle;
+	const float signedAngle = glm::sign(simFrame::turnComponent(glm::cross(aimXY, moveXY))) * angle;
 
 	// Strict `>`: an angle of exactly +kForwardConeHalfAngle lands on the right
 	// swing. Pre-existing boundary behaviour, preserved deliberately.

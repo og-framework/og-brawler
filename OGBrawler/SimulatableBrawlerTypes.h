@@ -10,6 +10,7 @@
 
 #include <vector>
 #include "glm/vec3.hpp"
+#include "OGSimulation/SimulationFrame.h"
 #include "DAttackRadialSequence.h"
 #include "OGBrawler/DAttackCircle.h"
 #include "OGBrawler/DAttackRadialSimulation.h"
@@ -185,11 +186,11 @@ public:
     explicit StaticData(
         brawlerMovementSimulation::MovementModel movementModel
             = brawlerMovementSimulation::MovementModel::ContinuousAccelBrake,
-        float    movementMaxWalkSpeed    = 100.f,
+        float    movementMaxWalkSpeed    = 1.f,
         uint32_t movementStepPeriodTicks = 20u,
-        float    movementStepSpeed       = 100.f,
-        float    movementGravity         = -980.f)
-        : m_attackCircle(6.f, 90.f, 300.f, 70.f, true, 1.f)
+        float    movementStepSpeed       = 1.f,
+        float    movementGravity         = -9.8f)
+        : m_attackCircle(6.f, 0.9f, 3.f, 0.7f, true, 1.f)
         , m_attackSequences(
             {
                 { // from idle to leftAttack
@@ -200,7 +201,7 @@ public:
                         { 0.5f, 1.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
                         { 0.6f, 3.f * PI / 8.f, DAttackRadialSequenceState::WindDown }
                     }
-                    , 0.1, glm::vec3(0.f, 0.f, 1.f)
+                    , 0.1, simFrame::kTurnAxis
                 },
                 { // from idle to rightAttack
                     {
@@ -210,7 +211,7 @@ public:
                         { 0.5f, -1.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
                         { 0.6f, -3.f * PI / 8.f, DAttackRadialSequenceState::WindDown }
                     }
-                    , 0.1, glm::vec3(0.f, 0.f, 1.f)
+                    , 0.1, simFrame::kTurnAxis
                 },
                 { // from leftAttack to leftAttack
                     {
@@ -222,7 +223,7 @@ public:
                         { 0.3f,  (16.f * PI / 8.f) - (2.f  * PI / 8.f), DAttackRadialSequenceState::Damaging },
                         { 0.4f,  (16.f * PI / 8.f) + (1.f  * PI / 8.f), DAttackRadialSequenceState::WindDown }
                     }
-                    , 0.1, glm::vec3(0.f, 0.f, 1.f)
+                    , 0.1, simFrame::kTurnAxis
                 },
                 { // from rightAttack to rightAttack
                     {
@@ -234,7 +235,7 @@ public:
                         { 0.3f,  (-16.f * PI / 8.f) + (2.f  * PI / 8.f), DAttackRadialSequenceState::Damaging },
                         { 0.4f,  (-2.f * PI) - (1.f * PI / 8.f),          DAttackRadialSequenceState::WindDown }
                     }
-                    , 0.1, glm::vec3(0.f, 0.f, 1.f)
+                    , 0.1, simFrame::kTurnAxis
                 },
                 { // from idle to rightAttack (vertical)
                     {
@@ -243,79 +244,79 @@ public:
                         { 0.4f,   1.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
                         { 0.42f,  1.5f * PI / 8.f, DAttackRadialSequenceState::WindDown }
                     }
-                    , 0.1, glm::vec3(0.f, 1.f, 0.f)
+                    , 0.1, simFrame::kVerticalTurnAxis
                 }
             }
         )
         , m_hitReactions(
             {
-                /*0 right           */ { HitReactionKind::Knockback, 2000.f, 0.f  },
-                /*1 left            */ { HitReactionKind::Knockback, 2000.f, 0.f  },
-                /*2 left -> left    */ { HitReactionKind::Knockback, 2000.f, 0.f  },
-                /*3 right -> right  */ { HitReactionKind::Knockback, 2000.f, 0.f  },
+                /*0 right           */ { HitReactionKind::Knockback, 20.f, 0.f  },
+                /*1 left            */ { HitReactionKind::Knockback, 20.f, 0.f  },
+                /*2 left -> left    */ { HitReactionKind::Knockback, 20.f, 0.f  },
+                /*3 right -> right  */ { HitReactionKind::Knockback, 20.f, 0.f  },
                 /*4 forward/overhead*/ { HitReactionKind::Stun,         0.f,  0.72f }
             }
         )
         , m_projectileHitReaction{ HitReactionKind::Stun, 0.f, 0.65f }
         // [movement-sim task 88] A projectile that hits a target ALREADY in HitFlinch (either
         // reaction kind — user ruling 2026-09-21) launches it instead of stunning it. HAND-AUTHORED:
-        // speed 1789, the user's re-tune of task 88's 2000 (the melee knockback's): 1789^2 / (2 * 4000)
-        // = 400 cm, and the dwell resolves to max(0, 1789 / launchDecel) = 0.44725 s. Selected in
+        // speed 17.89, the user's re-tune of task 88's 20 (the melee knockback's): 17.89^2 / (2 * 40)
+        // = 4 m, and the dwell resolves to max(0, 17.89 / launchDecel) = 0.44725 s. Selected in
         // brawlerHitRouting::System branch 3; pinned absolutely in BrawlerHitRoutingTest.cpp.
-        , m_projectileHitOnFlinchReaction{ HitReactionKind::Knockback, 1789.f, 0.f }
+        , m_projectileHitOnFlinchReaction{ HitReactionKind::Knockback, 17.89f, 0.f }
         , m_attackSimulationStaticData(m_attackSequences, m_attackCircle)
         , m_guardSimulationStaticData(m_attackCircle)
-        // 0.875 s × 800 cm/s = 700 cm = 7 m travel distance (T26).
+        // 0.875 s × 8 m/s = 7 m travel distance (T26).
         // 6th arg (T29; narrowed T31) = guardMiddleSectionHalfAngle 0.25 rad (≈14.3°) →
         //   only a near-centre-line guard alignment blocks the projectile, matching the
         //   radial sim's middle-section threshold (shieldAngle in dAttackRadialSimulation::wouldGuardBlock).
         // 7th arg (T30) = innerCircleRadius — the brawler attack circle inner radius, so a
         //   blocked projectile's marker lands on that circle (edge facing the shooter).
         // 8th arg (T30) = indicatorPersistTicks 20 ≈ 0.333 s at 60 Hz (radial guard-hit feel).
-        , m_projectileStaticData(800.f, 0.875f, 40.f, 60.f, 50.f, 0.25f,
+        , m_projectileStaticData(8.f, 0.875f, 0.4f, 0.6f, 0.5f, 0.25f,
                                  m_attackCircle.getInnerRadius(), 20)
         // [movement-sim task 11] THE MOVEMENT SUB-SIM'S AUTHORED CONSTANTS, and the ONLY
         // place any of them is spelled. In particular this is the ONE walk-speed literal in
-        // the tree (R-P1): 100 cm/s, now the DEFAULT of `movementMaxWalkSpeed` above.
+        // the tree (R-P1): 1 m/s, now the DEFAULT of `movementMaxWalkSpeed` above.
         // ⭐ [movement-sim task 16, 2026-09-08] FIVE OF THEM ARE NOW FORWARDED PARAMETERS —
         // model, walk speed, step period, step speed, gravity. The sim-side walk-speed global
         // and its named-pipe `MoveSpeed` case are DELETED; `OGBrawler.MoveSpeed` survives as a
         // console variable that is read ONCE, at this object's construction (ruling #3), and
         // the named-pipe spelling is now refused loudly rather than ignored.
         //
-        // Argument order is architecture §3.2's, grouped by concern:
+        // Argument order is architecture §3.2's, grouped by concern (lengths in metres):
         //   model
-        //   ContinuousAccelBrake  maxWalkSpeed 100, acceleration 2048, braking 2000
-        //   Cadence               stepPeriodTicks 20 (= 1/3 s at 60 Hz), stepSpeed 100
+        //   ContinuousAccelBrake  maxWalkSpeed 1, acceleration 20.48, braking 20
+        //   Cadence               stepPeriodTicks 20 (= 1/3 s at 60 Hz), stepSpeed 1
         //   attachment            maxSlopeAngleDeg 45 (cosMaxSlope is derived in the ctor)
-        //   gravity law           gravity -980 cm/s^2 AUTHORED (the body's own enableGravity
-        //                         is FALSE — ruling #16 a), terminalFallSpeed 2000 cm/s
-        //   hover geometry        rideHeight 10, snapDistance 40
-        //     ⭐ RULING #13, closed 2026-09-06 ON MEASUREMENT (task 9 q3: a 40 cm drop at the
-        //     exact edge of probe range — clearance hit 50.000000 == rideHeight + snapDistance —
+        //   gravity law           gravity -9.8 m/s^2 AUTHORED (the body's own enableGravity
+        //                         is FALSE — ruling #16 a), terminalFallSpeed 20 m/s
+        //   hover geometry        rideHeight 0.1, snapDistance 0.4
+        //     ⭐ RULING #13, closed 2026-09-06 ON MEASUREMENT (task 9 q3: a 0.4 m drop at the
+        //     exact edge of probe range — clearance hit 0.5 == rideHeight + snapDistance —
         //     was still detected and caught in 6 ticks). These SUPERSEDE the revision-6 text's
-        //     20 / 150, and BOTH STAND under ruling #28.
+        //     20 / 150 (centimetres), and BOTH STAND under ruling #28.
         //   hover servo           hoverFrequency 46 rad/s, hoverDampingRatio 0.62,
-        //                         hoverMaxAccel 30000 cm/s^2,
-        //                         hoverPullDownAccel 0 cm/s^2
+        //                         hoverMaxAccel 300 m/s^2,
+        //                         hoverPullDownAccel 0 m/s^2
         //     ⭐⭐ RULING #29, 2026-09-07 (movement-sim task 57). The servo is ONE-SIDED: at or
         //     below ride height it is task 56's full spring-damper; ABOVE ride height it is a
         //     bounded spring pull and nothing else, capped at hoverPullDownAccel. At the shipped
         //     0 that means gravity and nothing else -- SUPPORTED MEANS HELD UP, NEVER PULLED
         //     DOWN, which is what the user asked for after walking off a ledge under task 56.
         //     ⚠ 0 IS PROVISIONAL, LIKE omega AND zeta: it is a FEEL knob, and the user decides in
-        //     PIE whether a step-down at gravity speed (40 cm in ~17 ticks) is right or whether
-        //     it wants the 980 that makes it ~12. Read hoverPullDownAccel's comment in
+        //     PIE whether a step-down at gravity speed (0.4 m in ~17 ticks) is right or whether
+        //     it wants the 9.8 that makes it ~12. Read hoverPullDownAccel's comment in
         //     BrawlerMovementSimulation.h before moving it.
-        //     ⚠ terminalFallSpeed 2000 IS ALSO STILL OPEN under #29: with the launch gone, a fall
+        //     ⚠ terminalFallSpeed 20 IS ALSO STILL OPEN under #29: with the launch gone, a fall
         //     now needs ~1.75 s to reach it instead of ~0.5 s, and the user is considering
-        //     3000-4000 (games commonly cap at 30-40 m/s). Not this task's to change.
+        //     30-40 m/s (games commonly cap there). Not this task's to change.
         //     ⭐⭐ RULING #28, 2026-09-07 (movement-sim task 56). ONE vertical law: gravity on
         //     every tick, a spring-damper servo added while `Supported`. `k = omega^2` and
         //     `c = 2*zeta*omega` are DERIVED in the movement StaticData's constructor.
-        //     ⛔ `maxSnapSpeed 400` — ruling #13's dead-beat VELOCITY clamp — IS THE ARGUMENT
-        //     THAT WAS REMOVED HERE. Its measured value was 400 (task 54 read the clamp at
-        //     399.94 cm/s); the rev-6 text's 150 was superseded by #13 and is not a second
+        //     ⛔ `maxSnapSpeed 4` (m/s) — ruling #13's dead-beat VELOCITY clamp — IS THE ARGUMENT
+        //     THAT WAS REMOVED HERE. Its measured value was 4 (task 54 read the clamp at
+        //     399.94 cm/s); the rev-6 text's 1.5 was superseded by #13 and is not a second
         //     number. There is no dead-beat assignment left for a velocity clamp to bound.
         //     ⚠ omega AND zeta ARE PROVISIONAL FEEL DEFAULTS, NOT MEASURED ONES. The LAW is
         //     ruled; the numbers are the user's to set in PIE, and step 0's
@@ -325,42 +326,42 @@ public:
         //     (`1 - omega*dt/2` = 0.6167), chosen by the user 2026-09-07 after the shipped
         //     zeta 1 was MEASURED to ring; read `hoverDampingRatio`'s comment in
         //     BrawlerMovementSimulation.h before changing either value.
-        //   knockback             launchDecel 4000 — the LAW, and the only knockback constant
+        //   knockback             launchDecel 40 — the LAW, and the only knockback constant
         //                         left here. ⚠ [movement-sim task 27] `knockbackSpeed` MOVED OUT
         //                         of this call into `m_hitReactions` above: it is per attack now.
         //                         Travel distance is the closed form spec.knockbackSpeed²/(2·a),
-        //                         which at the authored 2000 is 2000²/8000 = 500 cm = 5 m.
-        //   dash                  dashSpeed 800, dashTicks 12 (0.2 s), dashCancelTick 8
-        //   capsule               42 / 96 — MUST equal OGBrawlerUECharacter.cpp:69's
-        //                         InitCapsuleSize; the adopt-root factory checkf's agreement
+        //                         which at the authored 20 is 20²/80 = 5 m.
+        //   dash                  dashSpeed 8, dashTicks 12 (0.2 s), dashCancelTick 8
+        //   capsule               0.42 / 0.96 — MUST equal OGBrawlerUECharacter.cpp's
+        //                         InitCapsuleSize(42, 96) in UE centimetres; the adopt-root factory checkf's agreement
         //                         rather than resizing the authored capsule.
         , m_movementStaticData(/*model=*/               movementModel,
                                /*maxWalkSpeed=*/        movementMaxWalkSpeed,
-                               /*acceleration=*/        2048.f,
-                               /*brakingDeceleration=*/ 2000.f,
+                               /*acceleration=*/        20.48f,
+                               /*brakingDeceleration=*/ 20.f,
                                /*stepPeriodTicks=*/     movementStepPeriodTicks,
                                /*stepSpeed=*/           movementStepSpeed,
                                /*maxSlopeAngleDeg=*/    45.f,
                                /*gravity=*/             movementGravity,
-                               /*terminalFallSpeed=*/   2000.f,
-                               /*rideHeight=*/          10.f,
-                               /*snapDistance=*/        40.f,
+                               /*terminalFallSpeed=*/   20.f,
+                               /*rideHeight=*/          0.1f,
+                               /*snapDistance=*/        0.4f,
                                /*hoverFrequency=*/      46.f,
                                /*hoverDampingRatio=*/   0.62f,
-                               /*hoverMaxAccel=*/       30000.f,
+                               /*hoverMaxAccel=*/       300.f,
                                /*hoverPullDownAccel=*/  0.f,
-                               /*launchDecel=*/         4000.f,
-                               /*dashSpeed=*/           800.f,
+                               /*launchDecel=*/         40.f,
+                               /*dashSpeed=*/           8.f,
                                /*dashTicks=*/           12u,
                                /*dashCancelTick=*/      8u,
-                               /*capsuleRadius=*/       42.f,
-                               /*capsuleHalfHeight=*/   96.f)
+                               /*capsuleRadius=*/       0.42f,
+                               /*capsuleHalfHeight=*/   0.96f)
         // ⛔⛔ [ringout task 2, 2026-09-13] A MEMBER OF ITS OWN, DELIBERATELY — the ring-out
         // constants are NOT appended to the 22-argument `m_movementStaticData(...)` call
         // above, and that is the whole point of this member's shape. That list is POSITIONAL:
         // every further argument added to it is one more place a future tuning edit can
         // silently shift a neighbour, and a mis-slotted float there is a physics change that
-        // compiles clean. Ring-out's three constants (`killPlaneZ`, `respawnDelayTicks`,
+        // compiles clean. Ring-out's three constants (`killPlaneHeight`, `respawnDelayTicks`,
         // `spawnPoints`) are each DEFAULTED at their own declaration in
         // `brawlerRingout::StaticData`, so a default-constructed member IS the shipped object
         // and each literal stays spelled in exactly one place — the same rule the five

@@ -11,6 +11,7 @@
 #include "DAttackCircle.h"
 #include "OGSimulation/DMathUtil.h"
 #include "DAttackVisualizationUtils.h"
+#include "OGSimulation/SimulationFrame.h"
 
 #include "OGSimulation/CompilerControl.h"
 OGSIM_OPTIMIZE_OFF
@@ -94,11 +95,11 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 
 
 	const float aimArchAngle = 0.1f;
-	rendererFunctor.drawLine(rootTranslation - input.getAimDirection() * 30.f, rootTranslation + input.getAimDirection() * radialSimulationStaticData.getAttackCircle().getOuterRadius(), 1, 1.f);
+	rendererFunctor.drawLine(rootTranslation - input.getAimDirection() * 0.3f, rootTranslation + input.getAimDirection() * radialSimulationStaticData.getAttackCircle().getOuterRadius(), 1, 0.01f);
 	// Green outer arc visualizing the forward-strike window. UE DrawDebugCircleArc sweeps
 	// from -AngleWidth to +AngleWidth (it's a half-angle — see DrawDebugHelpers.cpp:497),
 	// so π/16 gives a total span of π/8.
-	rendererFunctor.drawCircleArc(rootTranslation, input.getAimDirection(), radialSimulationStaticData.getAttackCircle().getOuterRadius(), glm::pi<float>() / 32.f, 1, 1.f);
+	rendererFunctor.drawCircleArc(rootTranslation, input.getAimDirection(), radialSimulationStaticData.getAttackCircle().getOuterRadius(), glm::pi<float>() / 32.f, 1, 0.01f);
 
 	// Inner-radius arc: a quarter circle on the character's screen-right of aim, overhanging
 	// both ends by aimArchAngle (spans -aimArchAngle .. π/2 + aimArchAngle about +Z).
@@ -110,15 +111,16 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 		const float innerArcRightExtent  = aimArchAngle;
 		const float innerArcHalfAngle    = (innerArcLeftExtent + innerArcRightExtent) * 0.5f;
 		const float innerArcCenterOffset = (innerArcLeftExtent - innerArcRightExtent) * 0.5f; // positive → CCW
-		const glm::mat4 innerArcCenterRot = glm::rotate(glm::mat4(1.f), innerArcCenterOffset, glm::vec3(0.f, 0.f, 1.f));
+		constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
+		const glm::mat4 innerArcCenterRot = glm::rotate(glm::mat4(1.f), innerArcCenterOffset, turnAxis);
 		const glm::vec3 innerArcCenter = glm::vec3(innerArcCenterRot * glm::vec4(input.getAimDirection(), 0.f));
-		rendererFunctor.drawCircleArc(rootTranslation, innerArcCenter, radialSimulationStaticData.getAttackCircle().getInnerRadius(), innerArcHalfAngle, 1, 1.f);
+		rendererFunctor.drawCircleArc(rootTranslation, innerArcCenter, radialSimulationStaticData.getAttackCircle().getInnerRadius(), innerArcHalfAngle, 1, 0.01f);
 	}
 
 	if (const std::optional<glm::vec3> rightMarkerEnd = dAttackVisualizationUtils::aimRightMarkerEnd(
 			rootTranslation, input.getAimDirection(), radialSimulationStaticData.getAttackCircle().getInnerRadius()))
 	{
-		rendererFunctor.drawLine(rootTranslation, *rightMarkerEnd, 1, 1.f);
+		rendererFunctor.drawLine(rootTranslation, *rightMarkerEnd, 1, 0.01f);
 	}
 
 
@@ -146,7 +148,7 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	//   Right strike    → π/3 horizontal arc, starting at aim and extending CW (player's
 	//                     right, matching integrate3's negative signedAngle → seq 0).
 	const float kIndicatorRadius    = radialSimulationStaticData.getAttackCircle().getInnerRadius();
-	const float kIndicatorThickness = 4.f; // green reference arcs use 1.f
+	const float kIndicatorThickness = 0.04f; // green reference arcs use 1.f
 	const unsigned int kIndicatorColor = 0; // 0 = red per DAttackCircularVisualizationUImpl::idToColor
 
 	// Shared classifier + inner-circle origin point. The block-prediction viz consumes the
@@ -181,8 +183,8 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	// attack sequence — showing "where the next attack would go" while an actual attack
 	// is in-progress is confusing, and the ongoing swing viz (DAttackRadialVisualization)
 	// already conveys the active attack.
-	constexpr float kShaftWidth   = 15.f;   // shaft perpendicular width (blade)
-	constexpr float kTriangleSide = 15.f;   // triangular tip side length (equilateral)
+	constexpr float kShaftWidth   = 0.15f;   // shaft perpendicular width (blade)
+	constexpr float kTriangleSide = 0.15f;   // triangular tip side length (equilateral)
 
 	if (!isRealAttackSequence(simulationInitialConditions.activeAttackSequence))
 	{
@@ -193,28 +195,29 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 		// handle length; the forward case reuses the same value so both indicators have
 		// visually identical handle proportions.
 		const glm::vec3 aimDirectionXY = glm::normalize(
-			glm::vec3(input.getAimDirection().x, input.getAimDirection().y, 0.f));
+			simFrame::flatten(input.getAimDirection()));
 		const float refThresholdAngle = glm::pi<float>() / 6.f;
-		const glm::mat4 refRot = glm::rotate(glm::mat4(1.f), refThresholdAngle, glm::vec3(0.f, 0.f, 1.f));
+		constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
+		const glm::mat4 refRot = glm::rotate(glm::mat4(1.f), refThresholdAngle, turnAxis);
 		const glm::vec3 refThresholdDir = glm::vec3(refRot * glm::vec4(aimDirectionXY, 0.f));
 		const glm::vec3 refFrontPoint = rootTranslation + refThresholdDir * kIndicatorRadius;
-		const glm::vec2 refLineDirXY = glm::normalize(glm::vec2(refFrontPoint.x - aimTip.x, refFrontPoint.y - aimTip.y));
+		const glm::vec2 refLineDirXY = glm::normalize(simFrame::planar(refFrontPoint - aimTip));
 		const float kSideHandleLength = std::abs(-2.f * kIndicatorRadius
-			* glm::dot(glm::vec2(refThresholdDir.x, refThresholdDir.y), refLineDirXY));
+			* glm::dot(simFrame::planar(refThresholdDir), refLineDirXY));
 
 		if (attackGeometry.kind == dAttackVisualizationUtils::AttackDirectionKind::Forward)
 		{
 			// Forward: handle starts above the character's head (top = rootTranslation + up ·
 			// innerRadius) and extends kSideHandleLength (matches L/R handle length) toward
 			// the aim tip; blade continues to aim tip. Vertical shaft.
-			const glm::vec3 up(0.f, 0.f, 1.f);
+			constexpr glm::vec3 up = simFrame::kUp;
 			const glm::vec3 top       = rootTranslation + up * kIndicatorRadius;
 			const glm::vec3 weaponDir = glm::normalize(aimTip - top);
 			const glm::vec3 handleEnd = top + weaponDir * kSideHandleLength;
 
 			// Vertical shaft: perp is in the plane containing weapon axis and +Z.
-			const glm::vec3 horizontalPerp = glm::normalize(glm::cross(weaponDir, glm::vec3(0.f, 0.f, 1.f)));
-			const glm::vec3 shaftPerp     = glm::normalize(glm::cross(weaponDir, horizontalPerp));
+			const glm::vec3 horizontalPerp = simFrame::kChartOrientation * glm::normalize(glm::cross(weaponDir, up));
+			const glm::vec3 shaftPerp     = simFrame::kChartOrientation * glm::normalize(glm::cross(weaponDir, horizontalPerp));
 			dAttackVisualizationUtils::drawWeapon(rendererFunctor,
 				top, handleEnd, aimTip, shaftPerp,
 				kIndicatorColor, kIndicatorThickness, kShaftWidth, kTriangleSide);
@@ -227,15 +230,15 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 			// continues from frontPoint outward to the aim tip.
 			const glm::vec3 frontPoint   = attackGeometry.originOnInnerCircle;
 			const glm::vec3 thresholdDir = attackGeometry.attackDirectionXY;
-			const glm::vec2 lineDirXY = glm::normalize(glm::vec2(frontPoint.x - aimTip.x, frontPoint.y - aimTip.y));
-			const float tExit         = -2.f * kIndicatorRadius * glm::dot(glm::vec2(thresholdDir.x, thresholdDir.y), lineDirXY);
-			const glm::vec3 backPoint(frontPoint.x + tExit * lineDirXY.x,
-			                         frontPoint.y + tExit * lineDirXY.y,
-			                         rootTranslation.z);
+			const glm::vec2 lineDirXY = glm::normalize(simFrame::planar(frontPoint - aimTip));
+			const float tExit         = -2.f * kIndicatorRadius * glm::dot(simFrame::planar(thresholdDir), lineDirXY);
+			const glm::vec3 backPoint = simFrame::compose(simFrame::planar(frontPoint) + tExit * lineDirXY,
+			                         simFrame::height(rootTranslation));
 
 			// Horizontal shaft: perp lies in XY plane, perpendicular to weapon axis.
 			const glm::vec3 weaponDir = glm::normalize(aimTip - backPoint);
-			const glm::vec3 shaftPerp = glm::normalize(glm::cross(weaponDir, glm::vec3(0.f, 0.f, 1.f)));
+			constexpr glm::vec3 up = simFrame::kUp;
+			const glm::vec3 shaftPerp = simFrame::kChartOrientation * glm::normalize(glm::cross(weaponDir, up));
 			dAttackVisualizationUtils::drawWeapon(rendererFunctor,
 				backPoint, frontPoint, aimTip, shaftPerp,
 				kIndicatorColor, kIndicatorThickness, kShaftWidth, kTriangleSide);
@@ -243,7 +246,7 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	}
 
 	if (glm::length(input.getMoveDirection()) > 0.0001f)
-		input.getRendererFunctorImpl().drawLine(rootTranslation - moveDirection*15.f, rootTranslation + moveDirection * radialSimulationStaticData.getAttackCircle().getInnerRadius() * 0.4f, 3, 1.f);
+		input.getRendererFunctorImpl().drawLine(rootTranslation - moveDirection*0.15f, rootTranslation + moveDirection * radialSimulationStaticData.getAttackCircle().getInnerRadius() * 0.4f, 3, 0.01f);
 
 	// render 
 

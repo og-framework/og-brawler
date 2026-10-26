@@ -2,9 +2,14 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 #include "OGBrawler/DAttackMachineSimulationRuntimeTweakables.h"
+#include "OGSimulation/DMathUtil.h"
+#include "OGSimulation/SimulationFrame.h"
 #include "glm/vec2.hpp"
 #include "glm/vec3.hpp"
+#include "glm/vec4.hpp"
+#include "glm/mat4x4.hpp"
 #include "glm/geometric.hpp"
+#include "glm/gtc/matrix_transform.hpp"
 
 #include <cmath>
 #include <optional>
@@ -81,11 +86,24 @@ inline std::optional<glm::vec3> cameraLookAim(
 {
 	if (!blockLookHeld || scheme != dAttackMachineSimulation::MovementScheme::AimRelative)
 		return std::nullopt;
-	const glm::vec3 horizontal(cameraForward.x, cameraForward.y, 0.f);
+	const glm::vec3 horizontal = simFrame::flatten(cameraForward);
 	const float horizontalLength = glm::length(horizontal);
 	if (!(horizontalLength > kMinCameraLookAimHorizontalLength))
 		return std::nullopt;
 	return horizontal / horizontalLength;
+}
+
+inline glm::vec3 cameraRelativeDirection(const glm::vec3& camForward, const glm::vec3& inputDirection)
+{
+	glm::vec3 camForwardNormalized = simFrame::flatten(camForward);
+	camForwardNormalized = glm::normalize(camForwardNormalized);
+
+	glm::mat4 camRotationMatrix;
+	dMathUtil::getRotationMatrix(simFrame::fromForwardRight(glm::vec2(0.f, -1.f), 0.f), camForwardNormalized, camRotationMatrix);
+
+	glm::vec3 normalizedDirection = glm::normalize(inputDirection);
+	glm::vec4 direction4(normalizedDirection, 0.f);
+	return glm::vec3(camRotationMatrix * direction4);
 }
 
 inline constexpr float kMoveKeysZeroTolerance = 1e-4f;

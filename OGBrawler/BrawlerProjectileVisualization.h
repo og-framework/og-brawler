@@ -84,14 +84,14 @@ void visualize(const Input<RendererFunctorType>& input,
     // Projectile body hits are shown target-side via the HitFlinch sphere
     // (DAttackTargetVisualizationTwo).
 
-    // Block → 15 cm blue (colorId 2) sphere, the EXACT radial guard-hit call shape,
+    // Block → 0.15 m blue (colorId 2) sphere, the EXACT radial guard-hit call shape,
     // but with a time-based residual lifetime (the projectile has no attack-sequence
     // boundary to clear against, so persistence is tick-stamp driven).
     for (const auto& block : derivedState.blocks)
     {
         const float residualSeconds = std::max(0.f,
             (static_cast<int>(block.tickStamp + persistTicks) - static_cast<int>(currentTick)) * dt);
-        rendererFunctor.drawSphere(block.position, 15.f, 2, residualSeconds);
+        rendererFunctor.drawSphere(block.position, 0.15f, 2, residualSeconds);
     }
 }
 

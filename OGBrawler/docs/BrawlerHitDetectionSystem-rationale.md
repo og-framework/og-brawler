@@ -322,3 +322,21 @@ What is still true, and where it went: the ledger push left this header, because
 synced and its writer is the radial's `integrate` (radial G-07). "Drop the signal push" is G-17.
 "Route from the ledger" was G-17 until task 29 moved it to routing's branch 2, where the edit is
 typed (`BrawlerHitRoutingSystem-guards.md` G-04). The dedup key is G-16 and the cap is G-15.
+
+---
+
+## 10. The frame routing through `simFrame`
+
+The guard-hit indicator (§3) is a circle-and-line intersection in the ground plane. It picks the
+ground-plane coordinates of the weapon direction, the attacker and the opponent with
+`simFrame::planar`, and builds the indicator with
+`simFrame::compose(..., simFrame::height(hit.objectPosition))`. In the Z-up, centimetre frame they were routed in ( the shipped knobs until og-sim-metres-yup tasks 17 and 19) those were
+the replaced `(x, y)` picks and `(x, y, z)` build, bit for bit. The two sums
+`attackerXY.x + t * weaponDirXY.x` and `attackerXY.y + t * weaponDirXY.y` are still written per
+component, so they are the same float operations. The intersection uses only dot products in the
+plane, so it gives the same point in either 2-D chart.
+
+`currentDirection` (the root transform applied to `DAttackRadialSequence::defaultForward()`, which
+returns `simFrame::kForward`) and the swing tangent (`swingTangentAt`, a cross product with the world
+sequence axis, signed by the authored angular velocity) are frame-covariant formula code and need no
+edit.

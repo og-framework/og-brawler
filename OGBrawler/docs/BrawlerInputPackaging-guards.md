@@ -344,8 +344,8 @@ Must-never-move: none. Was the note that the `{}` argument at the render-packer 
 
 ⛔ **Why it retired.** Task 3 replaced the six-slice input composite with the flat
 `simulatableBrawler::SyncedPlayerInput` (`using PlayerInput = SyncedPlayerInput;` in
-`SimulatableBrawlerTypes.h`). The wire now carries ONE aim, whose neutral is the `(0,0,1)` of
-`SyncedPlayerInput::zero()`; the projectile sub-simulation's `Dependencies::InputType` is its own
+`SimulatableBrawlerTypes.h`). The wire now carries ONE aim, whose neutral is the `simFrame::kUp` (`(0,1,0)`; `(0,0,1)` until og-sim-metres-yup
+task 19) of `SyncedPlayerInput::zero()`; the projectile sub-simulation's `Dependencies::InputType` is its own
 empty `PlayerInputView`, so no projectile aim is serialized at all. The projectile `PlayerInput`
 and its `(0,0,0)` `zero()` still stand in `BrawlerProjectileSimulation.h` (lines 313-315 carry the
 comment quoted above), but nothing serializes or reads that type — editing its `zero()` is no

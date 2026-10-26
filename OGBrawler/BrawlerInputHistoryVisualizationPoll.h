@@ -43,6 +43,7 @@
 #include "OGBrawler/BrawlerInputHistoryVisualizationLanes.h"
 #include "OGBrawler/BrawlerMotionMatching.h"
 #include "OGSimulation/Network/LocalInputCache.h"
+#include "OGSimulation/SimulationFrame.h"
 
 namespace brawlerInputHistoryVisualization
 {
@@ -98,8 +99,8 @@ inline CaptureRowFields captureRowFieldsOf(const simulatableBrawler::PlayerInput
 	CaptureRowFields fields;
 
 	fields.direction = directionBucketOf(
-		glm::vec2(capture.moveDirectionWorld.x, capture.moveDirectionWorld.y),
-		glm::vec3(capture.aimDirection.x, capture.aimDirection.y, 0.f),
+		simFrame::forwardRight(capture.moveDirectionWorld),
+		simFrame::flatten(capture.aimDirection),
 		deadzone);
 	fields.buttonMask = simulatableBrawler::motionButtonMask(capture.attackLeft, capture.attackRight);
 

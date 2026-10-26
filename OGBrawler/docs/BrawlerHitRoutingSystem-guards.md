@@ -196,14 +196,14 @@ third argument is `normalisedXY(hit.swingTangent, directionAwayFromAttacker(*att
 
 **The prohibition.** ⛔ Keep `directionAwayFromAttacker` as `normalisedXY`'s fallback. Do not
 normalise the tangent directly, and do not drop the fallback because the detector already returns
-a zero tangent for a degenerate hit (`BrawlerHitDetectionSystem-guards.md` G-06): a zero XY
+a zero tangent for a degenerate hit (`BrawlerHitDetectionSystem-guards.md` G-06): a zero ground-plane
 projection is exactly the case the fallback exists for.
 
-**What breaks if the edit is made.** A tangent whose XY projection is zero (or NaN) normalises to
+**What breaks if the edit is made.** A tangent whose ground-plane projection is zero (or NaN) normalises to
 NaN. That NaN becomes the slice's `hitDirectionXY`, and the movement sub-simulation multiplies it
 into the knockback velocity. ⚠ **R0, task 29: not reachable with the shipped table.** The tangent's
-XY projection is degenerate only for a swing whose world axis is not vertical. Sequences 0-3, the
-Knockback rows, rotate about the local Z axis, and the machine's aim rotation axis is ±Z, so their
+ground-plane projection is degenerate only for a swing whose world axis is not vertical. Sequences 0-3, the
+Knockback rows, rotate about the turn axis, and the machine's aim rotation axis is ±`simFrame::kTurnAxis`, so their
 tangent is horizontal and at least the inner radius long. The only horizontal-axis sequence, 4
 (forward/overhead), is a Stun, and `resolveHitReaction` discards a Stun's direction. The fence
 becomes load-bearing the day row 4 is re-tuned to a Knockback, which is a one-line data edit

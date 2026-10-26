@@ -14,8 +14,8 @@ DAttackRadialSequence::DAttackRadialSequence(const std::vector<DAttackRadialSequ
 	, m_velocityAtPoint()
 	, m_timeToReachZeroVelocity(timeToReachZeroVelocity)
 	, m_rotationAxis(rotationAxis)
-	, m_fromRotationAxisToDefaultUp(dMathUtil::getRotationMatrix(m_rotationAxis, defaultUp()))
-	//, m_fromRotationAxisToDefaultUp(dMathUtil::getRotationMatrix(defaultUp(), m_rotationAxis))
+	, m_fromRotationAxisToTurnAxis(dMathUtil::getRotationMatrix(m_rotationAxis, turnAxis()))
+	//, m_fromRotationAxisToTurnAxis(dMathUtil::getRotationMatrix(turnAxis(), m_rotationAxis))
 {
 	OG_CHECK(attackPoints.size() >= 1, "attackPoints must have at least one point");
 	OG_CHECK(attackPoints[0].time == 0.f, "First attack point must have time 0");
@@ -290,9 +290,9 @@ unsigned int DAttackRadialSequence::getAttackSegmentCount() const
 
 glm::vec2 DAttackRadialSequence::getVectorInRotationPlane(glm::vec3 vectorInWorld) const
 {
-	if (glm::length(m_rotationAxis - defaultUp()) > 0.0001f)
-		return glm::vec2(m_fromRotationAxisToDefaultUp * glm::vec4(vectorInWorld, 0.f));
+	if (glm::length(m_rotationAxis - turnAxis()) > 0.0001f)
+		return simFrame::planar(glm::vec3(m_fromRotationAxisToTurnAxis * glm::vec4(vectorInWorld, 0.f)));
 	else
-		return glm::vec2(vectorInWorld);
+		return simFrame::planar(vectorInWorld);
 }
 

@@ -78,6 +78,7 @@
 #include "OGBrawler/InputSequence/InputSequence.h"
 #include "OGBrawler/SimulatableBrawlerTypes.h"
 #include "OGSimulation/Network/LocalInputCache.h"
+#include "OGSimulation/SimulationFrame.h"
 
 namespace simulatableBrawler
 {
@@ -172,7 +173,7 @@ uint32_t resolveTriggeredActionId(const History&                             his
         [&history](uint32_t tick) { return history.at(tick); },
         currentTick,
         fields.moveStick,
-        glm::vec3(fields.aimDirection.x, fields.aimDirection.y, 0.f),
+        simFrame::flatten(fields.aimDirection),
         currentButtonsHeld,
         currentButtonsEdge,
         deadzone,

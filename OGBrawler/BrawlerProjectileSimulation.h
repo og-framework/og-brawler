@@ -18,6 +18,7 @@
 #include "OGSimulation/PhysicsDeclaration.h"
 #include "OGSimulation/QueryGeometry.h"
 #include "OGSimulation/BodyId.h"
+#include "OGSimulation/SimulationFrame.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
 #include "OGBrawler/DAttackRadialSimulation.h"
 #include "OGBrawler/BrawlerSyncedPlayerInput.h"
@@ -38,7 +39,7 @@ namespace brawlerProjectileSimulation
 static constexpr uint32_t kMaxProjectilePoolSize = 3;
 
 // Off-world parking position — far below the playfield so parked bodies never interact.
-static constexpr float kParkZ = -100000.f;
+static constexpr float kParkHeight = -1000.f;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -53,15 +54,15 @@ public:
                float maxLifetime,
                float colliderRadius,
                float spawnForwardOffset,
-               float spawnZOffset,
+               float spawnHeightOffset,
                float guardMiddleSectionHalfAngle = 0.25f,
-               float innerCircleRadius = 90.f,
+               float innerCircleRadius = 0.9f,
                uint32_t indicatorPersistTicks = 20)
         : projectileSpeed(projectileSpeed)
         , maxLifetime(maxLifetime)
         , colliderRadius(colliderRadius)
         , spawnForwardOffset(spawnForwardOffset)
-        , spawnZOffset(spawnZOffset)
+        , spawnHeightOffset(spawnHeightOffset)
         , guardMiddleSectionHalfAngle(guardMiddleSectionHalfAngle)
         , innerCircleRadius(innerCircleRadius)
         , indicatorPersistTicks(indicatorPersistTicks)
@@ -73,7 +74,7 @@ public:
     float maxLifetime;
     float colliderRadius;
     float spawnForwardOffset;
-    float spawnZOffset;
+    float spawnHeightOffset;
 
     // T29/T31 — half-angle (radians) of the guard's MIDDLE block section.
     // Matches the 'shieldAngle' middle-section threshold in dAttackRadialSimulation::wouldGuardBlock.
@@ -82,7 +83,7 @@ public:
     // (not TimeConfig-governed), so no R-P1 lint blacklist entry.
     float guardMiddleSectionHalfAngle;
 
-    // T30 — radius (cm) of the target character's inner attack circle. A blocked
+    // T30 — radius (m) of the target character's inner attack circle. A blocked
     // projectile's indicator is placed where the launch ray crosses this circle
     // (the edge facing the shooter) rather than at the character root, so the block
     // marker reads as "stopped at the guard". Duplicated explicitly here (set from
@@ -114,7 +115,7 @@ struct PhysicsSetup
         },
         {
             ShapeDescriptor{
-                SphereGeometry{30.f},
+                SphereGeometry{0.3f},
                 // [hit-resolution T13] Projectile body has its own collision category
                 // so a projectile-vs-projectile overlap can be distinguished from a
                 // projectile-vs-character-body overlap. Before T13 this was
@@ -423,7 +424,7 @@ template <typename PhysicsBodyAdapterType>
 void parkBody(PhysicsBodyAdapterType& physics, BodyId bodyId)
 {
     glm::mat4 parkTransform(1.f);
-    parkTransform[3] = glm::vec4(0.f, 0.f, kParkZ, 1.f);
+    parkTransform[3] = glm::vec4(simFrame::withHeight(glm::vec3(0.f), kParkHeight), 1.f);
     physics.setBodyTransform(bodyId, parkTransform);
     physics.setBodyLinearVelocity(bodyId, glm::vec3(0.f));
 }
@@ -547,14 +548,14 @@ void integrate(float dt,
             {
                 // T30 — place the block marker on the inner circle where the launch ray
                 // enters it (the edge facing the shooter), not at the character root.
-                // Solve |O + t*D - C|^2 = r^2 in the XY plane (O = spawnPos, D = spawnDir,
+                // Solve |O + t*D - C|^2 = r^2 in the horizontal plane (O = spawnPos, D = spawnDir,
                 // C = charPos, r = innerCircleRadius). Pick the smaller positive root —
                 // the entry point. Fallback to the struck shape's position if the ray misses.
                 glm::vec3 blockPos = detected.objectPosition;
                 bool foundIntersection = false;
-                const glm::vec2 rayO = glm::vec2(slot.spawnPos.x, slot.spawnPos.y);
-                const glm::vec2 rayD = glm::vec2(slot.spawnDir.x, slot.spawnDir.y);
-                const glm::vec2 circC = glm::vec2(charPos.x, charPos.y);
+                const glm::vec2 rayO = simFrame::planar(slot.spawnPos);
+                const glm::vec2 rayD = simFrame::planar(slot.spawnDir);
+                const glm::vec2 circC = simFrame::planar(charPos);
                 const glm::vec2 fromC = rayO - circC;
                 const float aQ = glm::dot(rayD, rayD);
                 const float bQ = 2.f * glm::dot(fromC, rayD);
@@ -568,7 +569,7 @@ void integrate(float dt,
                         t = (-bQ + sq) / (2.f * aQ);
                     if (t >= 0.f)
                     {
-                        // Preserve the projectile's z (constant-z flight by design).
+                        // Preserve the projectile's height (constant-height flight by design).
                         blockPos = slot.spawnPos + t * slot.spawnDir;
                         foundIntersection = true;
                     }

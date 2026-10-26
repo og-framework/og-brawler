@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "OGSimulation/SpatialQueryResult.h"
+#include "OGSimulation/SimulationFrame.h"
 #include "OGBrawler/SimulatableBrawler.h"
 #include "OGBrawler/BrawlerProjectileSimulation.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
@@ -53,7 +54,7 @@ inline ProjectileShooter projectileShooterOf(SimulatableBrawler& shooter)
 inline bool projectileGuardBlocks(const glm::mat4& guardTransform, const glm::vec3& spawnDir,
 	float guardMiddleSectionHalfAngle)
 {
-	glm::vec3 guardForward = glm::vec3(guardTransform[0]);
+	glm::vec3 guardForward = simFrame::forwardColumn(guardTransform);
 	const float fwdLen = glm::length(guardForward);
 	if (fwdLen > 0.0001f)
 		guardForward /= fwdLen;

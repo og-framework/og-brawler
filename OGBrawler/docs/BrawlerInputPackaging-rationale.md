@@ -106,7 +106,7 @@ discrete input:
 ## 2. `ContinuousInputFields`' defaults, and why they now pack to the neutral field for field
 
 **What the defaults are.** `aimDirection` is initialised from `SyncedPlayerInput::zero().aimDirection`
-— `(0,0,1)`, the neutral aim of the flat wire struct `simulatableBrawler::SyncedPlayerInput`, spelled
+— `simFrame::kUp` (`(0,1,0)`; `(0,0,1)` until og-sim-metres-yup task 19), the neutral aim of the flat wire struct `simulatableBrawler::SyncedPlayerInput`, spelled
 once in `zero()` in `BrawlerSyncedPlayerInput.h` (guard **G-03** forbids re-spelling it here).
 `moveStick` and `moveDirectionWorld` default to the zero vectors that struct carries.
 

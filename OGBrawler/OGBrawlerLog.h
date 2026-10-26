@@ -22,6 +22,8 @@ namespace ogblog
 
     inline constexpr std::size_t kMaxStringArgBytes = 32;
 
+    inline constexpr std::size_t kMaxStarPrecision = 9;
+
     namespace detail
     {
         inline constexpr std::size_t kUnbounded = static_cast<std::size_t>(-1) / 2;
@@ -69,13 +71,27 @@ namespace ogblog
                 std::size_t width = 0;
                 while (*p >= '0' && *p <= '9') { width = width * 10 + static_cast<std::size_t>(*p - '0'); ++p; }
                 bool hasPrecision = false;
+                bool starPrecision = false;
                 std::size_t precision = 0;
                 if (*p == '.')
                 {
                     hasPrecision = true;
                     ++p;
-                    while (*p >= '0' && *p <= '9') { precision = precision * 10 + static_cast<std::size_t>(*p - '0'); ++p; }
+                    if (*p == '*')
+                    {
+                        if (nextArg >= argCount || args[nextArg++] != ArgClass::Int32)
+                            return kUnbounded;
+                        starPrecision = true;
+                        precision = kMaxStarPrecision;
+                        ++p;
+                    }
+                    else
+                    {
+                        while (*p >= '0' && *p <= '9') { precision = precision * 10 + static_cast<std::size_t>(*p - '0'); ++p; }
+                    }
                 }
+                if (starPrecision && *p != 'f' && *p != 'F')
+                    return kUnbounded;
                 if (nextArg >= argCount)
                     return kUnbounded;
                 const ArgClass arg = args[nextArg++];
@@ -212,6 +228,16 @@ namespace ogblog
         static_assert(worstCaseFormattedLength("%u", TypeList<unsigned long long>{}) == kUnbounded);
         static_assert(worstCaseFormattedLength("%e", TypeList<float>{}) == kUnbounded);
         static_assert(worstCaseFormattedLength("%s", TypeList<int>{}) == kUnbounded);
+        static_assert(worstCaseFormattedLength("%.*f", TypeList<int, float>{}) == 50);
+        static_assert(worstCaseFormattedLength("%.*f", TypeList<int, double>{}) == 320);
+        static_assert(worstCaseFormattedLength("x=%.*f y=%u", TypeList<int, float, unsigned int>{}) == 2 + 50 + 3 + 10);
+        static_assert(worstCaseFormattedLength("%.*f", TypeList<float>{}) == kUnbounded);
+        static_assert(worstCaseFormattedLength("%.*f", TypeList<unsigned long long, float>{}) == kUnbounded);
+        static_assert(worstCaseFormattedLength("%.*f", TypeList<float, float>{}) == kUnbounded);
+        static_assert(worstCaseFormattedLength("%.*f", TypeList<int>{}) == kUnbounded);
+        static_assert(worstCaseFormattedLength("%*f", TypeList<int, float>{}) == kUnbounded);
+        static_assert(worstCaseFormattedLength("%.*s", TypeList<int, const char*>{}) == kUnbounded);
+        static_assert(worstCaseFormattedLength("%.*u", TypeList<int, unsigned int>{}) == kUnbounded);
         static_assert(!fitsLineBuffer("%u", TypeList<>{}));
     }
 }

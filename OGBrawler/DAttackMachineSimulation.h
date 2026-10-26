@@ -21,6 +21,7 @@
 #include "OGSimulation/SimulationComparisonGlm.h"
 #include "OGSimulation/SimulationFieldDescriptors.h"
 #include "OGSimulation/OGAssert.h"
+#include "OGSimulation/SimulationFrame.h"
 #include "OGBrawlerLog.h"
 
 // ∴D-03  docs/DAttackMachineSimulation-rationale.md
@@ -218,16 +219,16 @@ void setRadialSimulationInitialConditions(float deltaTime,
 {
 	attackIntialConditions.activeAttackSequence = state.m_activeAttackSequence;
 
-	const glm::vec3 aimDirection = glm::normalize(glm::vec3(input.getPlayerInput().aimDirection.x, input.getPlayerInput().aimDirection.y, 0.f));
-	const glm::vec3 defaultForward(1.f, 0.f, 0.f);
-	const glm::vec3 defaultUp(0.f, 0.f, 1.f);
+	const glm::vec3 aimDirection = glm::normalize(simFrame::flatten(input.getPlayerInput().aimDirection));
+	constexpr glm::vec3 defaultForward = simFrame::kForward;
+	constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
 	const float aimDot = glm::dot(aimDirection, defaultForward);
 	const float aimAngle = glm::acos(aimDot);
 	// ⛔G-03  docs/DAttackMachineSimulation-guards.md
 	const bool aimEqualsForward = glm::abs(glm::abs(aimDot) - 1.f) < 0.0001f;
-	const glm::vec3 aimRotationAxis = [&aimEqualsForward, &defaultUp, &defaultForward, &aimDirection]() {
+	const glm::vec3 aimRotationAxis = [&aimEqualsForward, &turnAxis, &defaultForward, &aimDirection]() {
 		if (aimEqualsForward)
-			return defaultUp;
+			return turnAxis;
 		else
 			return glm::normalize(glm::cross(defaultForward, aimDirection));
 	}();
@@ -544,15 +545,16 @@ void launchHadouken(float deltaTime,
 		input.getIntegrationUtils().getPhysicsAdapter().getBodyTransform(
 			characterBindings.capsuleBodyId)[3]);
 
-	const glm::vec3 aimXYraw(playerInput.aimDirection.x, playerInput.aimDirection.y, 0.f);
+	constexpr glm::vec3 aimFallback = simFrame::kForward;
+	const glm::vec3 aimXYraw = simFrame::flatten(playerInput.aimDirection);
 	const glm::vec3 aimXY = (glm::length(aimXYraw) < 0.0001f)
-		? glm::vec3(1.f, 0.f, 0.f)
+		? aimFallback
 		: glm::normalize(aimXYraw);
 
 	projectileIC.spawnRequestPending = 1;
 	projectileIC.spawnPos = parentPosition
 		+ aimXY * projSD.spawnForwardOffset
-		+ glm::vec3(0.f, 0.f, projSD.spawnZOffset);
+		+ simFrame::withHeight(glm::vec3(0.f), projSD.spawnHeightOffset);
 	projectileIC.spawnDir = aimXY;
 
 	state.m_activeAttackSequence = kHadoukenSequenceSentinel;

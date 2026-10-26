@@ -18,7 +18,7 @@ a view live in `BrawlerSyncedPlayerInput-rationale.md`.
 
 **Not here, because the compiler holds them:** the field order and count (the descriptor-tuple
 `static_assert`), the 39-byte size, `SimulationInput` and trivial copyability, the view contract
-`simulatableBrawler::BrawlerInputView`, and, since task 4, the `(0,0,1)` aim of `zero()` and its
+`simulatableBrawler::BrawlerInputView`, and, since task 4, the `simFrame::kUp` aim of `zero()` and its
 difference from the value-initialised aim (retired G-02 and G-01).
 
 **Provenance.** Written new by og-syncedInput-rework task 2 (2026-10-03). The two entries carry the
@@ -43,7 +43,7 @@ task 3 left it; the tag it describes was removed with this retirement.
 
 **Tag site:** `BrawlerSyncedPlayerInput.h`, on `glm::vec3 aimDirection{};` in `SyncedPlayerInput`.
 
-**The prohibition.** Do not give `aimDirection` a default member initialiser of `(0,0,1)`, or of any
+**The prohibition.** Do not give `aimDirection` a default member initialiser of `simFrame::kUp`, or of any
 value equal to the aim `SyncedPlayerInput::zero()` returns. That would make `SyncedPlayerInput{}`
 equal to `zero()`.
 
@@ -138,6 +138,8 @@ G-01, the same prohibition on those slices' `zero()`.
 
 **Now enforced by**, at the foot of `BrawlerSyncedPlayerInput.h`,
 `static_assert(simulatableBrawler::SyncedPlayerInput::zero().aimDirection == glm::vec3(0.f, 0.f, 1.f), …)`.
+*(Since og-sim-metres-yup task 5a both `zero()`'s aim and the comparison are `simFrame::kUp`, which is
+`(0,1,0)` in the shipped frame since task 19 (`(0,0,1)` before); the message says "aims at simFrame::kUp".)*
 Its message ends *"Was guard G-02 of BrawlerSyncedPlayerInput-guards.md."* It refuses both edits the
 entry names: a `zero()` that returns `SyncedPlayerInput{}` has the `(0,0,0)` aim, and any other aim
 fails the comparison. Witnessed 2026-10-03: with `zero()`'s aim set to `glm::vec3(0.f, 1.f, 0.f)`,
@@ -148,5 +150,5 @@ OGBrawlerTests stops with `error C2338` on that assertion and on no other line.
 
 ⚠ **R0 on the text above (2026-10-03).** Its last paragraph said both prohibitions are guards
 because the vector defaults are spelled `{}`. That stopped being true with this retirement. The
-other corrections it carries (+Z, the projection to XY, the queued-chain read) are facts that forbid
+other corrections it carries (the aim is up, the projection to the ground plane, the queued-chain read) are facts that forbid
 no edit, and are kept in `BrawlerSyncedPlayerInput-rationale.md` §5.

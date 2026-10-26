@@ -12,6 +12,7 @@
 #include "OGBrawler/DAttackDirectionClassifier.h"
 #include "DAttackCircle.h"
 #include "OGSimulation/OGAssert.h"
+#include "OGSimulation/SimulationFrame.h"
 
 #include "OGSimulation/CompilerControl.h"
 OGSIM_OPTIMIZE_OFF
@@ -28,23 +29,24 @@ namespace dAttackVisualizationUtils
 // `inline` is required: a namespace-scope constexpr alone has internal linkage.
 inline constexpr unsigned int kAttackDirectionColorId = 14u;
 
-inline constexpr float kAimRightMarkerOverhangCm = 10.f;
+inline constexpr float kAimRightMarkerOverhang = 0.1f;
 inline constexpr float kAimRightMarkerMinAimXYLength = 1e-4f;
 
-// End of the aim viz's horizontal marker line from the root: the XY-flattened aim turned
-// +π/2 about +Z (UE screen-right, the inner arc's side), innerRadius + 10 cm long.
+// End of the aim viz's horizontal marker line from the root: the flattened aim turned
+// +π/2 about `simFrame::kTurnAxis` (to the right, the inner arc's side), innerRadius + 0.1 m long.
 // nullopt when aim has no horizontal part (straight up/down).
 inline std::optional<glm::vec3> aimRightMarkerEnd(const glm::vec3& rootTranslation, const glm::vec3& aimDirection, float innerRadius)
 {
-	const glm::vec3 aimXY(aimDirection.x, aimDirection.y, 0.f);
+	const glm::vec3 aimXY = simFrame::flatten(aimDirection);
 	const float aimXYLength = glm::length(aimXY);
 	if (!(aimXYLength > kAimRightMarkerMinAimXYLength))
 	{
 		return std::nullopt;
 	}
-	const glm::mat4 quarterTurn = glm::rotate(glm::mat4(1.f), glm::pi<float>() / 2.f, glm::vec3(0.f, 0.f, 1.f));
+	constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
+	const glm::mat4 quarterTurn = glm::rotate(glm::mat4(1.f), glm::pi<float>() / 2.f, turnAxis);
 	const glm::vec3 rightDirXY = glm::vec3(quarterTurn * glm::vec4(aimXY / aimXYLength, 0.f));
-	return rootTranslation + rightDirXY * (innerRadius + kAimRightMarkerOverhangCm);
+	return rootTranslation + rightDirXY * (innerRadius + kAimRightMarkerOverhang);
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -161,14 +163,14 @@ void drawArcTriangle(RendererFunctorType renderFunctor, glm::vec3 worldOrigin, g
 //   handleEnd      — where the handle line ends and the shaft rectangle begins
 //   weaponEnd      — tip of the weapon (triangle apex, e.g. aim tip)
 //   shaftPerp      — unit vector perpendicular to weapon axis, in the plane the shaft
-//                    rectangle should occupy (horizontal/XY plane for side swings,
-//                    vertical plane containing weapon axis + Z for forward thrust /
+//                    rectangle should occupy (horizontal plane for side swings,
+//                    vertical plane containing weapon axis + up for forward thrust /
 //                    perpendicular to the swing rotation axis for the radial-viz active
 //                    swing). Caller computes.
 //   colorId        — draw color for all primitives
 //   handleThickness — line thickness for the handle (mid-line uses half of this)
-//   shaftWidth     — shaft rectangle perpendicular width (in cm)
-//   triangleSide   — equilateral triangle tip side length (in cm)
+//   shaftWidth     — shaft rectangle perpendicular width (in m)
+//   triangleSide   — equilateral triangle tip side length (in m)
 template <typename RendererFunctorType>
 void drawWeapon(RendererFunctorType renderFunctor,
     const glm::vec3& handleStart,
@@ -244,7 +246,7 @@ inline AttackIndicatorGeometry computeAttackIndicatorGeometry(
 		dAttackDirection::classify(aimDirection, moveDirectionWorld, moveDirection);
 
 	const glm::vec3 aimDirectionXY =
-		glm::normalize(glm::vec3(aimDirection.x, aimDirection.y, 0.f));
+		glm::normalize(simFrame::flatten(aimDirection));
 
 	AttackIndicatorGeometry geometry;
 	if (attackSequenceId == dAttackDirection::kForwardSequenceId)
@@ -259,7 +261,8 @@ inline AttackIndicatorGeometry computeAttackIndicatorGeometry(
 		const bool isLeft            = attackSequenceId == dAttackDirection::kLeftSequenceId;
 		const float thresholdOffset  = isLeft ? dAttackDirection::kForwardConeHalfAngle
 		                                      : -dAttackDirection::kForwardConeHalfAngle;
-		const glm::mat4 thresholdRot = glm::rotate(glm::mat4(1.f), thresholdOffset, glm::vec3(0.f, 0.f, 1.f));
+		constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
+		const glm::mat4 thresholdRot = glm::rotate(glm::mat4(1.f), thresholdOffset, turnAxis);
 		const glm::vec3 thresholdDir = glm::vec3(thresholdRot * glm::vec4(aimDirectionXY, 0.f));
 
 		geometry.kind                       = isLeft ? AttackDirectionKind::Left : AttackDirectionKind::Right;

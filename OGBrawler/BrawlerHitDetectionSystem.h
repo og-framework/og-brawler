@@ -18,6 +18,7 @@
 #include "OGSimulation/SystemRoleAffinity.h"
 #include "OGSimulation/SpatialQueryResult.h"
 #include "OGSimulation/OGAssert.h"
+#include "OGSimulation/SimulationFrame.h"
 #include "OGBrawler/SimulatableBrawler.h"
 #include "OGBrawler/DAttackRadialSimulation.h"
 #include "OGBrawler/BrawlerProjectileHitDetection.h"
@@ -204,9 +205,9 @@ void detectRadialHits(float deltaSeconds,
 
 			// ∴D-03  docs/BrawlerHitDetectionSystem-rationale.md
 			auto weaponHitIndicatorPosition = [&]() -> glm::vec3 {
-				const glm::vec2 weaponDirXY = glm::normalize(glm::vec2(currentDirection.x, currentDirection.y));
-				const glm::vec2 attackerXY(rootTranslation.x, rootTranslation.y);
-				const glm::vec2 opponentXY(hit.objectPosition.x, hit.objectPosition.y);
+				const glm::vec2 weaponDirXY = glm::normalize(simFrame::planar(currentDirection));
+				const glm::vec2 attackerXY = simFrame::planar(rootTranslation);
+				const glm::vec2 opponentXY = simFrame::planar(hit.objectPosition);
 				const glm::vec2 v = attackerXY - opponentXY;
 				const float innerR = staticData.getAttackCircle().getInnerRadius();
 				const float outerR = staticData.getAttackCircle().getOuterRadius();
@@ -219,7 +220,8 @@ void detectRadialHits(float deltaSeconds,
 				else
 					t = glm::dot(opponentXY - attackerXY, weaponDirXY);
 				t = glm::clamp(t, 0.f, outerR);
-				return glm::vec3(attackerXY.x + t * weaponDirXY.x, attackerXY.y + t * weaponDirXY.y, hit.objectPosition.z);
+				return simFrame::compose(glm::vec2(attackerXY.x + t * weaponDirXY.x, attackerXY.y + t * weaponDirXY.y),
+					simFrame::height(hit.objectPosition));
 			};
 
 			// ∴D-04  docs/BrawlerHitDetectionSystem-rationale.md

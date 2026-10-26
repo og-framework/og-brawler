@@ -145,7 +145,8 @@ the first place.
 
 ## G-03 — The probe shrink is still load-bearing after ruling #28
 
-**Tag site:** `BrawlerMovementSimulation.h`, immediately above `inline constexpr float kProbeShrink = 1.f;`.
+**Tag site:** `BrawlerMovementSimulation.h`, immediately above `inline constexpr float kProbeShrink = 0.01f;`
+(`= 1.f;`, in centimetres, until og-sim-metres-yup task 5a wrapped the length; task 22 wrote the metre value).
 
 **Was must-never-move:** `T3-7`. **Taxonomy clause:** F1b + F2.
 
@@ -179,7 +180,8 @@ not the geometry. See §C.
 ## G-04 — Do not build the `SupportState` axis branch here
 
 **Tag site:** `BrawlerMovementSimulation.h`, immediately above
-`inline constexpr glm::vec3 kWorldUp{0.f, 0.f, 1.f};`.
+`inline constexpr glm::vec3 kWorldUp = simFrame::kUp;` (`kWorldUp{0.f, 0.f, 1.f}` until og-sim-metres-yup
+task 5a; `(0, 1, 0)` since task 19's flip to Y up).
 
 **Was must-never-move:** `T3-13`. **Taxonomy clause:** F1a + F1d.
 
@@ -321,8 +323,8 @@ which is the pressure this design exists to remove. It also cannot see an author
 component that arrives through data rather than through a state.
 
 ⚠ **WHAT THE ARM DOES NOT DO, MEASURED AND ROUTED (task 27).** `dot(state.velocity, up)` is
-WORLD z, and on a SLOPE the tangential channel carries `knockbackSpeed · sin θ` of world z —
-1000 cm/s on a 30° face at the shipped speed — so an up-slope knockback DOES reach the true arm
+WORLD height, and on a SLOPE the tangential channel carries `knockbackSpeed · sin θ` of world height —
+10 m/s on a 30° face at the shipped speed — so an up-slope knockback DOES reach the true arm
 on the tick after the shove and loses its hover hold for the rest of the slide. The frame does not
 move with it (`n` is keyed on `walkable`, not on `support`), so the slide stays on the face.
 `BrawlerMovement.SlopeKnockbackStaysOnSlope` prints both readings and records the support state;
@@ -407,7 +409,7 @@ nobody has made. There is no value to compare.
 ⚠ **This tag sits at the tail of the longest block in the file** — step 4’s 126-line
 comment. The first code line at or after the fence is `const float vUp = channels.up;`, which
 is where the tag now sits. The `rideHeight·cosθ` arithmetic the fence follows from —
-7.07 cm at the 45° cap, 2.59 cm at 75° — is rationale, §23.
+0.0707 m at the 45° cap, 0.0259 m at 75° — is rationale, §23.
 
 ---
 

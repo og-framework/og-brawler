@@ -22,6 +22,7 @@
 #include "OGSimulation/QueryGeometry.h"
 #include "OGSimulation/SpatialQueryResult.h"
 #include "OGSimulation/OGAssert.h"
+#include "OGSimulation/SimulationFrame.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
 #include "OGBrawler/BrawlerCharacterBindings.h"
 #include "OGBrawler/DAttackMachineSimulation.h"
@@ -162,7 +163,7 @@ public:
 };
 
 // ⛔G-03  docs/BrawlerMovementSimulation-guards.md
-inline constexpr float kProbeShrink = 1.f;
+inline constexpr float kProbeShrink = 0.01f;
 
 inline constexpr BodyDescriptor kCharacterCapsuleBody{
     .simulatePhysics = true,
@@ -196,7 +197,7 @@ struct PhysicsSetup
         kCharacterCapsuleBody,
         {
             ShapeDescriptor{
-                CapsuleGeometry{42.f, 96.f},
+                CapsuleGeometry{0.42f, 0.96f},
                 CollisionCategories::single(collisionCategory::character),
                 collisionCategory::worldAndCharacter
             }
@@ -207,13 +208,13 @@ struct PhysicsSetup
     {
         glm::mat4 probeOffset(1.f);
         // ∴D-02  docs/BrawlerMovementSimulation-rationale.md
-        probeOffset[3] = glm::vec4(0.f, 0.f, -kProbeShrink, 1.f);
+        probeOffset[3] = glm::vec4(simFrame::withHeight(glm::vec3(0.f), -kProbeShrink), 1.f);
 
         const float probeRadius     = sd.capsuleRadius     - kProbeShrink;
         const float probeHalfHeight = sd.capsuleHalfHeight - kProbeShrink;
 
-        OG_CHECK(probeRadius     == sd.capsuleRadius     + probeOffset[3].z
-              && probeHalfHeight == sd.capsuleHalfHeight + probeOffset[3].z,
+        OG_CHECK(probeRadius     == sd.capsuleRadius     + simFrame::height(glm::vec3(probeOffset[3]))
+              && probeHalfHeight == sd.capsuleHalfHeight + simFrame::height(glm::vec3(probeOffset[3])),
             "brawlerMovementSimulation::PhysicsSetup::queryVolumes - the ground probe's SHRINK "
             "and its DROP are ONE TERM: probeBottom == bodyBottom requires the drop to equal "
             "the inset exactly. Move one without the other and the probe stops measuring the "
@@ -233,9 +234,9 @@ struct PhysicsSetup
 using RuntimeBindings = PhysicsRuntimeBindings;
 
 // ⛔G-04  docs/BrawlerMovementSimulation-guards.md
-inline constexpr glm::vec3 kWorldUp{0.f, 0.f, 1.f};
+inline constexpr glm::vec3 kWorldUp = simFrame::kUp;
 
-static_assert(kWorldUp.x == 0.f && kWorldUp.y == 0.f && kWorldUp.z == 1.f,
+static_assert(kWorldUp == simFrame::kUp,
     "brawlerMovementSimulation::kWorldUp - user ruling #26 (a): the hover servo MEASURES and "
     "ACTUATES on WORLD up. Tasks 20 and 48 make the axis follow SupportState; that is one "
     "branch on step 2's local, not a new value here.");
@@ -349,7 +350,7 @@ static_assert(kFlagFrozen == (1u << 0) && kFlagSupportShift == 1u
     "checksum. Moving a bit desynchronises every peer that has not shipped the same edit, and "
     "the mask and the shift have to move together or SupportState reads the wrong two bits.");
 
-inline constexpr float kPushOutEps = 0.05f;
+inline constexpr float kPushOutEps = 0.0005f;
 
 struct PhysicsDeclaration
 {
@@ -395,11 +396,11 @@ inline glm::vec2 moveTowards(glm::vec2 current, glm::vec2 target, float maxDelta
 
 inline void buildTangentFrame(const glm::vec3& n, glm::vec3& u, glm::vec3& v)
 {
-    const glm::vec3 reference = (glm::abs(n.x) < 0.9f)
-        ? glm::vec3(1.f, 0.f, 0.f)
-        : glm::vec3(0.f, 1.f, 0.f);
+    const glm::vec3 reference = (glm::abs(simFrame::planar(n).x) < 0.9f)
+        ? simFrame::kForward
+        : simFrame::kRight;
     u = glm::normalize(reference - n * glm::dot(reference, n));
-    v = glm::cross(n, u);
+    v = simFrame::kChartOrientation * glm::cross(n, u);
 }
 
 struct VelocityChannels
@@ -556,16 +557,17 @@ void integrate(float deltaSeconds,
         physics.setBodyTransform(bindings.ownBodyId, teleportPose);
         physics.setBodyLinearVelocity(bindings.ownBodyId, glm::vec3(0.f));
 
-        OGBLOG_G("[Movement.teleport] tick=%u to=(%.2f, %.2f, %.2f)",
-            tick, ic.teleportPos.x, ic.teleportPos.y, ic.teleportPos.z);
+        OGBLOG_G("[Movement.teleport] tick=%u to=(%.*f, %.*f, %.*f)",
+            tick, simFrame::lengthDecimals(2), ic.teleportPos.x, simFrame::lengthDecimals(2), ic.teleportPos.y,
+            simFrame::lengthDecimals(2), ic.teleportPos.z);
 
         OGBLOG_G("[Warning][Movement.hover] tick=%u omega=%.3f zeta=%.3f "
                  "(discrete critical zeta = %.3f; monotone needs zeta >= that AND omega < %.1f) "
-                 "k=%.1f c=%.2f maxAccel=%.0f rideHeight=%.2f snapDistance=%.2f",
+                 "k=%.1f c=%.2f maxAccel=%.*f rideHeight=%.*f snapDistance=%.*f",
             tick, sd.hoverFrequency, sd.hoverDampingRatio,
             1.f - sd.hoverFrequency * dt * 0.5f, 1.f / dt,
-            sd.hoverStiffness, sd.hoverDamping, sd.hoverMaxAccel,
-            sd.rideHeight, sd.snapDistance);
+            sd.hoverStiffness, sd.hoverDamping, simFrame::lengthDecimals(0), sd.hoverMaxAccel,
+            simFrame::lengthDecimals(2), sd.rideHeight, simFrame::lengthDecimals(2), sd.snapDistance);
     }
 
     const dAttackMachineSimulation::State& machineState =
@@ -598,8 +600,8 @@ void integrate(float deltaSeconds,
         : SupportState::Unsupported;
 
     const glm::vec3 n = walkable ? probe.normal : up;
-    glm::vec3 u(1.f, 0.f, 0.f);
-    glm::vec3 v(0.f, 1.f, 0.f);
+    glm::vec3 u(simFrame::kForward);
+    glm::vec3 v(simFrame::kRight);
     buildTangentFrame(n, u, v);
 
     const auto supportName = [](uint8_t bits) -> const char*
@@ -617,9 +619,9 @@ void integrate(float deltaSeconds,
     const uint8_t supportBits = static_cast<uint8_t>(support);
     if (supportBits != previousSupport)
     {
-        OGBLOG_G("[Movement.surface] tick=%u %s -> %s clearance=%.3f n=(%.3f, %.3f, %.3f)",
+        OGBLOG_G("[Movement.surface] tick=%u %s -> %s clearance=%.*f n=(%.3f, %.3f, %.3f)",
             tick, supportName(previousSupport), supportName(supportBits),
-            clearance, n.x, n.y, n.z);
+            simFrame::lengthDecimals(3), clearance, n.x, n.y, n.z);
     }
 
     state.flags = static_cast<uint8_t>(state.flags & ~(kFlagFrozen | kFlagSupportMask));
@@ -632,7 +634,7 @@ void integrate(float deltaSeconds,
     derivedState.lastProbePoint   = probe.blocked ? probe.impactPoint : glm::vec3(0.f);
     derivedState.lastSupportState = supportBits;
 
-    const glm::vec3 stickWorld(input.getPlayerInput().moveDirectionWorld.x, input.getPlayerInput().moveDirectionWorld.y, 0.f);
+    const glm::vec3 stickWorld = simFrame::flatten(input.getPlayerInput().moveDirectionWorld);
     const float stickDeflection = glm::length(stickWorld);
     glm::vec2 stickUV(0.f);
     if (stickDeflection > 0.f)

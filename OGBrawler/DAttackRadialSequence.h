@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 #include "OGSimulation/OGExport.h"
+#include "OGSimulation/SimulationFrame.h"
 #include <vector>
 #include "glm/vec2.hpp"
 #include "glm/vec3.hpp"
@@ -76,9 +77,9 @@ public:
 	OGBRAWLER_API float getAttackPointTime(unsigned int index) const;
 	OGBRAWLER_API unsigned int getAttackSegmentCount() const;
 
-	OGBRAWLER_API static glm::vec3 defaultUp() { return glm::vec3(0.0f, 0.0f, 1.0f);}
-	OGBRAWLER_API static glm::vec3 defaultForward() { return glm::vec3(1.0f, 0.0f, 0.0f);}
-	OGBRAWLER_API const glm::mat4& getFromRotationAxisToDefaultUp() const { return m_fromRotationAxisToDefaultUp; }
+	OGBRAWLER_API static glm::vec3 turnAxis() { constexpr glm::vec3 axis = simFrame::kTurnAxis; return axis;}
+	OGBRAWLER_API static glm::vec3 defaultForward() { constexpr glm::vec3 forward = simFrame::kForward; return forward;}
+	OGBRAWLER_API const glm::mat4& getFromRotationAxisToTurnAxis() const { return m_fromRotationAxisToTurnAxis; }
 	OGBRAWLER_API glm::vec2 getVectorInRotationPlane(glm::vec3 vectorInWorld) const;
 
 private:
@@ -90,6 +91,6 @@ private:
 
 	const float m_timeToReachZeroVelocity;
 	const glm::vec3 m_rotationAxis;
-	glm::mat4 m_fromRotationAxisToDefaultUp;
+	glm::mat4 m_fromRotationAxisToTurnAxis;
 };
 

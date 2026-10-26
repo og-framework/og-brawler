@@ -16,6 +16,7 @@
 #include "OGBrawler/BrawlerProjectileSimulation.h"
 #include "OGBrawler/HitReaction.h"
 #include "OGSimulation/OGAssert.h"
+#include "OGSimulation/SimulationFrame.h"
 #include "glm/vec2.hpp"
 #include "glm/vec3.hpp"
 #include "glm/vec4.hpp"
@@ -177,7 +178,7 @@ namespace brawlerHitRouting
     private:
         static glm::vec2 normalisedXY(const glm::vec3& v, const glm::vec2& fallback)
         {
-            const glm::vec2 xy(v.x, v.y);
+            const glm::vec2 xy = simFrame::planar(v);
             const float lengthSq = glm::dot(xy, xy);
             return lengthSq > 0.f ? xy * (1.f / glm::sqrt(lengthSq)) : fallback;
         }
@@ -187,13 +188,15 @@ namespace brawlerHitRouting
             const dAttackRadialSimulation::InitialConditions& ic =
                 attacker.getAllState().getState()
                     .get<dAttackRadialSimulation::InitialConditions>();
+            constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
+            constexpr glm::vec4 forward4(simFrame::kForward, 0.f);
             const glm::vec3 axis =
                 (glm::dot(ic.initialAimRotationAxis, ic.initialAimRotationAxis) > 0.f)
                     ? ic.initialAimRotationAxis
-                    : glm::vec3(0.f, 0.f, 1.f);
+                    : turnAxis;
             const glm::vec3 aim = glm::vec3(
                 glm::rotate(glm::mat4(1.f), ic.initialAimAngle, axis)
-                    * glm::vec4(1.f, 0.f, 0.f, 0.f));
+                    * forward4);
             return normalisedXY(aim, glm::vec2(1.f, 0.f));
         }
 

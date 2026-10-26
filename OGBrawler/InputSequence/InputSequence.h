@@ -9,6 +9,7 @@
 #include "glm/vec3.hpp"
 #include "glm/geometric.hpp"
 #include "glm/common.hpp"
+#include "OGSimulation/SimulationFrame.h"
 
 namespace inputSequence
 {
@@ -16,7 +17,7 @@ namespace inputSequence
 inline constexpr float pi = 3.14159265358979323846f;
 
 // Named aim-relative angles (radians). Forward = aim direction (0).
-// Angles increase CLOCKWISE around +Z (player looking down toward the world):
+// Angles increase CLOCKWISE seen from above (player looking down toward the world):
 //   +pi/2 = right-of-aim ("Down" in SF numpad convention),
 //   +pi   = back,
 //   -pi/2 = left-of-aim.
@@ -62,7 +63,7 @@ inline constexpr uint32_t kHistoryWindowFrames = 30;
 // when stick is below deadzone or the reference forward is degenerate.
 //
 // Convention: angle 0 = stick aligned with referenceForwardXY (numpad 6).
-// Angle increases CLOCKWISE around +Z, so +pi/2 = right-of-aim (numpad 2),
+// Angle increases CLOCKWISE seen from above, so +pi/2 = right-of-aim (numpad 2),
 // +pi = back (numpad 4), -pi/2 = left-of-aim (numpad 8).
 //
 // Deterministic across CPUs — uses glm::clamp + std::atan2.
@@ -72,13 +73,13 @@ inline std::optional<float> aimRelativeAngle(glm::vec2 stick, glm::vec3 referenc
     if (glm::length(stick) < deadzone)
         return std::nullopt;
 
-    const glm::vec2 refXY(referenceForwardXY.x, referenceForwardXY.y);
+    const glm::vec2 refXY = simFrame::forwardRight(referenceForwardXY);
     const float refLen = glm::length(refXY);
     if (refLen < 1e-6f)
         return std::nullopt;
 
     const glm::vec2 fwd   = refXY / refLen;
-    const glm::vec2 right(fwd.y, -fwd.x); // 90° clockwise of forward (right-hand z-up).
+    const glm::vec2 right(fwd.y, -fwd.x); // `fwd` turned 90° clockwise in the (forward, right) chart.
     const glm::vec2 sNorm = glm::normalize(stick);
 
     const float dotF = glm::clamp(glm::dot(fwd,   sNorm), -1.f, 1.f);
@@ -116,8 +117,8 @@ inline bool stickMatchesStep(const glm::vec3& moveDirectionWorld,
                              float             deadzone)
 {
     const auto angleOpt = aimRelativeAngle(
-        glm::vec2(moveDirectionWorld.x, moveDirectionWorld.y),
-        glm::vec3(aimDirection.x, aimDirection.y, 0.f),
+        simFrame::forwardRight(moveDirectionWorld),
+        simFrame::flatten(aimDirection),
         deadzone);
     if (!angleOpt)
         return false;

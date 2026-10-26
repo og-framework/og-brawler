@@ -116,7 +116,7 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 			const glm::mat4 segmentMiddleRotation = glm::rotate(glm::mat4(1.f), segment.startAngle + (segment.endAngle - segment.startAngle) * 0.5f, worldSequenceRotationAxis);
 			glm::vec3 segmentDirection = glm::vec3(segmentMiddleRotation * initialDirection);
 			//dAttackVisualizationUtils::drawSegmentOutline(rendererFunctor, rootTranslation, segmentDirection, worldSequenceRotationAxis, segment.endAngle - segment.startAngle, circle.getOuterRadius(), circle.getInnerRadius(), colorId, 3.f);
-			dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, rootTranslation, segmentDirection, worldSequenceRotationAxis, segment.endAngle - segment.startAngle, circle.getOuterRadius(), circle.getInnerRadius(), colorId, 3.f, segmentAlpha);
+			dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, rootTranslation, segmentDirection, worldSequenceRotationAxis, segment.endAngle - segment.startAngle, circle.getOuterRadius(), circle.getInnerRadius(), colorId, 0.03f, segmentAlpha);
 		}
 	}
 
@@ -152,16 +152,16 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 
 		dAttackVisualizationUtils::drawWeapon(rendererFunctor,
 			handleStart, handleEnd, bladeTip, shaftPerp,
-			0 /*Red*/, 4.f /*handleThickness*/, 15.f /*shaftWidth*/, 15.f /*triangleSide*/);
+			0 /*Red*/, 0.04f /*handleThickness*/, 0.15f /*shaftWidth*/, 0.15f /*triangleSide*/);
 	}
 
 	// [hit-resolution T4] The world-space red-point body-hit loop was removed here:
 	// body hits are routed manager-side (T3), not drawn as viz markers. Body
 	// hits are shown target-side via the HitFlinch sphere (DAttackTargetVisualizationTwo).
-	// Guard-hit indicator: 15 cm blue (colorId 2) sphere at every position where the
+	// Guard-hit indicator: 0.15 m blue (colorId 2) sphere at every position where the
 	// weapon intersected another character's guard. Populated by brawlerHitDetection::detectRadialHits alongside guardBlockedThisTick.
 	for (const auto& hit : radialSimulationDerivedState.getGuardHits())
-		rendererFunctor.drawSphere(hit.position, 15.f, 2, 0.333f);
+		rendererFunctor.drawSphere(hit.position, 0.15f, 2, 0.333f);
 }
 
 
@@ -264,7 +264,7 @@ void visualize2(const Input<RendererFunctorType, LoggingFunctorType>& input,
 				const glm::mat4 segmentMiddleRotation = glm::rotate(glm::mat4(1.f), segment.startAngle + (segment.endAngle - segment.startAngle) * 0.5f, worldSequenceRotationAxis);
 				glm::vec3 segmentDirection = glm::vec3(segmentMiddleRotation * initialDirection);
 				//dAttackVisualizationUtils::drawSegmentOutline(rendererFunctor, rootTranslation, segmentDirection, worldSequenceRotationAxis, segment.endAngle - segment.startAngle, circle.getOuterRadius(), circle.getInnerRadius(), colorId, 3.f);
-				dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, rootTranslation, segmentDirection, worldSequenceRotationAxis, segment.endAngle - segment.startAngle, circle.getOuterRadius(), circle.getInnerRadius(), colorId, 3.f, segmentAlpha);
+				dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, rootTranslation, segmentDirection, worldSequenceRotationAxis, segment.endAngle - segment.startAngle, circle.getOuterRadius(), circle.getInnerRadius(), colorId, 0.03f, segmentAlpha);
 			}
 	}
 
@@ -300,16 +300,16 @@ void visualize2(const Input<RendererFunctorType, LoggingFunctorType>& input,
 
 		dAttackVisualizationUtils::drawWeapon(rendererFunctor,
 			handleStart, handleEnd, bladeTip, shaftPerp,
-			0 /*Red*/, 4.f /*handleThickness*/, 15.f /*shaftWidth*/, 15.f /*triangleSide*/);
+			0 /*Red*/, 0.04f /*handleThickness*/, 0.15f /*shaftWidth*/, 0.15f /*triangleSide*/);
 	}
 
 	// [hit-resolution T4] The world-space red-point body-hit loop was removed here:
 	// body hits are routed manager-side (T3), not drawn as viz markers. Body
 	// hits are shown target-side via the HitFlinch sphere (DAttackTargetVisualizationTwo).
-	// Guard-hit indicator: 15 cm blue (colorId 2) sphere at every position where the
+	// Guard-hit indicator: 0.15 m blue (colorId 2) sphere at every position where the
 	// weapon intersected another character's guard.
 	for (const auto& hit : radialSimulationDerivedState.getGuardHits())
-		rendererFunctor.drawSphere(hit.position, 15.f, 2, 0.333f);
+		rendererFunctor.drawSphere(hit.position, 0.15f, 2, 0.333f);
 }
 
 }

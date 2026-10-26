@@ -8,9 +8,11 @@
 #include <cstring>
 #include <string>
 #include <vector>
+#include "glm/vec2.hpp"
 #include "glm/vec3.hpp"
 #include "OGSimulation/SimulationDependencies.h"
 #include "OGSimulation/SimulationFieldDescriptors.h"
+#include "OGSimulation/SimulationFrame.h"
 #include "OGBrawler/BrawlerMovementSimulation.h"
 #include "OGBrawler/BrawlerSyncedPlayerInput.h"
 #include "OGBrawlerLog.h"
@@ -26,27 +28,27 @@ inline constexpr uint32_t kMaxSpawnPoints = 8u;
 class StaticData
 {
 public:
-    StaticData(float killPlaneZ = -500.f,
+    StaticData(float killPlaneHeight = -5.f,
                uint32_t respawnDelayTicks = 120u,
                // ∴D-02  docs/BrawlerRingoutSimulation-rationale.md
                std::array<glm::vec3, kMaxSpawnPoints> spawnPoints = {
-                   glm::vec3(-200.f, -200.f, 200.f),
-                   glm::vec3( 200.f, -200.f, 200.f),
-                   glm::vec3(-200.f,  200.f, 200.f),
-                   glm::vec3( 200.f,  200.f, 200.f),
-                   glm::vec3(2200.f, 1150.f, 120.f),
-                   glm::vec3(2200.f, 1800.f, 120.f),
-                   glm::vec3(2500.f, 1450.f, 120.f),
-                   glm::vec3(1450.f, 1950.f, 120.f)
+                   glm::vec3(-2.f, 2.f, 2.f),
+                   glm::vec3(-2.f, 2.f, -2.f),
+                   glm::vec3(2.f, 2.f, 2.f),
+                   glm::vec3(2.f, 2.f, -2.f),
+                   glm::vec3(11.5f, 1.2f, -22.f),
+                   glm::vec3(18.f, 1.2f, -22.f),
+                   glm::vec3(14.5f, 1.2f, -25.f),
+                   glm::vec3(19.5f, 1.2f, -14.5f)
                })
-        : killPlaneZ(killPlaneZ)
+        : killPlaneHeight(killPlaneHeight)
         , respawnDelayTicks(respawnDelayTicks)
         , spawnPoints(spawnPoints)
     {}
 
     StaticData(const StaticData&) = default;
 
-    float killPlaneZ;
+    float killPlaneHeight;
 
     uint32_t respawnDelayTicks;
 
@@ -70,11 +72,13 @@ inline bool levelSpawnPointOrderBefore(const LevelSpawnPoint& a, const LevelSpaw
 {
     if (a.name != b.name)
         return a.name < b.name;
-    if (spawnOrderBits(a.position.x) != spawnOrderBits(b.position.x))
-        return spawnOrderBits(a.position.x) < spawnOrderBits(b.position.x);
-    if (spawnOrderBits(a.position.y) != spawnOrderBits(b.position.y))
-        return spawnOrderBits(a.position.y) < spawnOrderBits(b.position.y);
-    return spawnOrderBits(a.position.z) < spawnOrderBits(b.position.z);
+    const glm::vec2 aForwardRight = simFrame::forwardRight(a.position);
+    const glm::vec2 bForwardRight = simFrame::forwardRight(b.position);
+    if (spawnOrderBits(aForwardRight.x) != spawnOrderBits(bForwardRight.x))
+        return spawnOrderBits(aForwardRight.x) < spawnOrderBits(bForwardRight.x);
+    if (spawnOrderBits(aForwardRight.y) != spawnOrderBits(bForwardRight.y))
+        return spawnOrderBits(aForwardRight.y) < spawnOrderBits(bForwardRight.y);
+    return spawnOrderBits(simFrame::height(a.position)) < spawnOrderBits(simFrame::height(b.position));
 }
 
 inline std::array<glm::vec3, kMaxSpawnPoints> spawnPointsFromLevelPlacements(
@@ -213,9 +217,10 @@ inline void integrate(const AllInput& input,
             movementIc.teleportPending = 1u;
             movementIc.teleportPos     = sd.spawnPoints[ic.spawnSlot];
 
-            OGBLOG_G("[Ringout.respawn] tick=%u slot=%u to=(%.2f, %.2f, %.2f)",
+            OGBLOG_G("[Ringout.respawn] tick=%u slot=%u to=(%.*f, %.*f, %.*f)",
                 tick, ic.spawnSlot,
-                movementIc.teleportPos.x, movementIc.teleportPos.y, movementIc.teleportPos.z);
+                simFrame::lengthDecimals(2), movementIc.teleportPos.x, simFrame::lengthDecimals(2), movementIc.teleportPos.y,
+                simFrame::lengthDecimals(2), movementIc.teleportPos.z);
         }
         else
         {
@@ -227,14 +232,15 @@ inline void integrate(const AllInput& input,
     // ∴D-01  docs/BrawlerRingoutSimulation-rationale.md
     else if (!isDead(state)
              && movementIc.teleportPending == 0u
-             && movementState.bodyState.position.z < sd.killPlaneZ)
+             && simFrame::height(movementState.bodyState.position) < sd.killPlaneHeight)
     {
         state.flags         = static_cast<uint8_t>(state.flags | kFlagDead);
         state.respawnAtTick = tick + sd.respawnDelayTicks;
         derived.diedThisTick = true;
 
-        OGBLOG_G("[Ringout.death] tick=%u z=%.2f killPlaneZ=%.2f respawnAtTick=%u",
-            tick, movementState.bodyState.position.z, sd.killPlaneZ, state.respawnAtTick);
+        OGBLOG_G("[Ringout.death] tick=%u height=%.*f killPlaneHeight=%.*f respawnAtTick=%u",
+            tick, simFrame::lengthDecimals(2), simFrame::height(movementState.bodyState.position),
+            simFrame::lengthDecimals(2), sd.killPlaneHeight, state.respawnAtTick);
     }
 }
 

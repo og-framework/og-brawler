@@ -135,7 +135,7 @@ was re-resolved from positions that had moved, so the throw curved. Both contain
 both are still needed. Branch 3 has had the same shape since og-netcode-v2-field-defects task 17: a
 per-pass outcome the detector resets, never the slot's persistent `endReason`. (The 8.0 / 5.17 m
 figures are task 83's; they were not re-measured here. 5.17 m is the explicit per-tick decay from
-2000 cm/s at 4000 cm/s² and 60 Hz.)
+20 m/s at 40 m/s² and 60 Hz.)
 
 ⚠ R0: the pristine says each hit "fires exactly once". It fires once per DETECTION. Since task 27 a
 mid-swing attacker that a resim does not integrate (NoSlot) re-detects its target on each skipped
@@ -155,7 +155,7 @@ detected and routed again on each skipped pass, the accepted residual of
 **Stun, or launch a target already flinching** (movement-sim task 88; guards G-06). The spec is
 `m_projectileHitReaction` (a Stun), or `m_projectileHitOnFlinchReaction` (a Knockback) when the target
 is in `HitFlinch`, whatever its reaction kind (user ruling 2026-09-21); the machine's cross-kind
-rules do the rest. The direction is the shot's `spawnDir` projected to XY, falling back to +X; a Stun
+rules do the rest. The direction is the shot's `spawnDir` projected to the ground plane, falling back to forward (`(1, 0)`); a Stun
 discards it. The target's machine state is read in THIS pass, before any `integrate`, so a melee hit
 routed in the same pass has not reached the target's machine yet and a same-pass projectile sees the
 pre-hit state and stays a Stun (pinned by `HitRouting.ProjectileOnFlinchSameTickStaysAStun`). Both
@@ -209,8 +209,8 @@ rule: a zero decel is an infinite slide with a zero-length lockout.
 The direction is the swing tangent: the way the weapon was travelling through the hit, the user's
 "orthogonal to the weapon at the moment of the hit". The detector computes it where the projection
 onto the swing plane and the authored angular velocity are already in hand, and routing does not
-re-derive it. Movement-sim task 27's away-from-attacker rule (target minus attacker position, XY,
-falling back to the attacker's initial aim) is the fallback when the tangent's XY projection is
+re-derive it. Movement-sim task 27's away-from-attacker rule (target minus attacker position, in the
+ground plane, falling back to the attacker's initial aim) is the fallback when the tangent's ground-plane projection is
 degenerate (guards G-05). Both arguments are always evaluated; that buys a rule that cannot be
 reached with a half-initialised fallback.
 
@@ -220,9 +220,10 @@ reached with a half-initialised fallback.
   aim fallback).
 * the pristine says the fallback "is still load-bearing" because a horizontal-axis swing has a
   vertical tangent. That mechanism is real but no shipped Knockback row reaches it: rows 0-3 rotate
-  about local Z, the aim rotation axis is ±Z (`dAttackMachineSimulation::setRadialSimulationInitialConditions`),
+  about local Z, the aim rotation axis is ±Z (`dAttackMachineSimulation::setRadialSimulationInitialConditions`;
+  in the frame's terms both are the turn axis, `simFrame::kTurnAxis`, §9),
   so their tangent is a horizontal unit vector (the annulus gate keeps the hit's in-plane radius above
-  the 90 cm inner radius). Row 4, the only local-Y sequence, is a Stun, and its direction is discarded.
+  the 0.9 m inner radius). Row 4, the only local-Y sequence, is a Stun, and its direction is discarded.
   The fallback is reached today only by a planted vertical tangent
   (`HitRouting.KnockbackDirectionIsTheSwingTangentWithFallback`, section 3, whose own comment says
   the geometry is not reachable through the shipped table) or a NaN tangent (§4.3). A re-tune of row 4
@@ -239,7 +240,7 @@ The detector's G-06 carried this note about this header's code. Task 29 moved it
 > comparison direction from mattering.
 
 Re-verified by task 29 against the header. `attackerAimXY` ends in the same `normalisedXY`, so a NaN
-aim angle there falls back to +X the same way.
+aim angle there falls back to the chart's forward, `(1, 0)` (`simFrame::kForward`, −Z in the shipped frame), the same way.
 
 ---
 
@@ -329,6 +330,24 @@ at T16, the system at the OGSim system-API initiative, og-brawler `361b274`); th
 task-83 arithmetic (8.0 + 5.17 = 13.17 m); `HitRouting.ProjectileOnFlinchSameTickStaysAStun`; the
 Stun discarding the direction; `m_projectileHitReaction` being a Stun; branch 4 needing no lookup;
 `hasHitGuard` having ridden the wire.
+
+## 9. The frame routing through `simFrame`
+
+The direction picks and the aim fallback go through og-simulation's frame vocabulary, `simFrame`
+(`OGSimulation/SimulationFrame.h`). In the Z-up, centimetre frame they were routed in ( the shipped knobs until og-sim-metres-yup tasks 17 and 19) each routed expression gave the same
+bits as the literal it replaced.
+
+* **`normalisedXY` picks the ground-plane coordinates with `simFrame::planar(v)`**, the shipped
+  `(v.x, v.y)`. `hitDirectionXY` is a 2-D chart value, (forward, right). The movement sub-simulation
+  writes it into its tangent basis, and that basis carries the chart orientation
+  (`BrawlerMovementSimulation-rationale.md` §18), so the two stay aligned when the frame changes.
+  The fallback `glm::vec2(1.f, 0.f)` is the chart's forward and is not a frame literal.
+* **`attackerAimXY`** rotates `forward4`, `simFrame::kForward` with a zero w, by the attacker's
+  initial aim. When the stored axis is zero it falls back to `turnAxis`, `simFrame::kTurnAxis`, the
+  axis the machine also falls back to (`DAttackMachineSimulation-rationale.md` §16). Both are
+  `constexpr` locals, the constant-folding form for a vocabulary constant that enters arithmetic.
+  The same section says what that form does not fix: the zero signs of the stored aim axis this
+  branch reads, which depend on how the compiler optimises the machine, not on its source.
 
 ---
 

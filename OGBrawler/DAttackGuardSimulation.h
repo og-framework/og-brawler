@@ -18,6 +18,7 @@
 #include "OGSimulation/PhysicsDeclaration.h"
 #include "OGSimulation/QueryGeometry.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
+#include "OGSimulation/SimulationFrame.h"
 
 #include "OGSimulation/CompilerControl.h"
 OGSIM_OPTIMIZE_OFF
@@ -66,7 +67,7 @@ struct PhysicsSetup
 		},
 		{   // shapes
 			ShapeDescriptor{
-				SphereGeometry{40.f},
+				SphereGeometry{0.4f},
 				CollisionCategories::single(collisionCategory::guard)
 			}
 		}
@@ -198,7 +199,8 @@ struct PhysicsDeclaration
 	}
 	static glm::vec3 attachmentOffset(const StaticData& sd) {
 		(void)sd;
-		return glm::vec3(0.f, 0.f, 30.f);
+		constexpr glm::vec3 offset = simFrame::kUp * 0.3f;
+		return offset;
 	}
 
 	using StateType = dAttackGuardSimulation::State;
@@ -260,10 +262,10 @@ void integrate(float deltaSeconds,
 	const glm::mat4 parentTransform = physics.getBodyTransform(bindings.parentBodyId);
 	const glm::vec3 rootTranslation = glm::vec3(parentTransform[3]) + bindings.attachmentOffset;
 
-	const glm::vec3 rawAim(input.getPlayerInput().aimDirection.x, input.getPlayerInput().aimDirection.y, 0.f);
+	const glm::vec3 rawAim = simFrame::flatten(input.getPlayerInput().aimDirection);
 	const float aimLen = glm::length(rawAim);
-	const glm::vec3 defaultForward(1.f, 0.f, 0.f);
-	const glm::vec3 defaultUp(0.f, 0.f, 1.f);
+	constexpr glm::vec3 defaultForward = simFrame::kForward;
+	constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
 
 	// When there is no aim input, fall back to default forward to avoid NaN from normalizing a zero vector.
 	const glm::vec3 aimDirection = (aimLen > 0.0001f) ? (rawAim / aimLen) : defaultForward;
@@ -285,15 +287,15 @@ void integrate(float deltaSeconds,
 	// THE BAND, and why it tests |aimDot| rather than aimDot: cross(defaultForward,
 	// aim) is the ZERO VECTOR at BOTH poles, and glm::normalize of it divides by zero.
 	// acos returns an UNSIGNED angle, so at the antiparallel pole every axis normal to
-	// the XY plane gives the same rotation and defaultUp is a legitimate substitute.
+	// the horizontal plane gives the same rotation and turnAxis is a legitimate substitute.
 	// Inside the band (an aim within ~0.81 degrees of ±forward) the sign of the tiny
 	// residual angle is therefore NOT preserved — accepted deliberately: 0.81 degrees
-	// of facing on a 40 cm sphere, against a NaN-free normalize. Pinned by that same
+	// of facing on a 0.4 m sphere, against a NaN-free normalize. Pinned by that same
 	// test case, which asserts the band branch is the one a near-pole aim takes.
 	const bool aimEqualsForward = glm::abs(glm::abs(aimDot) - 1.f) < 0.0001f;
-	const glm::vec3 aimRotationAxis = [&aimEqualsForward, &defaultUp, &defaultForward, &aimDirection]() {
+	const glm::vec3 aimRotationAxis = [&aimEqualsForward, &turnAxis, &defaultForward, &aimDirection]() {
 		if (aimEqualsForward)
-			return defaultUp;
+			return turnAxis;
 		else
 			return glm::normalize(glm::cross(defaultForward, aimDirection));
 		}();

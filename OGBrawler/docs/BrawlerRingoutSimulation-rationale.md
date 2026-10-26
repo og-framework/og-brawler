@@ -177,15 +177,21 @@ member initializer** and is not a constructor parameter at all. The consequence 
 declaration per literal, and a default-constructed object that is the shipped object — holds for
 both, so only the word "exactly" is wrong.
 
-**`killPlaneZ`.** Ruling 6: the kill plane is a SINGLE authored world-Z plane. Strictly below it
+**`killPlaneHeight`** (named killPlaneZ until og-sim-metres-yup task 22, which also renamed the `[Ringout.death]` log field to `killPlaneHeight=`). Ruling 6: the kill plane is a SINGLE authored world height. Strictly below it
 you are dead. Not a volume, not a per-level shape — one float, compared once per character per
-tick. The strictness of that comparison is pinned by a case in the suite.
+tick. The strictness of that comparison is pinned by a case in the suite. Since og-sim-metres-yup
+task 5a the float is a height along `simFrame::kUp` (`SimulationFrame.h`). The comparison reads
+`simFrame::height(position)`, and the default is `-5.f`: 5 m below the origin along `simFrame::kUp` (world Y,
+the UE −500 cm). The field kept its old name until the initiative's
+rename stage.
 
 **`respawnDelayTicks`.** 120 ticks == 2.0 s at 60 Hz. The countdown is an ABSOLUTE tick, not a
 remaining duration — see guard **G-02** for why, and for the two assertions that now enforce it.
 
 **`spawnPoints`.** Ruling 7: an AUTHORED spawn table with a deterministic per-character index.
-There is no penalty for dying — a respawn goes to this character's own slot, every time.
+There is no penalty for dying — a respawn goes to this character's own slot, every time. The eight
+fallback positions are native metre, Y-up literals (og-sim-metres-yup task 22; task 5a had wrapped the
+centimetre, Z-up numbers with simFrame's position wrapper), each the vector that wrapper returned.
 
 > The positions are placeholder authoring, sized to the level this mode ships on. They
 > are tuning values, not derived ones — change them here and nowhere else.
@@ -313,6 +319,14 @@ total order on every input there is. It is not a NUMERIC order (−0.f sorts awa
 negatives sort above positives) and it does not need to be: it is a tie-break, its only job is to
 be TOTAL and to be identical on every peer, and the values it orders come from the same asset on
 every peer.
+
+**Which components, in which order.** The three keys after the name are
+`simFrame::forwardRight(position).x`, `simFrame::forwardRight(position).y` and
+`simFrame::height(position)`: forward, right, up (og-sim-metres-yup task 5a, routing rule 2b, input
+space). In the Z-up frame they were routed in those were `position.x`, `.y` and `.z`, bit for bit, so the order is the
+one the paragraphs above describe. In the Y-up frame the same picks read the same physical
+components, so a level's placements keep their slots across the axis flip. They are input-space picks
+and not chart picks, so the order also survives the later change of planar chart.
 
 > ⚠ AND A FLOAT-COMPARING VERSION COULD NOT BE RED-PROBED ON THIS BUILD ANYWAY. The
 > low-level-test target compiles `/fp:fast` ..., under which MSVC may assume no NaN exists and
@@ -460,8 +474,12 @@ front of them, and the header's own explanation of it was wrong.**
 ```cpp
 else if (!isDead(state)
          && movementIc.teleportPending == 0u
-         && movementState.bodyState.position.z < sd.killPlaneZ)
+         && simFrame::height(movementState.bodyState.position) < sd.killPlaneHeight)
 ```
+
+*(The third term read `movementState.bodyState.position.z` until og-sim-metres-yup task 5a. `height`
+is the signed pick along `simFrame::kUp`, which was `.z` in the Z-up frame and is `.y` since task 19, so
+nothing below changes.)*
 
 The header said the `else` was load-bearing twice over — against the respawn arm, because *"a plain
 `if` would re-arm the countdown on the very tick it expired"*, and against itself, because

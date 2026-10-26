@@ -45,8 +45,9 @@ before this task: the `RuntimeBindings` alias and the `staticDataOf` member temp
 vectors past 1, `td` is NaN while `normalizedCollisionDirection` is still finite. With the
 positive gate, `NaN < x` is false, the function returns `false`, and the attack lands. With the
 negated early return, `NaN >= x` is also false. Control then falls into the inner test,
-`td < shieldAngle` is false, and the `else` arm reads `guardAxis.z` from a finite, near-zero
-`glm::cross`. That z can have either sign, so the swing can be reported as **blocked** on NaN.
+`td < shieldAngle` is false, and the `else` arm reads `simFrame::turnComponent(guardAxis)` (the
+component along the turn axis, `-y` in the shipped frame) from a finite, near-zero `glm::cross`. That component can have
+either sign, so the swing can be reported as **blocked** on NaN.
 (A NaN from `normalize` of a zero vector propagates into `guardAxis` and returns `false` under
 both forms. Only the rounding NaN separates them.)
 
@@ -233,9 +234,10 @@ aim other than `glm::vec3(0.f, 0.f, 1.f)`. The value was copied verbatim from wh
 
 **What breaks if the edit is made.**
 * ⛔ **Not a NaN hazard; corrected at task 19.** Both halves of the fence's first sentence are false.
-  `(0,0,1)` is +Z, which is `defaultUp`, not forwards: `DAttackRadialSequence::defaultForward()` is
-  `(1,0,0)`. And no reader normalizes the raw aim. The machine, the guard and
-  `DAttackDirectionClassifier.h` all project to XY first, where `(0,0,1)` and `(0,0,0)` are the same zero
+  `(0,0,1)` was +Z, the up axis (defaultUp, now `DAttackRadialSequence::turnAxis()`), not forwards:
+  `DAttackRadialSequence::defaultForward()` was `(1,0,0)` (the Z-up frame of task 19's fence; both are
+  `simFrame` axes now). And no reader normalizes the raw aim. The machine, the guard and
+  `DAttackDirectionClassifier.h` all project to the ground plane first, where `(0,0,1)` and `(0,0,0)` are the same zero
   vector, and the guard substitutes `defaultForward` below length 1e-4. The radial never reads its own
   slice's aim. Task 18 found the same sentence false in the machine header, and task 19 confirmed it here.
 * `SimulationInputResolutionTest.cpp`'s `isGameZeroInput` tells the injected neutral input apart
@@ -291,7 +293,7 @@ record an under-described entry as a finding, and this is that finding. The edit
 different statement from G-01's, so it needs its own site (§9.3, the `no (elsewhere)` row: one id
 per site).
 
-**The prohibition.** Do not give `aimDirection` a default member initialiser of `(0,0,1)`, or of
+**The prohibition.** Do not give `aimDirection` a default member initialiser of `simFrame::kUp`, or of
 any value equal to `zero()`'s aim. That would make `PlayerInput{}` equal to `zero()`.
 
 **What breaks if the edit is made.** The same anti-vacuity blind spot as G-01. Nothing fails, and

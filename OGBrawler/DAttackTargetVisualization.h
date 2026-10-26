@@ -13,6 +13,7 @@
 #include "OGSimulation/SpatialQueryAdapter.h"
 #include "OGSimulation/SpatialQueryResult.h"
 #include "OGSimulation/QueryGeometry.h"
+#include "OGSimulation/SimulationFrame.h"
 
 #include "OGSimulation/CompilerControl.h"
 OGSIM_OPTIMIZE_OFF
@@ -90,8 +91,8 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 	const glm::vec3 rootTranslation = glm::vec3(rootTransform[3]);
 
 	const float aimArchAngle = 0.1f;
-	rendererFunctor.drawLine(rootTranslation, rootTranslation + input.getAimDirection() * staticData.getAttackCircle().getOuterRadius(), 1, 1.f);
-	rendererFunctor.drawCircleArc(rootTranslation, input.getAimDirection(), staticData.getAttackCircle().getOuterRadius(), aimArchAngle, 1, 1.f);
+	rendererFunctor.drawLine(rootTranslation, rootTranslation + input.getAimDirection() * staticData.getAttackCircle().getOuterRadius(), 1, 0.01f);
+	rendererFunctor.drawCircleArc(rootTranslation, input.getAimDirection(), staticData.getAttackCircle().getOuterRadius(), aimArchAngle, 1, 0.01f);
 
 	for (const auto& volumeId : state.getVolumeIds())
 		input.getQueryAdapter().setVolumeParentTransform(volumeId, rootTransform);
@@ -109,7 +110,7 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 	for (const auto& result : queryReport)
 	{
 		glm::vec3 collidingPosition = result.objectPosition;
-		collidingPosition.z = rootTranslation.z;
+		collidingPosition = simFrame::withHeight(collidingPosition, simFrame::height(rootTranslation));
 		const glm::vec3 collisionDirection = collidingPosition - rootTranslation;
 		const glm::vec3 normalizedCollisionDirection = glm::normalize(collisionDirection);
 		//rendererFunctor.drawLine(rootTranslation, collidingPosition, 1, 1.f);
@@ -125,7 +126,7 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 			//dAttackVisualizationUtils::drawSegmentOutline(rendererFunctor, rootTranslation, normalizedCollisionDirection, guardAxis, shieldAngle*2.f, arcRadius, 0.f, 2, 1.f);
 			if (!isAttacking)
 			{
-				dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, rootTranslation, normalizedCollisionDirection, guardAxis, shieldAngle * 2.f, staticData.getAttackCircle().getInnerRadius(), 1.0f, 2, 1.f);
+				dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, rootTranslation, normalizedCollisionDirection, guardAxis, shieldAngle * 2.f, staticData.getAttackCircle().getInnerRadius(), 0.01f, 2, 0.01f);
 				const float segmentLength = shieldAngle * 2.f * staticData.getAttackCircle().getInnerRadius();
 				//dAttackVisualizationUtils::drawArcTriangle(rendererFunctor, rootTranslation, normalizedCollisionDirection, guardAxis, shieldAngle * 2.f, staticData.getAttackCircle().getInnerRadius(), 2);
 			
@@ -133,7 +134,7 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 				//rendererFunctor.drawLine(rootTranslation + normalizedCollisionDirection * staticData.getAttackCircle().getInnerRadius(), collidingPosition, 0, 2.f);
 				//rendererFunctor.drawCircleArc(collidingPosition, -normalizedCollisionDirection, glm::length(guardDirection), shieldAngle * 2.f, 0, 1.f);
 				const float predictedAttackArcAngle = segmentLength / glm::length(guardDirection);
-				dAttackVisualizationUtils::drawSegmentOutline(rendererFunctor, collidingPosition, -normalizedCollisionDirection, guardAxis, predictedAttackArcAngle, length(guardDirection), 0.f, 0, 1.f);
+				dAttackVisualizationUtils::drawSegmentOutline(rendererFunctor, collidingPosition, -normalizedCollisionDirection, guardAxis, predictedAttackArcAngle, length(guardDirection), 0.f, 0, 0.01f);
 			}
 		}
 		else
@@ -144,7 +145,7 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 			//dAttackVisualizationUtils::drawSegmentOutline(rendererFunctor, rootTranslation, middlePointDirection, guardAxis, shieldAngleDiff, arcRadius, 0.f, 2, 1.f);
 			if (!isAttacking)
 			{
-				dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, rootTranslation, middlePointDirection, guardAxis, shieldAngleDiff, staticData.getAttackCircle().getInnerRadius(), 1.f, 2, 1.f);
+				dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, rootTranslation, middlePointDirection, guardAxis, shieldAngleDiff, staticData.getAttackCircle().getInnerRadius(), 0.01f, 2, 0.01f);
 
 
 				glm::vec4 middlePointDirection4(middlePointDirection, 0.f);
@@ -152,13 +153,13 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 				glm::mat4 innerRotaition = glm::rotate(glm::mat4(1.f), shieldAngleDiff * 0.5f, guardAxis);
 				glm::vec3 innerCollisionDirection = glm::vec3(innerRotaition * middlePointDirection4);
 				const glm::vec3 innerGuardPoint = rootTranslation + innerCollisionDirection * staticData.getAttackCircle().getInnerRadius();
-				rendererFunctor.drawLine(innerGuardPoint, collidingPosition, 0, 1.f);
+				rendererFunctor.drawLine(innerGuardPoint, collidingPosition, 0, 0.01f);
 				const glm::vec3 targetAttackDirection = innerGuardPoint - collidingPosition;
 				const float targetAttackDirectionLength = glm::length(targetAttackDirection);
 				const glm::vec3 normalizedTargetAttackDirection = glm::normalize(targetAttackDirection);
 				const float predictedAttackArcAngle = glm::pi<float>() * 0.5f * 0.5;
 				glm::mat4 predictedDirectionRotation  = glm::rotate(glm::mat4(1.f), predictedAttackArcAngle, -guardAxis);
-				rendererFunctor.drawCircleArc(collidingPosition, (predictedDirectionRotation * glm::vec4(normalizedTargetAttackDirection, 0.f)) * targetAttackDirectionLength, targetAttackDirectionLength, predictedAttackArcAngle, 0, 1.f);
+				rendererFunctor.drawCircleArc(collidingPosition, (predictedDirectionRotation * glm::vec4(normalizedTargetAttackDirection, 0.f)) * targetAttackDirectionLength, targetAttackDirectionLength, predictedAttackArcAngle, 0, 0.01f);
 
 
 				//dAttackVisualizationUtils::drawArcTriangle(rendererFunctor, rootTranslation, middlePointDirection, guardAxis, shieldAngleDiff, staticData.getAttackCircle().getInnerRadius(), 2);
