@@ -334,7 +334,7 @@ Stun discarding the direction; `m_projectileHitReaction` being a Stun; branch 4 
 ## 9. The frame routing through `simFrame`
 
 The direction picks and the aim fallback go through og-simulation's frame vocabulary, `simFrame`
-(`OGSimulation/SimulationFrame.h`). In the Z-up, centimetre frame they were routed in ( the shipped knobs until og-sim-metres-yup tasks 17 and 19) each routed expression gave the same
+(`OGSimulation/SimulationFrame.h`). In the Z-up, centimetre frame they were routed in (the frame the simulation shipped in until og-sim-metres-yup tasks 17 and 19) each routed expression gave the same
 bits as the literal it replaced.
 
 * **`normalisedXY` picks the ground-plane coordinates with `simFrame::planar(v)`**, the shipped

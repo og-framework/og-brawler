@@ -216,7 +216,7 @@ struct AttackIndicatorGeometry
 {
 	AttackDirectionKind kind;
 	glm::vec3 originOnInnerCircle;             // block-line anchor on the inner circle
-	glm::vec3 attackDirectionXY;              // unit XY vector pointing into the sector
+	glm::vec3 attackDirectionXY;              // unit ground-plane vector pointing into the sector
 	unsigned int predictedSequenceIdFromIdle; // 4 (forward), 1 (left), 0 (right) — mirrors integrate3
 };
 

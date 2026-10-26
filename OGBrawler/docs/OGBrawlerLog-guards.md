@@ -168,9 +168,9 @@ lambda returns at most 14 characters, and nothing asserts that. Rationale §3 ha
 **H-2 — a `%.*f` precision argument must not exceed `kMaxStarPrecision` (9).** The check charges a
 `*` precision 9 fraction digits, whatever the argument's run-time value (rationale §4.1). The wrong
 edit is a new `OGBLOG_G(… %.*f …)` in some other header whose precision argument can exceed 9. That
-is typed at the call site, so a tag on `kMaxStarPrecision` would sit where nobody makes it. Pass
-`simFrame::lengthDecimals(n)` with n ≤ 7. Every caller at og-sim-metres-yup task 5a passes n ≤ 3.
-Nothing asserts it at the call site; an over-long line is clipped by `std::vsnprintf`, never written
+is typed at the call site, so a tag on `kMaxStarPrecision` would sit where nobody makes it. Pass a
+precision of at most 9. No caller passes a `*` precision since og-sim-metres-yup task 24 froze the
+length lines to fixed decimals; the callers of task 5a passed at most 5. Nothing asserts it at the call site; an over-long line is clipped by `std::vsnprintf`, never written
 past the buffer.
 
 ---

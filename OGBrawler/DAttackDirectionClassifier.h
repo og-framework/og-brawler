@@ -84,9 +84,9 @@ inline unsigned int classify(const glm::vec3& aimDirection,
 	const glm::vec3 moveXY = glm::normalize(simFrame::flatten(moveN));
 	const glm::vec3 aimXY  = glm::normalize(simFrame::flatten(aimDirection));
 
-	// Both terms XY-projected. Using the 3D aim here inflates the angle by aim's
-	// downward z (mouse-on-floor projection from a capsule above z=0) and trips the
-	// threshold even when the XY directions align. Clamp so FP rounding cannot push
+	// Both terms ground-plane projected. Using the 3D aim here inflates the angle by
+	// aim's downward height (mouse-on-floor projection from a capsule above the floor)
+	// and trips the threshold even when the ground directions align. Clamp so FP rounding cannot push
 	// the dot past 1.0 and turn acos into NaN.
 	const float dotXY = glm::clamp(glm::dot(aimXY, moveXY), -1.f, 1.f);
 	const float angle = glm::acos(dotXY);   // UNSIGNED, [0, pi]
@@ -98,7 +98,7 @@ inline unsigned int classify(const glm::vec3& aimDirection,
 	// --- BACKPEDAL region: moving roughly opposite your aim. -----------------
 	// ⛔⛔ THIS TEST MUST STAY AHEAD OF THE SIGN, AND ON THE UNSIGNED ANGLE.
 	// Dead-behind is a sign singularity: moveXY ~= -aimXY makes
-	// cross(aimXY, moveXY).z collapse to ~0, so its sign is floating-point noise.
+	// turnComponent(cross(aimXY, moveXY)) collapse to ~0, so its sign is floating-point noise.
 	// Consult it here and the swing flickers left/right every frame — which it did,
 	// for the ordinary input of backing straight away from your aim. Classifying the
 	// region before the sign exists removes the unstable band instead of damping it.

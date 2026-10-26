@@ -138,7 +138,7 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 
 	// Red lined attack-direction indicator (thicker than the green reference arcs above).
 	//   Forward strike  → π/2 vertical arc from the character's up vector down to the aim
-	//                     direction (XY-projected). Drawn manually with N short line
+	//                     direction (ground-plane projected). Drawn manually with N short
 	//                     segments because drawCircleArc orients its plane via world up
 	//                     (see DrawDebugHelpers.cpp:FindBestAxisVectors usage) and so
 	//                     can't reliably render a vertical arc.
@@ -170,14 +170,14 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	//                 intersection (i.e. the handle IS the inner-circle chord of the
 	//                 weapon line). The blade then continues from the front intersection
 	//                 outward to the aim tip.
-	//               - Forward: handle extends 50cm from a point above the character's head
-	//                 along the weapon axis; the "inner-circle chord" concept doesn't
-	//                 apply to a diagonal top→aimTip line, so a fixed length is used.
+	//               - Forward: handle extends the side handle's length from a point above
+	//                 the character's head along the weapon axis; the "inner-circle chord"
+	//                 concept doesn't apply to a diagonal top→aimTip line, so it is reused.
 	//   - Blade:  a rectangular shaft + equilateral triangular tip, from where the handle
 	//             ends to the aim tip. Shaft orientation differs by kind:
-	//               - Side (left/right): shaft lies flat in the XY plane (horizontal swing).
+	//               - Side (left/right): shaft lies flat in the ground plane (horizontal swing).
 	//               - Forward:           shaft stands vertical, in the plane containing
-	//                                    the weapon axis and +Z (upright thrust).
+	//                                    the weapon axis and up (upright thrust).
 	//
 	// The whole weapon indicator is HIDDEN while the radial sim is actively running an
 	// attack sequence — showing "where the next attack would go" while an actual attack
@@ -215,7 +215,7 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 			const glm::vec3 weaponDir = glm::normalize(aimTip - top);
 			const glm::vec3 handleEnd = top + weaponDir * kSideHandleLength;
 
-			// Vertical shaft: perp is in the plane containing weapon axis and +Z.
+			// Vertical shaft: perp is in the plane containing weapon axis and up.
 			const glm::vec3 horizontalPerp = simFrame::kChartOrientation * glm::normalize(glm::cross(weaponDir, up));
 			const glm::vec3 shaftPerp     = simFrame::kChartOrientation * glm::normalize(glm::cross(weaponDir, horizontalPerp));
 			dAttackVisualizationUtils::drawWeapon(rendererFunctor,
@@ -235,7 +235,7 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 			const glm::vec3 backPoint = simFrame::compose(simFrame::planar(frontPoint) + tExit * lineDirXY,
 			                         simFrame::height(rootTranslation));
 
-			// Horizontal shaft: perp lies in XY plane, perpendicular to weapon axis.
+			// Horizontal shaft: perp lies in the ground plane, perpendicular to weapon axis.
 			const glm::vec3 weaponDir = glm::normalize(aimTip - backPoint);
 			constexpr glm::vec3 up = simFrame::kUp;
 			const glm::vec3 shaftPerp = simFrame::kChartOrientation * glm::normalize(glm::cross(weaponDir, up));

@@ -217,10 +217,10 @@ inline void integrate(const AllInput& input,
             movementIc.teleportPending = 1u;
             movementIc.teleportPos     = sd.spawnPoints[ic.spawnSlot];
 
-            OGBLOG_G("[Ringout.respawn] tick=%u slot=%u to=(%.*f, %.*f, %.*f)",
+            OGBLOG_G("[Ringout.respawn] tick=%u slot=%u to=(%.4f, %.4f, %.4f)",
                 tick, ic.spawnSlot,
-                simFrame::lengthDecimals(2), movementIc.teleportPos.x, simFrame::lengthDecimals(2), movementIc.teleportPos.y,
-                simFrame::lengthDecimals(2), movementIc.teleportPos.z);
+                movementIc.teleportPos.x, movementIc.teleportPos.y,
+                movementIc.teleportPos.z);
         }
         else
         {
@@ -238,9 +238,9 @@ inline void integrate(const AllInput& input,
         state.respawnAtTick = tick + sd.respawnDelayTicks;
         derived.diedThisTick = true;
 
-        OGBLOG_G("[Ringout.death] tick=%u height=%.*f killPlaneHeight=%.*f respawnAtTick=%u",
-            tick, simFrame::lengthDecimals(2), simFrame::height(movementState.bodyState.position),
-            simFrame::lengthDecimals(2), sd.killPlaneHeight, state.respawnAtTick);
+        OGBLOG_G("[Ringout.death] tick=%u height=%.4f killPlaneHeight=%.4f respawnAtTick=%u",
+            tick, simFrame::height(movementState.bodyState.position),
+            sd.killPlaneHeight, state.respawnAtTick);
     }
 }
 

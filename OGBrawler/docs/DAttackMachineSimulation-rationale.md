@@ -940,7 +940,7 @@ numbers that rule it out are pinned absolutely instead
 
 The aim reads, the fallback axes and the Hadouken's spawn offset go through og-simulation's frame
 vocabulary, `simFrame` (`OGSimulation/SimulationFrame.h`). In the Z-up frame they were routed in (Z up,
-centimetres; the shipped knobs until og-sim-metres-yup tasks 17 and 19) each routed expression gave the same bits
+centimetres; the frame the simulation shipped in until og-sim-metres-yup tasks 17 and 19) each routed expression gave the same bits
 as the literal it replaced in IEEE arithmetic. The exception is not a property of any expression: the signs of the exact zeros in the
 aim rotation axis (the second bullet).
 

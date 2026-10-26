@@ -123,7 +123,7 @@ namespace brawlerMovementVisualization
 // X=red / Y=green / Z=blue triad reads as a right-angled gizmo before anyone looks at the
 // geometry, and the whole point of the frame draw below is that it is NOT one. Orange /
 // Turquoise / Purple carry no such prior; only `up` keeps blue, because it is the one ray that
-// really is world Z.
+// really is world up.
 inline constexpr unsigned int kColorFrozen        = 0u;
 inline constexpr unsigned int kColorSupported     = 1u;
 inline constexpr unsigned int kColorAxisUp        = 2u;
@@ -204,7 +204,7 @@ private:
 // `UCapsuleComponent::GetUnscaledCapsuleHalfHeight` documents, so the outline traces the
 // authored capsule and not a shape one radius taller or shorter.
 //
-// ⚠ The ring basis is world X / world Y rather than the surface frame's `u` / `v`. That is
+// ⚠ The ring basis is world forward / right rather than the surface frame's `u` / `v`. That is
 // correct and not a shortcut: the body's descriptor sets `lockRotation`, so the capsule is
 // upright in world space regardless of the surface it stands on. Tracing it with a tilted
 // frame would draw a shape the simulation does not have.
@@ -266,8 +266,8 @@ void drawCapsuleOutline(const RendererFunctorType& renderer,
 // one do not coincide. Averaging them into one mark would erase a real, measured property of
 // task 54's inset probe.
 //
-//     LONG arm, along world X   -- the PROBE-referenced level (what `clearance` is compared to)
-//     SHORT arm, along world Y  -- the BODY-referenced level (what the body's own silhouette does)
+//     LONG arm, along world forward -- the PROBE-referenced level (what `clearance` is compared to)
+//     SHORT arm, along world right  -- the BODY-referenced level (what the body's own silhouette does)
 //
 // Two cues, not one: axis AND length. On flat ground the two land at the same height and the
 // mark reads as a clean plus sign; on a slope the plus sign splits.

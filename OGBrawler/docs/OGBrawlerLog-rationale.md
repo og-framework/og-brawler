@@ -123,19 +123,21 @@ self-test fails the build.
 
 ### 4.1 The `*` precision — og-sim-metres-yup task 5a
 
-A simulation length prints with `%.*f` and `simFrame::lengthDecimals(n)` (`SimulationFrame.h`), so that
-its decimals follow the length unit: n at 100 units per metre, n + 2 at 1. The precision is then a
-run-time `int` argument, which the format string cannot show. The checker therefore:
+While og-sim-metres-yup could still change the length unit, a simulation length printed with `%.*f` and a
+decimals helper of `SimulationFrame.h`, so that its decimals followed the unit: n in centimetres, n + 2 in
+metres. The precision was then a run-time `int` argument, which the format string cannot show. Since that
+initiative's task 24 the unit is fixed and the routed lines print fixed decimals (`%.4f`, `%.5f`), so no
+caller passes a `*` precision today; the checker keeps the support for the next one. It:
 - consumes one argument for the `*`, which must classify as `Int32` (any other argument, or none, is
   `kUnbounded`), and then the conversion's own argument as for `%f`;
 - charges the fraction `kMaxStarPrecision` (9) digits, whatever the run-time value, so `%.*f` costs
   1 + 39 + 1 + 9 = 50 with a `float` and 1 + 309 + 1 + 9 = 320 with a `double`;
 - accepts a `*` precision only on `f`/`F`; a `*` width stays `kUnbounded`.
 
-**Why 9 covers every caller.** The routed lines pass `lengthDecimals(0)`, `lengthDecimals(2)` and
-`lengthDecimals(3)` (`[Movement.hover]`'s `maxAccel=`, its `rideHeight=`/`snapDistance=`, `[Movement.teleport]`,
-`[Ringout.respawn]`, `[Ringout.death]`; and `[Movement.surface]`'s `clearance=`), so the largest run-time
-precision is 3 + 2 = 5 at 1 unit per metre. The cap is a convention, like the `%s` bound of §3: the
+**Why 9 covered every caller.** The routed lines passed the decimals helper 0, 2 and 3 (`[Movement.hover]`'s
+`maxAccel=`, its `rideHeight=`/`snapDistance=`, `[Movement.teleport]`, `[Ringout.respawn]`, `[Ringout.death]`; and
+`[Movement.surface]`'s `clearance=`), so the largest run-time precision was 3 + 2 = 5 in metres; frozen, those
+lines print `%.2f`, `%.4f` and `%.5f`. The cap is a convention, like the `%s` bound of §3: the
 argument is a run-time value, and guards §H-2 holds the rule for callers. A precision above the cap would
 make the line longer than the check charged; `std::vsnprintf` then truncates it to the buffer and
 returns the would-be length (measured with MSVC 14.38: an 8-byte buffer given `"%.*f"`, 5,

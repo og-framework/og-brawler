@@ -226,7 +226,7 @@ DAttackSegment DAttackRadialSequence::getAttackSegment(const glm::vec2& localDir
 	}
 	else
 	{
-		if (angle < 0.f)
+		if (angle <= 0.f)
 			angle = std::abs(angle);
 		else
 			angle = 2.f * glm::pi<float>() - angle;

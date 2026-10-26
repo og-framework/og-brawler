@@ -357,8 +357,8 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 		// Behind-attacker filter — defenders behind the attacker (relative to aim direction)
 		// cannot be hit by the pending attack regardless of what the sim's wouldGuardBlock
 		// says about their guard direction, so their guard state should NOT trigger the
-		// block indicator. Test: XY-projected defender-from-attacker vector dotted with the
-		// XY-projected aim direction; negative → defender is behind → skip.
+		// block indicator. Test: the ground-plane defender-from-attacker vector dotted with
+		// the ground-plane aim direction; negative → defender is behind → skip.
 		{
 			const glm::vec3 defenderBodyPos = queryReport[actorHit.bodyHitIndex].objectPosition;
 			const glm::vec3 relative = defenderBodyPos - attackerRoot;

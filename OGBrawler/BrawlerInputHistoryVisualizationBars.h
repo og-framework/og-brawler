@@ -1519,8 +1519,8 @@ inline float runLabelCenterX(const FrameMeterGeometry& geometry, const LaneRun& 
 // ---------------------------------------------------------------------------
 // WHO THE SECOND STACK DRAWS -- THE NEAREST BRAWLER TO THE FIRST LOCAL ONE.
 //
-// Nearest by XY distance between capsule positions, because a brawler directly above
-// another is not the one you are fighting. The choice is made every frame from
+// Nearest by ground-plane distance between capsule positions, because a brawler directly
+// above another is not the one you are fighting. The choice is made every frame from
 // positions that move every frame, so two candidates at nearly equal distance would
 // swap the whole stack back and forth: the previous choice is KEPT unless another is
 // closer by a clear margin.
@@ -1533,8 +1533,9 @@ inline float runLabelCenterX(const FrameMeterGeometry& geometry, const LaneRun& 
 //   answer does not depend on the order the candidates were gathered in.
 // ---------------------------------------------------------------------------
 
-// How much closer a rival must be before the stack switches to it.
-inline constexpr float kNearestHysteresisCm = 50.f;
+// How much closer a rival must be before the stack switches to it, in the candidates'
+// unit: og-simulation metres.
+inline constexpr float kNearestHysteresis = 0.5f;
 
 // How many characters one selection considers. A match this display is used on is a
 // handful of brawlers; beyond this the gather simply stops adding.
@@ -1564,7 +1565,7 @@ struct NearestCharacterCandidateList
 	}
 };
 
-// Squared XY distance. Squared, because the SELECTION only ever orders distances and a
+// Squared ground-plane distance. Squared, because the SELECTION only ever orders distances and a
 // square root would buy nothing but a rounding difference; the hysteresis below is the
 // one place a real distance is needed, and it takes the root there.
 constexpr float nearestPlanarDistanceSquared(const NearestCharacterCandidate& left,
@@ -1579,7 +1580,7 @@ constexpr float nearestPlanarDistanceSquared(const NearestCharacterCandidate& le
 // or is the only one there.
 //
 // `previousChoice` is last frame's answer. It is kept whenever it is still a candidate,
-// unless the closest rival is nearer by at least `kNearestHysteresisCm`.
+// unless the closest rival is nearer by at least `kNearestHysteresis`.
 // ⛔ THE MARGIN IS ON THE DISTANCE, NOT ITS SQUARE: a squared one varies with range.
 inline std::optional<unsigned int> nearestCharacterIdTo(
 	const NearestCharacterCandidateList& candidates,
@@ -1638,17 +1639,18 @@ inline std::optional<unsigned int> nearestCharacterIdTo(
 		const float previousDistance = std::sqrt(previousDistanceSquared);
 		const float bestDistance     = std::sqrt(bestDistanceSquared);
 
-		if (previousDistance - bestDistance < kNearestHysteresisCm)
+		if (previousDistance - bestDistance < kNearestHysteresis)
 			return previousChoice;
 	}
 
 	return best;
 }
 
-// The XY distance between two candidates, or nullopt when either is missing from the
-// list. ⛔ THE ONE PLACE A REAL DISTANCE IS TAKEN besides the hysteresis margin, and it
-//   is taken for the READER, never for the ordering above.
-inline std::optional<float> nearestCharacterDistanceCm(
+// The ground-plane distance between two candidates, in their unit (og-simulation metres),
+// or nullopt when either is missing from the list. ⛔ THE ONE PLACE A REAL DISTANCE IS
+//   TAKEN besides the hysteresis margin, and it is taken for the READER, never for the
+//   ordering above.
+inline std::optional<float> nearestCharacterDistance(
 	const NearestCharacterCandidateList& candidates, unsigned int fromId, unsigned int toId)
 {
 	const NearestCharacterCandidate* from = nullptr;

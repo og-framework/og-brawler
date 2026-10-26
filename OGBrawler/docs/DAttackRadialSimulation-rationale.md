@@ -460,8 +460,8 @@ stood. `DAttackMachineSimulation.h`'s own copy was handed to task 18.
 ## 10. The frame routing through `simFrame`
 
 Every axis literal and component pick in this header goes through og-simulation's frame vocabulary,
-`simFrame` (`OGSimulation/SimulationFrame.h`). In the Z-up, centimetre frame it was routed in ( the
-shipped knobs until og-sim-metres-yup tasks 17 and 19) each routed expression gave the same bits as the literal it replaced, so the swing and the predicate are
+`simFrame` (`OGSimulation/SimulationFrame.h`). In the Z-up, centimetre frame it was routed in (the
+frame the simulation shipped in until og-sim-metres-yup tasks 17 and 19) each routed expression gave the same bits as the literal it replaced, so the swing and the predicate are
 unchanged, apart from the zero signs of the aim rotation axis the machine stores (the first
 bullet). They also stay right when the frame changes.
 

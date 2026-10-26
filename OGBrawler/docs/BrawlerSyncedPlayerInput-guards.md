@@ -109,7 +109,9 @@ in `SyncedPlayerInputTest.cpp` holds, so `getZeroPlayerInput()` returns this `ze
   bytes of `zero()` exactly.
 * Returning `SyncedPlayerInput{}` also removes the anti-vacuity gap described in G-01.
 
-**R0 corrections carried from the predecessors (re-verified 2026-10-03).**
+**R0 corrections carried from the predecessors (re-verified 2026-10-03).** They were written in the Z-up frame,
+where the aim `simFrame::kUp` was `(0,0,1)` and "XY" was the ground plane; since og-sim-metres-yup task 19 the aim is
+`(0,1,0)`, the ground plane is XZ and forward is `(0,0,-1)`. Read them with that map (rationale §5.1).
 * `(0,0,1)` is **+Z**, not "forwards". `DAttackRadialSequence::defaultForward()` is `(1,0,0)`.
 * Neither `(0,0,1)` nor `(0,0,0)` is the safer aim for a reader, so that is not why the prohibition
   exists. No reader uses the raw aim: the machine (`setRadialSimulationInitialConditions`, the

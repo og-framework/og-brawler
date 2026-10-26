@@ -557,17 +557,17 @@ void integrate(float deltaSeconds,
         physics.setBodyTransform(bindings.ownBodyId, teleportPose);
         physics.setBodyLinearVelocity(bindings.ownBodyId, glm::vec3(0.f));
 
-        OGBLOG_G("[Movement.teleport] tick=%u to=(%.*f, %.*f, %.*f)",
-            tick, simFrame::lengthDecimals(2), ic.teleportPos.x, simFrame::lengthDecimals(2), ic.teleportPos.y,
-            simFrame::lengthDecimals(2), ic.teleportPos.z);
+        OGBLOG_G("[Movement.teleport] tick=%u to=(%.4f, %.4f, %.4f)",
+            tick, ic.teleportPos.x, ic.teleportPos.y,
+            ic.teleportPos.z);
 
         OGBLOG_G("[Warning][Movement.hover] tick=%u omega=%.3f zeta=%.3f "
                  "(discrete critical zeta = %.3f; monotone needs zeta >= that AND omega < %.1f) "
-                 "k=%.1f c=%.2f maxAccel=%.*f rideHeight=%.*f snapDistance=%.*f",
+                 "k=%.1f c=%.2f maxAccel=%.2f rideHeight=%.4f snapDistance=%.4f",
             tick, sd.hoverFrequency, sd.hoverDampingRatio,
             1.f - sd.hoverFrequency * dt * 0.5f, 1.f / dt,
-            sd.hoverStiffness, sd.hoverDamping, simFrame::lengthDecimals(0), sd.hoverMaxAccel,
-            simFrame::lengthDecimals(2), sd.rideHeight, simFrame::lengthDecimals(2), sd.snapDistance);
+            sd.hoverStiffness, sd.hoverDamping, sd.hoverMaxAccel,
+            sd.rideHeight, sd.snapDistance);
     }
 
     const dAttackMachineSimulation::State& machineState =
@@ -619,9 +619,9 @@ void integrate(float deltaSeconds,
     const uint8_t supportBits = static_cast<uint8_t>(support);
     if (supportBits != previousSupport)
     {
-        OGBLOG_G("[Movement.surface] tick=%u %s -> %s clearance=%.*f n=(%.3f, %.3f, %.3f)",
+        OGBLOG_G("[Movement.surface] tick=%u %s -> %s clearance=%.5f n=(%.3f, %.3f, %.3f)",
             tick, supportName(previousSupport), supportName(supportBits),
-            simFrame::lengthDecimals(3), clearance, n.x, n.y, n.z);
+            clearance, n.x, n.y, n.z);
     }
 
     state.flags = static_cast<uint8_t>(state.flags & ~(kFlagFrozen | kFlagSupportMask));

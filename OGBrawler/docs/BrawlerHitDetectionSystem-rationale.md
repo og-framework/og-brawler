@@ -330,7 +330,7 @@ typed (`BrawlerHitRoutingSystem-guards.md` G-04). The dedup key is G-16 and the 
 The guard-hit indicator (§3) is a circle-and-line intersection in the ground plane. It picks the
 ground-plane coordinates of the weapon direction, the attacker and the opponent with
 `simFrame::planar`, and builds the indicator with
-`simFrame::compose(..., simFrame::height(hit.objectPosition))`. In the Z-up, centimetre frame they were routed in ( the shipped knobs until og-sim-metres-yup tasks 17 and 19) those were
+`simFrame::compose(..., simFrame::height(hit.objectPosition))`. In the Z-up, centimetre frame they were routed in (the frame the simulation shipped in until og-sim-metres-yup tasks 17 and 19) those were
 the replaced `(x, y)` picks and `(x, y, z)` build, bit for bit. The two sums
 `attackerXY.x + t * weaponDirXY.x` and `attackerXY.y + t * weaponDirXY.y` are still written per
 component, so they are the same float operations. The intersection uses only dot products in the

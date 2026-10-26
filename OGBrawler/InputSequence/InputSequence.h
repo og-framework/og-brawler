@@ -105,8 +105,8 @@ inline float angularDistance(float a, float b)
 //
 // THE ONE DEFINITION of a per-frame step match: matchSequence applies it to
 // every history entry, and dAttackMachineSimulation::wantsHeldProjectile
-// applies it to the live input. The stick is moveDirectionWorld's XY, measured
-// against aimDirection's XY.
+// applies it to the live input. The stick is moveDirectionWorld's (forward, right)
+// pair, measured against aimDirection's ground-plane direction.
 //
 // Written as !(distance > tolerance) so a NaN angle matches exactly as
 // matchSequence's `distance > tolerance -> skip` test always did.
