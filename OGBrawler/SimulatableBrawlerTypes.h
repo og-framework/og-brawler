@@ -195,16 +195,6 @@ public:
             {
                 { // from idle to leftAttack
                     {
-                        { 0.f, -4.f * PI / 8.f, DAttackRadialSequenceState::WindUp },
-                        { 0.3f, -2.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
-                        { 0.4f, -1.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
-                        { 0.5f, 1.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
-                        { 0.6f, 3.f * PI / 8.f, DAttackRadialSequenceState::WindDown }
-                    }
-                    , 0.1, simFrame::kTurnAxis
-                },
-                { // from idle to rightAttack
-                    {
                         { 0.f, 4.f * PI / 8.f, DAttackRadialSequenceState::WindUp },
                         { 0.3f, 2.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
                         { 0.4f, 1.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
@@ -213,19 +203,17 @@ public:
                     }
                     , 0.1, simFrame::kTurnAxis
                 },
-                { // from leftAttack to leftAttack
+                { // from idle to rightAttack
                     {
-                        { 0.f,   (16.f * PI / 8.f) - (12.f * PI / 8.f), DAttackRadialSequenceState::WindUp },
-                        { 0.1f,  (16.f * PI / 8.f) - (10.f * PI / 8.f), DAttackRadialSequenceState::WindUp },
-                        { 0.15f, (16.f * PI / 8.f) - (8.f  * PI / 8.f), DAttackRadialSequenceState::WindUp },
-                        { 0.2f,  (16.f * PI / 8.f) - (6.f  * PI / 8.f), DAttackRadialSequenceState::WindUp },
-                        { 0.25f, (16.f * PI / 8.f) - (4.f  * PI / 8.f), DAttackRadialSequenceState::WindUp },
-                        { 0.3f,  (16.f * PI / 8.f) - (2.f  * PI / 8.f), DAttackRadialSequenceState::Damaging },
-                        { 0.4f,  (16.f * PI / 8.f) + (1.f  * PI / 8.f), DAttackRadialSequenceState::WindDown }
+                        { 0.f, -4.f * PI / 8.f, DAttackRadialSequenceState::WindUp },
+                        { 0.3f, -2.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
+                        { 0.4f, -1.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
+                        { 0.5f, 1.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
+                        { 0.6f, 3.f * PI / 8.f, DAttackRadialSequenceState::WindDown }
                     }
                     , 0.1, simFrame::kTurnAxis
                 },
-                { // from rightAttack to rightAttack
+                { // from leftAttack to leftAttack
                     {
                         { 0.f,   (-16.f * PI / 8.f) + (12.f * PI / 8.f), DAttackRadialSequenceState::WindUp },
                         { 0.1f,  (-16.f * PI / 8.f) + (10.f * PI / 8.f), DAttackRadialSequenceState::WindUp },
@@ -233,16 +221,28 @@ public:
                         { 0.2f,  (-16.f * PI / 8.f) + (6.f  * PI / 8.f), DAttackRadialSequenceState::WindUp },
                         { 0.25f, (-16.f * PI / 8.f) + (4.f  * PI / 8.f), DAttackRadialSequenceState::WindUp },
                         { 0.3f,  (-16.f * PI / 8.f) + (2.f  * PI / 8.f), DAttackRadialSequenceState::Damaging },
-                        { 0.4f,  (-2.f * PI) - (1.f * PI / 8.f),          DAttackRadialSequenceState::WindDown }
+                        { 0.4f,  (-16.f * PI / 8.f) - (1.f  * PI / 8.f), DAttackRadialSequenceState::WindDown }
+                    }
+                    , 0.1, simFrame::kTurnAxis
+                },
+                { // from rightAttack to rightAttack
+                    {
+                        { 0.f,   (16.f * PI / 8.f) - (12.f * PI / 8.f), DAttackRadialSequenceState::WindUp },
+                        { 0.1f,  (16.f * PI / 8.f) - (10.f * PI / 8.f), DAttackRadialSequenceState::WindUp },
+                        { 0.15f, (16.f * PI / 8.f) - (8.f  * PI / 8.f), DAttackRadialSequenceState::WindUp },
+                        { 0.2f,  (16.f * PI / 8.f) - (6.f  * PI / 8.f), DAttackRadialSequenceState::WindUp },
+                        { 0.25f, (16.f * PI / 8.f) - (4.f  * PI / 8.f), DAttackRadialSequenceState::WindUp },
+                        { 0.3f,  (16.f * PI / 8.f) - (2.f  * PI / 8.f), DAttackRadialSequenceState::Damaging },
+                        { 0.4f,  (2.f * PI) + (1.f * PI / 8.f),           DAttackRadialSequenceState::WindDown }
                     }
                     , 0.1, simFrame::kTurnAxis
                 },
                 { // from idle to rightAttack (vertical)
                     {
-                        { 0.0f,  -8.f * PI / 8.f, DAttackRadialSequenceState::WindUp },
-                        { 0.3f,  -2.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
-                        { 0.4f,   1.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
-                        { 0.42f,  1.5f * PI / 8.f, DAttackRadialSequenceState::WindDown }
+                        { 0.0f,   8.f * PI / 8.f, DAttackRadialSequenceState::WindUp },
+                        { 0.3f,   2.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
+                        { 0.4f,  -1.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
+                        { 0.42f, -1.5f * PI / 8.f, DAttackRadialSequenceState::WindDown }
                     }
                     , 0.1, simFrame::kVerticalTurnAxis
                 }

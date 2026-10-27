@@ -24,7 +24,8 @@ bytes of that header, cited as `<!-- pristine lines A-B -->`. The full comment a
 **Not here, because the compiler holds them** (rationale §2, each measured by compiling): the
 four-hook `SimulationSystem` concept, detection firing before routing, and the inbound slice staying
 off the wire. Branch 2's literal substitution of the ledger for the per-tick signal does not compile
-either, but a rewrite would, so G-04 stands.
+either, but a rewrite would, so G-04 stands. The empty-aim fallback axis in `attackerAimXY` is held by a
+`static_assert` on its bits (og-sim-metres-yup task 26, rationale §9).
 
 ---
 

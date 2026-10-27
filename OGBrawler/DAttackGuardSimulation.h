@@ -265,7 +265,12 @@ void integrate(float deltaSeconds,
 	const glm::vec3 rawAim = simFrame::flatten(input.getPlayerInput().aimDirection);
 	const float aimLen = glm::length(rawAim);
 	constexpr glm::vec3 defaultForward = simFrame::kForward;
-	constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
+	constexpr glm::vec3 aimFallbackAxis = simFrame::withHeight(glm::vec3(0.f), -1.f);
+	static_assert(simFrameDetail::sameBits(aimFallbackAxis, glm::vec3(0.f, -1.f, 0.f)),
+	    "aimFallbackAxis must stay (0,-1,0) with +0 zeros: it is the guard pose's rotation axis inside the near-pole band. "
+	    "Not simFrame::kTurnAxis or kUp: they are +Y since og-sim-metres-yup task 26, and rotate(a, +Y) is rotate(-a, -Y), a turned guard body. "
+	    "Not -simFrame::kUp or kUp * -1.f: their -0 zeros differ from this axis. "
+	    "Was the chart-P simFrame::kTurnAxis.");
 
 	// When there is no aim input, fall back to default forward to avoid NaN from normalizing a zero vector.
 	const glm::vec3 aimDirection = (aimLen > 0.0001f) ? (rawAim / aimLen) : defaultForward;
@@ -287,15 +292,15 @@ void integrate(float deltaSeconds,
 	// THE BAND, and why it tests |aimDot| rather than aimDot: cross(defaultForward,
 	// aim) is the ZERO VECTOR at BOTH poles, and glm::normalize of it divides by zero.
 	// acos returns an UNSIGNED angle, so at the antiparallel pole every axis normal to
-	// the horizontal plane gives the same rotation and turnAxis is a legitimate substitute.
+	// the horizontal plane gives the same rotation and aimFallbackAxis is a legitimate substitute.
 	// Inside the band (an aim within ~0.81 degrees of ±forward) the sign of the tiny
 	// residual angle is therefore NOT preserved — accepted deliberately: 0.81 degrees
 	// of facing on a 0.4 m sphere, against a NaN-free normalize. Pinned by that same
 	// test case, which asserts the band branch is the one a near-pole aim takes.
 	const bool aimEqualsForward = glm::abs(glm::abs(aimDot) - 1.f) < 0.0001f;
-	const glm::vec3 aimRotationAxis = [&aimEqualsForward, &turnAxis, &defaultForward, &aimDirection]() {
+	const glm::vec3 aimRotationAxis = [&aimEqualsForward, &aimFallbackAxis, &defaultForward, &aimDirection]() {
 		if (aimEqualsForward)
-			return turnAxis;
+			return aimFallbackAxis;
 		else
 			return glm::normalize(glm::cross(defaultForward, aimDirection));
 		}();

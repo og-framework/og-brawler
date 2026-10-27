@@ -188,12 +188,17 @@ namespace brawlerHitRouting
             const dAttackRadialSimulation::InitialConditions& ic =
                 attacker.getAllState().getState()
                     .get<dAttackRadialSimulation::InitialConditions>();
-            constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
+            constexpr glm::vec3 aimFallbackAxis = simFrame::withHeight(glm::vec3(0.f), -1.f);
+            static_assert(simFrameDetail::sameBits(aimFallbackAxis, glm::vec3(0.f, -1.f, 0.f)),
+                "aimFallbackAxis must stay (0,-1,0) with +0 zeros: it is the machine's near-pole fallback axis, used here when the stored initialAimRotationAxis is zero. "
+                "Not simFrame::kTurnAxis or kUp: they are +Y since og-sim-metres-yup task 26, and rotate(a, +Y) is rotate(-a, -Y), a mirrored fallback aim. "
+                "Not -simFrame::kUp or kUp * -1.f: their -0 zeros differ from the machine's axis. "
+                "Was the chart-P simFrame::kTurnAxis.");
             constexpr glm::vec4 forward4(simFrame::kForward, 0.f);
             const glm::vec3 axis =
                 (glm::dot(ic.initialAimRotationAxis, ic.initialAimRotationAxis) > 0.f)
                     ? ic.initialAimRotationAxis
-                    : turnAxis;
+                    : aimFallbackAxis;
             const glm::vec3 aim = glm::vec3(
                 glm::rotate(glm::mat4(1.f), ic.initialAimAngle, axis)
                     * forward4);

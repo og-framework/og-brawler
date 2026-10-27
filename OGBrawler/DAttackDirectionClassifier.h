@@ -60,8 +60,9 @@ inline constexpr float kBackpedalConeHalfAngle = glm::pi<float>() / 18.f; // 10 
 inline constexpr float kMoveMagnitudeEpsilon = 0.00001f;
 
 // Attack sequence ids. The left/right labelling follows the existing convention in
-// dAttackVisualizationUtils and dAttackAimVisualization: a positive signed angle
-// (movement counter-clockwise from aim about +Z) is the LEFT swing.
+// dAttackVisualizationUtils and dAttackAimVisualization: a NEGATIVE signed angle
+// (movement clockwise from aim seen from above, i.e. to the aim's right, a negative
+// turn about simFrame::kTurnAxis = +Y) is the LEFT swing.
 inline constexpr unsigned int kForwardSequenceId = 4u;
 inline constexpr unsigned int kLeftSequenceId    = 1u;
 inline constexpr unsigned int kRightSequenceId   = 0u;
@@ -108,9 +109,11 @@ inline unsigned int classify(const glm::vec3& aimDirection,
 	// --- SIDE region: the only place the sign is meaningful. ------------------
 	const float signedAngle = glm::sign(simFrame::turnComponent(glm::cross(aimXY, moveXY))) * angle;
 
-	// Strict `>`: an angle of exactly +kForwardConeHalfAngle lands on the right
-	// swing. Pre-existing boundary behaviour, preserved deliberately.
-	return signedAngle > kForwardConeHalfAngle ? kLeftSequenceId : kRightSequenceId;
+	// Strict `<`: an angle of exactly -kForwardConeHalfAngle lands on the right
+	// swing. Pre-existing boundary behaviour, preserved deliberately: it was a strict
+	// `> +kForwardConeHalfAngle` while planar angles turned about -Y (chart P, before
+	// og-sim-metres-yup task 26), and the native chart negates every signed angle.
+	return signedAngle < -kForwardConeHalfAngle ? kLeftSequenceId : kRightSequenceId;
 }
 
 } // namespace dAttackDirection

@@ -368,7 +368,9 @@ whose query overlap position is
 point takes the pivot's height. `td` is the angle between the guard's forward and the
 direction from the guard to the attacker. Inside `shieldAngle = 0.25f` only sequence 4 is blocked.
 Between that and `outerShieldAngle = pi/2`, the sign of the cross product's component along the
-turn axis (`simFrame::turnComponent`, its −y in the shipped frame) picks sequences {0, 2} or {1, 3}.
+turn axis (`simFrame::turnComponent`, its y in the shipped frame) picks sequences {0, 2} (negative) or
+{1, 3} (positive). Under chart P, before og-sim-metres-yup task 26, the turn axis was −Y, the component
+was −y and the two comparisons were the other way round; the swap keeps every side.
 The positive outer gate is guard G-03.
 
 ⛔ **Corrected at task 19** (§A, pristine lines 361-374 and 387):
@@ -484,7 +486,9 @@ bullet). They also stay right when the frame changes.
 * **The overlap point takes the pivot's height** through `simFrame::withHeight` and
   `simFrame::height`.
 * **The side test reads `simFrame::turnComponent(guardAxis)`.** `guardAxis` is a cross product,
-  a pseudovector. Its component along the turn axis has the same sign in every frame. Its `z` was
+  a pseudovector. Its component along the turn axis has the same sign in every frame for one planar
+  chart; og-sim-metres-yup task 26's chart change negated the turn axis, so it negated the component
+  and swapped the two comparisons with it (§7). Its `z` was
   that component only in the Z-up frame. With `.z` left in a Y-up build, `guardAxis` lies along
   Y and its z is a signed zero, so neither side test passes and no side swing is blocked.
 * **`setInitialConditions` writes the initial angular velocity as
@@ -492,7 +496,9 @@ bullet). They also stay right when the frame changes.
   the axis's two zero components a `-0`, where the replaced literal `(0, 0, v)` had `+0`. That never
   happens: `getInitialVelocity()` returns the first entry of the sequence's velocity table, which
   the `DAttackRadialSequence` constructor pushes as `0.f` before any other, so every swing starts at
-  rest and the product is `+0` in all three components.
+  rest. Since og-sim-metres-yup task 26 `turnAxis` is `(0, 1, 0)` and the product is `+0` in all three
+  components. Under chart P it was `(0, -1, 0)`, and in IEEE arithmetic `-1.f * 0.f` is `-0`: the
+  y component was `-0` then, which this sentence did not say.
 * **`setIdlePose` turns a quarter turn about `idleAxis`, `glm::cross(simFrame::kForward, simFrame::kUp)`**,
   `(0, -1, 0)` in the Z-up frame (`(1, 0, 0)` in the Y-up frame). Constant evaluation gives it `+0` in its
   other two components, like the literal. A rotation axis is a pseudovector, so it is written as a cross

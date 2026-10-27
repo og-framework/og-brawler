@@ -290,9 +290,9 @@ inline bool wouldGuardBlock(
 		}
 		else
 		{
-			if (simFrame::turnComponent(guardAxis) > 0.f && (activeAttackSequence == 0 || activeAttackSequence == 2))
+			if (simFrame::turnComponent(guardAxis) < 0.f && (activeAttackSequence == 0 || activeAttackSequence == 2))
 				return true;
-			if (simFrame::turnComponent(guardAxis) < 0.f && (activeAttackSequence == 1 || activeAttackSequence == 3))
+			if (simFrame::turnComponent(guardAxis) > 0.f && (activeAttackSequence == 1 || activeAttackSequence == 3))
 				return true;
 		}
 	}

@@ -1380,6 +1380,10 @@ of the ordinary-join margin — a quarter of everything that was left. ~2.5 byte
 > `kChartOrientation` (`-1` there) turns it back to `kRight`, so the frame keeps the chart's
 > (forward, right) order. "Right-handed" below is the Z-up frame's reading of the basis; what
 > holds in both frames is that `(u, v)` follow `(kForward, kRight)` on flat ground. §26 relies on it.
+> Since og-sim-metres-yup task 26 the chart is (forward, left) and `kChartOrientation` is `+1`, so
+> `v` is `cross(n, u)` itself, `kLeft` on flat ground: `(u, v)` follow the chart's own axes,
+> `(kForward, kLeft)`, and the stick projection and every chart value written into `(a, b)` follow
+> them with it.
 
 
 <!-- header lines 1063-1070 -->
@@ -2241,11 +2245,12 @@ them *at the field*, which is where a person adding a field looks.
 
 **Where the formula comes from, and why the obvious alternative is wrong.**
 
-`hitDirectionXY` is a **unit vector in the (forward, right) chart** (the Z-up frame's world XY), resolved
+`hitDirectionXY` is a **unit vector in the planar chart** ((forward, right), the Z-up frame's world XY,
+when this was written; (forward, left) since og-sim-metres-yup task 26), resolved
 once by `brawlerHitRouting::System` as `normalise(XY(target position − attacker position))`. *(⚠ R0, og-netcode-v2-field-defects task 29:
 that was task 27's rule. Since movement-sim task 83 a melee knockback's direction is the swing
 tangent's XY, with this rule as the fallback, and a projectile's is its `spawnDir`
-(`BrawlerHitRoutingSystem-rationale.md` §4). It is still a (forward, right) unit vector, which is all this
+(`BrawlerHitRoutingSystem-rationale.md` §4). It is still a unit vector in the chart, which is all this
 derivation uses.)* `velocityUV` is a pair of **tangent-frame
 channels**, `(a, b)` such that step 5 composes `a·u + b·v + c·up`. Writing `d.x` into `a` and
 `d.y` into `b` therefore looks like a type error, and it is not — it is exact, and it is exact
@@ -2269,10 +2274,11 @@ Z-up frame (the shipped frame until og-sim-metres-yup task 19), where forward is
 and `kChartOrientation` is `+1`. The code says the
 same thing frame-independently: the reference is `kForward` (unless `|planar(n).x| >= 0.9`), and
 `v = kChartOrientation * cross(n, u)`, so on any reachable normal `u` projects onto `kForward` and `v`
-is `kRight`. `hitDirectionXY` is a chart value, (forward, right). Its two components therefore land
-on the channels that compose back along `kForward` and `kRight`, and the identity map holds in both
-frames. Without the factor, the Y-up frame's `cross(n, u)` is `-kRight`, and every knockback would
-leave mirrored across the forward axis. That is the case the deferred probe P-5a of og-sim-metres-yup
+is the chart's second axis: `kRight` under chart P, `kLeft` since og-sim-metres-yup task 26.
+`hitDirectionXY` is a chart value in the same chart. Its two components therefore land on the channels
+that compose back along the chart's two axes, and the identity map holds in every frame and chart.
+Without the factor, the Y-up frame's `cross(n, u)` under chart P was `-kRight`, and every knockback
+would have left mirrored across the forward axis. That is the case the deferred probe P-5a of og-sim-metres-yup
 checks.
 
 ⛔ **THE REFLEX EDIT THIS TAG EXISTS TO STOP** is the projection,

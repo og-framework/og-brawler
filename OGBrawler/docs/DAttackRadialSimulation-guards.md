@@ -46,7 +46,7 @@ vectors past 1, `td` is NaN while `normalizedCollisionDirection` is still finite
 positive gate, `NaN < x` is false, the function returns `false`, and the attack lands. With the
 negated early return, `NaN >= x` is also false. Control then falls into the inner test,
 `td < shieldAngle` is false, and the `else` arm reads `simFrame::turnComponent(guardAxis)` (the
-component along the turn axis, `-y` in the shipped frame) from a finite, near-zero `glm::cross`. That component can have
+component along the turn axis, `y` in the shipped frame since og-sim-metres-yup task 26) from a finite, near-zero `glm::cross`. That component can have
 either sign, so the swing can be reported as **blocked** on NaN.
 (A NaN from `normalize` of a zero vector propagates into `guardAxis` and returns `false` under
 both forms. Only the rounding NaN separates them.)

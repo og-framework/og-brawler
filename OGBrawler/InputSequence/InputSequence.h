@@ -17,10 +17,16 @@ namespace inputSequence
 inline constexpr float pi = 3.14159265358979323846f;
 
 // Named aim-relative angles (radians). Forward = aim direction (0).
-// Angles increase CLOCKWISE seen from above (player looking down toward the world):
-//   +pi/2 = right-of-aim ("Down" in SF numpad convention),
+// These are input-space angles, measured in simFrame::forwardRight's (forward, right)
+// pair, not in the planar chart, so they did not change when og-sim-metres-yup task 26
+// changed the chart. They increase COUNTER-CLOCKWISE seen from above (player looking
+// down toward the world): aimRelativeAngle gives +pi/4 (DownForward) for a stick at
+// (forward 1, right -1), which InputSequenceTest pins.
+//   +pi/2 = left-of-aim (named "Down", the SF numpad's 2),
 //   +pi   = back,
-//   -pi/2 = left-of-aim.
+//   -pi/2 = right-of-aim (named "Up", numpad 8).
+// Until task 26 this comment said CLOCKWISE, +pi/2 = right-of-aim: the sense was wrong,
+// the angles and the names were not, and neither changed.
 // Use these named constants in MotionCommand definitions for readability, or
 // pass arbitrary radian values for non-octant target angles.
 namespace angle
@@ -63,8 +69,9 @@ inline constexpr uint32_t kHistoryWindowFrames = 30;
 // when stick is below deadzone or the reference forward is degenerate.
 //
 // Convention: angle 0 = stick aligned with referenceForwardXY (numpad 6).
-// Angle increases CLOCKWISE seen from above, so +pi/2 = right-of-aim (numpad 2),
-// +pi = back (numpad 4), -pi/2 = left-of-aim (numpad 8).
+// Angle increases COUNTER-CLOCKWISE seen from above, so +pi/2 = left-of-aim (numpad 2),
+// +pi = back (numpad 4), -pi/2 = right-of-aim (numpad 8). (Clockwise and right-of-aim
+// for +pi/2 until og-sim-metres-yup task 26 corrected the comment; the code is unchanged.)
 //
 // Deterministic across CPUs — uses glm::clamp + std::atan2.
 // ---------------------------------------------------------------------------
@@ -79,7 +86,7 @@ inline std::optional<float> aimRelativeAngle(glm::vec2 stick, glm::vec3 referenc
         return std::nullopt;
 
     const glm::vec2 fwd   = refXY / refLen;
-    const glm::vec2 right(fwd.y, -fwd.x); // `fwd` turned 90° clockwise in the (forward, right) chart.
+    const glm::vec2 right(fwd.y, -fwd.x); // `fwd` turned 90° to the LEFT seen from above: (1, 0) -> (0, -1), right -1.
     const glm::vec2 sNorm = glm::normalize(stick);
 
     const float dotF = glm::clamp(glm::dot(fwd,   sNorm), -1.f, 1.f);

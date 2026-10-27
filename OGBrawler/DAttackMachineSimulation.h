@@ -221,14 +221,19 @@ void setRadialSimulationInitialConditions(float deltaTime,
 
 	const glm::vec3 aimDirection = glm::normalize(simFrame::flatten(input.getPlayerInput().aimDirection));
 	constexpr glm::vec3 defaultForward = simFrame::kForward;
-	constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
+	constexpr glm::vec3 aimFallbackAxis = simFrame::withHeight(glm::vec3(0.f), -1.f);
+	static_assert(simFrameDetail::sameBits(aimFallbackAxis, glm::vec3(0.f, -1.f, 0.f)),
+	    "aimFallbackAxis must stay (0,-1,0) with +0 zeros: it is the axis the radial's InitialConditions::initialAimRotationAxis, a wire field, takes inside the near-pole band. "
+	    "Not simFrame::kTurnAxis or kUp: they are +Y since og-sim-metres-yup task 26, and rotate(a, +Y) is rotate(-a, -Y), a mirrored swing pose and a sign-flipped stored axis. "
+	    "Not -simFrame::kUp or kUp * -1.f: their -0 zeros change the stored axis's bytes. "
+	    "Was the chart-P simFrame::kTurnAxis.");
 	const float aimDot = glm::dot(aimDirection, defaultForward);
 	const float aimAngle = glm::acos(aimDot);
 	// ⛔G-03  docs/DAttackMachineSimulation-guards.md
 	const bool aimEqualsForward = glm::abs(glm::abs(aimDot) - 1.f) < 0.0001f;
-	const glm::vec3 aimRotationAxis = [&aimEqualsForward, &turnAxis, &defaultForward, &aimDirection]() {
+	const glm::vec3 aimRotationAxis = [&aimEqualsForward, &aimFallbackAxis, &defaultForward, &aimDirection]() {
 		if (aimEqualsForward)
-			return turnAxis;
+			return aimFallbackAxis;
 		else
 			return glm::normalize(glm::cross(defaultForward, aimDirection));
 	}();

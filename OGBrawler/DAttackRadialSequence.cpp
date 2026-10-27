@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
+// docs/DAttackRadialSequence-rationale.md · docs/DAttackRadialSequence-guards.md
 #include "DAttackRadialSequence.h"
 #include "OGSimulation/OGAssert.h"
 #include "OGSimulation/DMathUtil.h"
@@ -15,7 +16,6 @@ DAttackRadialSequence::DAttackRadialSequence(const std::vector<DAttackRadialSequ
 	, m_timeToReachZeroVelocity(timeToReachZeroVelocity)
 	, m_rotationAxis(rotationAxis)
 	, m_fromRotationAxisToTurnAxis(dMathUtil::getRotationMatrix(m_rotationAxis, turnAxis()))
-	//, m_fromRotationAxisToTurnAxis(dMathUtil::getRotationMatrix(turnAxis(), m_rotationAxis))
 {
 	OG_CHECK(attackPoints.size() >= 1, "attackPoints must have at least one point");
 	OG_CHECK(attackPoints[0].time == 0.f, "First attack point must have time 0");
@@ -58,7 +58,6 @@ DAttackRadialSequence::DAttackRadialSequence(const std::vector<DAttackRadialSequ
 		m_velocityAtPoint.push_back(w1);
 	}
 
-	//reach zero velocity at the end
 	const float t1 = m_attackPoints.back().time + m_timeToReachZeroVelocity;
 	const float t0 = m_attackPoints.back().time;
 	const float w1 = 0.f;
@@ -107,11 +106,6 @@ float DAttackRadialSequence::getAngle(float time) const
 	return m_attackPoints.back().angle;
 }
 
-// [movement-sim task 83] The SAME SEGMENT WALK as getAngle above, differentiated: inside the
-// segment containing `time` the angle is o0 + w0*dt + a*dt*dt/2, so the velocity is w0 + a*dt.
-// Outside the authored span it is the front / back table velocity, matching getAngle's clamp to
-// the front / back angle. Keeping the two walks textually parallel is deliberate: an edit to one
-// that is not mirrored in the other is visible here rather than only in a hit direction.
 float DAttackRadialSequence::getAngularVelocity(float time) const
 {
 	if (time <= m_attackPoints.front().time)
@@ -177,47 +171,11 @@ DAttackSegment DAttackRadialSequence::getAttackSegment(float angle) const
 
 DAttackSegment DAttackRadialSequence::getAttackSegment(const glm::vec2& localDirection) const
 {
-	//auto isBetween = [](const glm::vec2& target, const glm::vec2& vec1, const glm::vec2& vec2, bool positiveRotationDirection) {
-	//	float crossProduct = vec1.x * target.y - vec1.y * target.x;
-	//	float crossProduct2 = vec2.x * target.y - vec2.y * target.x;
-	//	float crossProduct3 = vec1.x * vec2.y - vec1.y * vec2.x;
-
-	//	if (positiveRotationDirection)
-	//	{
-	//		if (crossProduct3 > 0)
-	//			return crossProduct >= 0 && crossProduct2 < 0;
-	//		else
-	//			return !(crossProduct < 0 && crossProduct2 >= 0);
-	//	}
-	//	else
-	//	{
-	//		if (crossProduct3 < 0)
-	//			return crossProduct <= 0 && crossProduct2 > 0;
-	//		else
-	//			return !(crossProduct >= 0 && crossProduct2 > 0);
-	//	}
-	//};
-
-	//for (auto attackPointIt = m_attackPoints.begin(); attackPointIt != m_attackPoints.end(); ++attackPointIt)
-	//{
-	//	auto attackPointNextIt = attackPointIt + 1;
-
-	//	glm::vec2 current(std::cos(attackPointIt->angle), std::sin(attackPointIt->angle));
-	//	glm::vec2 next(std::cos(attackPointNextIt->angle), std::sin(attackPointNextIt->angle));
-	//	if (isBetween(localDirection, current, next, attackPointNextIt->angle > attackPointIt->angle))
-	//	{
-	//		const unsigned int index = (attackPointIt - m_attackPoints.begin());
-	//		return DAttackSegment{ attackPointIt->angle, attackPointNextIt->angle, index, getDAttackRadialSequenceState(index) };
-	//	}
-	//}
-
-	//return DAttackSegment{ 0, 0, static_cast<unsigned int>(m_attackPoints.size()), DAttackRadialSequenceState::Idle };
-
 	bool velocityIsPositive = m_velocityAtPoint[1] > 0.f;
 	auto& firstPoint = m_attackPoints.front();
 	glm::vec2 initialDirection(std::cos(firstPoint.angle), std::sin(firstPoint.angle));
 	float initialAngle = firstPoint.angle;
-	float angle = /*2.f * glm::pi<float>() -*/ glm::orientedAngle(initialDirection, localDirection);
+	float angle = glm::orientedAngle(initialDirection, localDirection);
 
 	if (velocityIsPositive)
 	{ 
@@ -238,13 +196,13 @@ DAttackSegment DAttackRadialSequence::getAttackSegment(const glm::vec2& localDir
 		auto attackPointNextIt = attackPointIt + 1;
 		const float thisAngle = std::abs(attackPointIt->angle - initialAngle);
 		const float nextAngle = std::abs(attackPointNextIt->angle - initialAngle);
-		if (angle >= /*std::abs*/(thisAngle) && angle < /*std::abs*/(nextAngle))
+		if (angle >= thisAngle && angle < nextAngle)
 		{
 			const unsigned int index = (attackPointIt - m_attackPoints.begin());
 			return DAttackSegment{ attackPointIt->angle, attackPointNextIt->angle, index, getDAttackRadialSequenceState(index) };
 		}
 	}
-	return DAttackSegment{ 0, 0, static_cast<unsigned int>(m_attackPoints.size()), DAttackRadialSequenceState::Idle }; // TODO
+	return DAttackSegment{ 0, 0, static_cast<unsigned int>(m_attackPoints.size()), DAttackRadialSequenceState::Idle };
 }
 
 DAttackRadialSequenceState DAttackRadialSequence::getDAttackRadialSequenceState(float angle) const
@@ -270,6 +228,7 @@ DAttackRadialSequenceState DAttackRadialSequence::getDAttackRadialSequenceState(
 
 float DAttackRadialSequence::getDuration() const
 {
+	// ⛔G-01  docs/DAttackRadialSequence-guards.md
 	return m_attackPoints.back().time;
 }
 

@@ -143,15 +143,16 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 	// wedge is centered on the predicted attack direction (== aim). For the SIDE
 	// sequences the wedge is shifted outward so its arc STARTS at the orthogonal
 	// (aim ± π/2) and curves toward aim: center at aim ± 5π/12, so the π/6-wide wedge
-	// spans [aim ± π/3, aim ± π/2]. Positive rotation about +Z is CCW from above,
-	// matching computeAttackIndicatorGeometry's threshold-rotation convention.
+	// spans [aim ± π/3, aim ± π/2]. A positive rotation about simFrame::kTurnAxis (+Y) is
+	// counter-clockwise from above, so the left swing's wedge (on the aim's right) turns by
+	// -5π/12, matching computeAttackIndicatorGeometry's threshold-rotation convention.
 	const glm::vec3 aimDirectionXY = glm::normalize(
 		simFrame::flatten(input.getAimDirection()));
 	glm::vec3 wedgeCenterDirectionXY = attackGeometry.attackDirectionXY;
 	if (attackGeometry.kind != dAttackVisualizationUtils::AttackDirectionKind::Forward)
 	{
 		const bool isLeft = attackGeometry.kind == dAttackVisualizationUtils::AttackDirectionKind::Left;
-		const float wedgeCenterOffset = (isLeft ? 1.f : -1.f) * 5.f * glm::pi<float>() / 12.f;
+		const float wedgeCenterOffset = (isLeft ? -1.f : 1.f) * 5.f * glm::pi<float>() / 12.f;
 		constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
 		const glm::mat4 wedgeRot = glm::rotate(glm::mat4(1.f), wedgeCenterOffset, turnAxis);
 		wedgeCenterDirectionXY = glm::vec3(wedgeRot * glm::vec4(aimDirectionXY, 0.f));
@@ -176,7 +177,11 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 	//     starts at the orthogonal (±5π/12 from aim) — far from the aim direction, so
 	//     the peripheral alone wouldn't clearly identify the sector.
 	const float areaAngularWidth = glm::pi<float>() / 6.f;	// TOTAL angle (±π/12 per side), uniform for all predicted sequences.
-	constexpr glm::vec3 areaNormal = simFrame::kTurnAxis;				// flat ground-plane wedge, matching the wedge direction's horizontal-plane semantics
+	// Flat ground-plane wedge, matching the wedge direction's horizontal-plane semantics. A 3-D
+	// drawing normal, not a chart value: it keeps (0, -1, 0), the value it had as the turn axis
+	// before og-sim-metres-yup task 26 made simFrame::kTurnAxis +Y. drawSegmentSolid ignores the
+	// sign of its angle but not of its normal, which picks the vertex order (the winding).
+	constexpr glm::vec3 areaNormal = simFrame::withHeight(glm::vec3(0.f), -1.f);
 
 	// PIE-tuned segment radii (in m; assume innerRadius = 0.9, outerRadius = 3):
 	//   peripheralMid  = 0.45 — split within the peripheral [0, innerRadius] region
@@ -239,8 +244,10 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 		const float kSweepArcThickness         = 0.01f;                      // debug-line thickness for the arc
 		const float kSweepChevronHeight        = kSweepChevronSize * 0.5f * 1.7320508f;  // (√3/2)·side
 
-		// Sign convention: left attack = +Z rotation from aim (CCW), right = -Z (CW).
-		const float sign                    = (attackGeometry.kind == dAttackVisualizationUtils::AttackDirectionKind::Left) ? 1.f : -1.f;
+		// Sign convention: about simFrame::kTurnAxis (+Y), the left attack's arc (on the aim's
+		// right) is a negative rotation from aim (clockwise from above), the right attack's a
+		// positive one (counter-clockwise).
+		const float sign                    = (attackGeometry.kind == dAttackVisualizationUtils::AttackDirectionKind::Left) ? -1.f : 1.f;
 		const float wedgeSideAngle          = sign * kSweepNearWedgeAng;
 		const float arcAimSideAngle         = sign * kSweepNearAimAng;
 		const float chevronAimSideAngle     = sign * kSweepChevronNearAimAng;
@@ -266,9 +273,9 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 			const glm::vec3 radialDir = glm::vec3(radialRot * glm::vec4(aimDirectionXY, 0.f));
 			const glm::vec3 chevronCenter = attackerRoot + radialDir * kSweepArcRadius;
 
-			// Tangent toward aim = rotate radial by (-sign · π/2) about +Z.
-			// For left (sign=+1): tangent = rotate(radial, -π/2) = CW rotation → moves toward smaller +θ = toward aim.
-			// For right (sign=-1): tangent = rotate(radial, +π/2) = CCW → moves toward smaller |θ| (from -60° to -15°) = toward aim.
+			// Tangent toward aim = rotate radial by (-sign · π/2) about simFrame::kTurnAxis (+Y).
+			// For left (sign=-1): tangent = rotate(radial, +π/2) = CCW → moves toward smaller |θ| (from -60° to -15°) = toward aim.
+			// For right (sign=+1): tangent = rotate(radial, -π/2) = CW rotation → moves toward smaller +θ = toward aim.
 			const glm::mat4 tangentRot = glm::rotate(glm::mat4(1.f), -sign * glm::pi<float>() * 0.5f, turnAxis);
 			const glm::vec3 tangentDir = glm::vec3(tangentRot * glm::vec4(radialDir, 0.f));
 

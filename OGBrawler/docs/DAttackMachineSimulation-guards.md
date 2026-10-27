@@ -112,8 +112,9 @@ float overload, so no build or test here fails on it. That is why a person has t
 **R0 (verified 2026-09-23).** The guard sub-simulation's copy
 (`DAttackGuardSimulation.h`, `aimEqualsForward`) is byte-identical. The test exists:
 `DAttackAbs.MachineNearPoleAimTakesTheEpsilonBandBranch` drives the legacy `integrate`, which calls
-the same `setRadialSimulationInitialConditions`, and it expects the axis's `simFrame::turnComponent` +1 under the
-float overload and -1 under the int one.
+the same `setRadialSimulationInitialConditions`, and it expects the axis's `simFrame::turnComponent` -1 under the
+float overload and +1 under the int one (+1 and -1 before og-sim-metres-yup task 26 negated `turnComponent`;
+the axis itself did not change, and a `static_assert` after `aimFallbackAxis` pins its bits).
 
 **Placement.** A substitution on the tagged statement.
 
@@ -388,7 +389,9 @@ on a shadow copy and compiled it (single translation unit, the `OGBrawlerTests` 
 **Added after the conversion** (not in the census above, which closes over the pre-conversion
 header): **G-08** (og-attackstatetransition-cleanup task 1), two substitutions on one statement.
 **G-09** (task 2), a substitution and a deletion on one statement. **G-10** (task 2), a deletion. The
-follow-up mapping itself (`followUpSequenceFor`) is held by two `static_assert`s, with no entry.
+follow-up mapping itself (`followUpSequenceFor`) is held by two `static_assert`s, with no entry. The
+near-pole fallback axis `aimFallbackAxis` (og-sim-metres-yup task 26) is held by one `static_assert` on its
+bits, with no entry (rationale §16).
 
 ---
 
@@ -442,7 +445,8 @@ unequal to the value-initialised input). The prohibition on the wire value is ca
 quote are not:
 * `(0,0,1)` was **+Z, the up axis** in the Z-up frame this was written in (`defaultForward` was `(1,0,0)`). It is
   not "forwards". (Since og-sim-metres-yup task 19 the aim is `simFrame::kUp` = `(0,1,0)`, and the local the fence
-  names is `turnAxis`, `simFrame::kTurnAxis`.)
+  names was `turnAxis`, `simFrame::kTurnAxis`; since og-sim-metres-yup task 26 it is `aimFallbackAxis`,
+  `(0, -1, 0)`, pinned by a `static_assert`.)
 * For **this** slice, "a value-initialised (0,0,0) aim would reach normalize()" is not what separates
   the two values. Every read of the machine aim projects it onto the ground plane first (the Hadouken trigger,
   `setRadialSimulationInitialConditions` and `dAttackDirection::classify`), and `(0,0,1)` and `(0,0,0)`

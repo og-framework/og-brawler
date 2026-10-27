@@ -102,15 +102,16 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	rendererFunctor.drawCircleArc(rootTranslation, input.getAimDirection(), radialSimulationStaticData.getAttackCircle().getOuterRadius(), glm::pi<float>() / 32.f, 1, 0.01f);
 
 	// Inner-radius arc: a quarter circle on the character's screen-right of aim, overhanging
-	// both ends by aimArchAngle (spans -aimArchAngle .. π/2 + aimArchAngle about +Z).
-	// A positive rotation about +Z maps UE's X (forward) to Y (right), so that side is
-	// screen-right. The classifier (dAttackDirection::classify) labels the same side
-	// "left" because it reads cross(aim, dir).z > 0 as left in a right-handed frame.
+	// both ends by aimArchAngle (spans aimArchAngle .. -(π/2 + aimArchAngle) about
+	// simFrame::kTurnAxis = +Y). A negative turn about +Y is clockwise seen from above, so it
+	// maps forward to right and that side is screen-right. The classifier
+	// (dAttackDirection::classify) labels the same side "left": movement to that side gives
+	// its negative signed angle, which it maps to the left swing.
 	{
 		const float innerArcLeftExtent   = glm::pi<float>() / 2.f + aimArchAngle;
 		const float innerArcRightExtent  = aimArchAngle;
 		const float innerArcHalfAngle    = (innerArcLeftExtent + innerArcRightExtent) * 0.5f;
-		const float innerArcCenterOffset = (innerArcLeftExtent - innerArcRightExtent) * 0.5f; // positive → CCW
+		const float innerArcCenterOffset = (innerArcRightExtent - innerArcLeftExtent) * 0.5f; // negative → clockwise from above
 		constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
 		const glm::mat4 innerArcCenterRot = glm::rotate(glm::mat4(1.f), innerArcCenterOffset, turnAxis);
 		const glm::vec3 innerArcCenter = glm::vec3(innerArcCenterRot * glm::vec4(input.getAimDirection(), 0.f));
@@ -142,11 +143,11 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	//                     segments because drawCircleArc orients its plane via world up
 	//                     (see DrawDebugHelpers.cpp:FindBestAxisVectors usage) and so
 	//                     can't reliably render a vertical arc.
-	//   Left strike     → π/3 horizontal arc on the inner radius, starting at aim and
-	//                     extending CCW around +Z (the player's left, matching
-	//                     integrate3's positive signedAngle → seq 1 labeling).
-	//   Right strike    → π/3 horizontal arc, starting at aim and extending CW (player's
-	//                     right, matching integrate3's negative signedAngle → seq 0).
+	//   Left strike     → a horizontal weapon whose blade leaves the inner circle at the
+	//                     threshold point π/6 from aim on the aim's RIGHT (clockwise seen
+	//                     from above), matching the classifier's negative signedAngle → seq 1.
+	//   Right strike    → the mirror image on the aim's left (counter-clockwise), matching
+	//                     the classifier's positive signedAngle → seq 0.
 	const float kIndicatorRadius    = radialSimulationStaticData.getAttackCircle().getInnerRadius();
 	const float kIndicatorThickness = 0.04f; // green reference arcs use 1.f
 	const unsigned int kIndicatorColor = 0; // 0 = red per DAttackCircularVisualizationUImpl::idToColor
@@ -191,12 +192,13 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 		const glm::vec3 aimTip = rootTranslation + input.getAimDirection() * radialSimulationStaticData.getAttackCircle().getOuterRadius();
 
 		// Compute the "reference handle length" — the chord of the inner circle traced by
-		// a canonical (+π/6 CCW from aim) threshold line to aimTip. This is the L/R
+		// a canonical (-π/6 about simFrame::kTurnAxis, i.e. π/6 clockwise from aim seen from
+		// above) threshold line to aimTip. This is the L/R
 		// handle length; the forward case reuses the same value so both indicators have
 		// visually identical handle proportions.
 		const glm::vec3 aimDirectionXY = glm::normalize(
 			simFrame::flatten(input.getAimDirection()));
-		const float refThresholdAngle = glm::pi<float>() / 6.f;
+		const float refThresholdAngle = -glm::pi<float>() / 6.f;
 		constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
 		const glm::mat4 refRot = glm::rotate(glm::mat4(1.f), refThresholdAngle, turnAxis);
 		const glm::vec3 refThresholdDir = glm::vec3(refRot * glm::vec4(aimDirectionXY, 0.f));
@@ -216,8 +218,11 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 			const glm::vec3 handleEnd = top + weaponDir * kSideHandleLength;
 
 			// Vertical shaft: perp is in the plane containing weapon axis and up.
-			const glm::vec3 horizontalPerp = simFrame::kChartOrientation * glm::normalize(glm::cross(weaponDir, up));
-			const glm::vec3 shaftPerp     = simFrame::kChartOrientation * glm::normalize(glm::cross(weaponDir, horizontalPerp));
+			// The two perps are 3-D drawing directions, not chart values, so they carry a fixed
+			// sign: the -1 that simFrame::kChartOrientation had before og-sim-metres-yup task 26
+			// made it +1. The sign of a shaftPerp picks the winding of drawWeapon's triangles.
+			const glm::vec3 horizontalPerp = -glm::normalize(glm::cross(weaponDir, up));
+			const glm::vec3 shaftPerp     = -glm::normalize(glm::cross(weaponDir, horizontalPerp));
 			dAttackVisualizationUtils::drawWeapon(rendererFunctor,
 				top, handleEnd, aimTip, shaftPerp,
 				kIndicatorColor, kIndicatorThickness, kShaftWidth, kTriangleSide);
@@ -236,9 +241,10 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 			                         simFrame::height(rootTranslation));
 
 			// Horizontal shaft: perp lies in the ground plane, perpendicular to weapon axis.
+			// A 3-D drawing direction with the fixed sign of the forward case above.
 			const glm::vec3 weaponDir = glm::normalize(aimTip - backPoint);
 			constexpr glm::vec3 up = simFrame::kUp;
-			const glm::vec3 shaftPerp = simFrame::kChartOrientation * glm::normalize(glm::cross(weaponDir, up));
+			const glm::vec3 shaftPerp = -glm::normalize(glm::cross(weaponDir, up));
 			dAttackVisualizationUtils::drawWeapon(rendererFunctor,
 				backPoint, frontPoint, aimTip, shaftPerp,
 				kIndicatorColor, kIndicatorThickness, kShaftWidth, kTriangleSide);

@@ -146,7 +146,9 @@ void visualize(const Input<SpatialQueryAdapterType, RendererFunctorType>& input,
 		const glm::vec3 normalizedCollisionDirection = glm::normalize(collisionDirection);
 		glm::vec4 normalizedCollisionDirection4(normalizedCollisionDirection, 0.f);
 		constexpr glm::vec3 up = simFrame::kUp;
-		const glm::vec3 ortogonalCollisionDirection = simFrame::kChartOrientation * glm::cross(normalizedCollisionDirection, up);
+		// A 3-D drawing direction, not a chart value: the fixed -1 simFrame::kChartOrientation had
+		// before og-sim-metres-yup task 26 made it +1.
+		const glm::vec3 ortogonalCollisionDirection = -glm::cross(normalizedCollisionDirection, up);
 		//rendererFunctor.drawLine(collidingPosition + ortogonalCollisionDirection* staticData.getAttackCircle().getOuterRadius(), collidingPosition - ortogonalCollisionDirection * staticData.getAttackCircle().getOuterRadius(), 2, 1.f);
 
 

@@ -99,7 +99,8 @@ inline glm::vec3 cameraRelativeDirection(const glm::vec3& camForward, const glm:
 	camForwardNormalized = glm::normalize(camForwardNormalized);
 
 	glm::mat4 camRotationMatrix;
-	dMathUtil::getRotationMatrix(simFrame::fromForwardRight(glm::vec2(0.f, -1.f), 0.f), camForwardNormalized, camRotationMatrix);
+	dMathUtil::getRotationMatrix(
+		simFrame::fromForwardRight(glm::vec2(0.f, -1.f), 0.f), camForwardNormalized, simFrame::kUp, camRotationMatrix);
 
 	glm::vec3 normalizedDirection = glm::normalize(inputDirection);
 	glm::vec4 direction4(normalizedDirection, 0.f);

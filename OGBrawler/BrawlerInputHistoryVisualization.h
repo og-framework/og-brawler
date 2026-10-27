@@ -85,14 +85,14 @@ struct NamedDirection
 	DirectionBucket bucket;
 };
 
-// WHICH SIDE +pi/2 IS, AND WHY THIS TABLE CONTRADICTS THE HEADER IT READS FROM.
-// InputSequence.h documents +pi/2 as "right-of-aim" and derives it from
-// right = (fwd.y, -fwd.x), annotating that "right-hand z-up". The vectors reaching it
-// are Unreal world vectors, copied component-for-component with no handedness change,
-// and Unreal's own right vector is the OTHER perpendicular: the rotation carrying +X
-// onto fwd carries +Y onto (-fwd.y, fwd.x). So (fwd.y, -fwd.x) is the character's
-// LEFT, +pi/2 is left-of-aim, and pressing left must draw a LEFT arrow.
-// ⛔ THAT SENTENCE IN InputSequence.h IS STALE. Do not "restore" this table to it.
+// WHICH SIDE +pi/2 IS, AND WHY THIS TABLE ONCE CONTRADICTED THE HEADER IT READS FROM.
+// InputSequence.h documented +pi/2 as "right-of-aim" and derives it from
+// right = (fwd.y, -fwd.x), once annotated "right-hand z-up". The matcher reads its
+// vectors as simFrame::forwardRight's (forward, right) pair, so (fwd.y, -fwd.x) turns
+// (1, 0) into (0, -1), right component -1: it is the character's LEFT, +pi/2 is
+// left-of-aim, and pressing left must draw a LEFT arrow. og-sim-metres-yup task 26
+// corrected InputSequence.h's comment to say so; its names (angle::Down = +pi/2) stand.
+// ⛔ Do not "restore" this table to the old right-of-aim reading.
 //
 // In increasing aim-relative angle from Forward. DECLARATION ORDER IS THE TIE-BREAK:
 // an angle landing exactly on a pi/8 midpoint keeps the earlier entry.

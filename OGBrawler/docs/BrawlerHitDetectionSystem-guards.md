@@ -239,6 +239,12 @@ the authored angular velocity. That was not surveyed across the shipped sequence
 ⚠ **R0, 2026-09-23.** "the sequence's angular velocity" is now sampled at `swingTimer`, not at
 `state.attackTimer`. See G-04 for why the two differ once `integrate` has advanced the timer.
 
+⚠ **R0, og-sim-metres-yup task 26 (2026-10-26).** "Sequence 0 runs -pi/2 -> +3pi/8 (w > 0)" was
+chart P. Task 26 negated every authored angle: sequence 0 now runs +π/2 → −3π/8 (w < 0) and
+sequence 1 mirrors it (w > 0). The sequence axis, `simFrame::kTurnAxis`, became `+Y` with it, so
+`cross(axis, r)` and `w` both changed sign and the direction of travel did not:
+`DAttackRadial.SwingTangentFollowsTheSwingDirection` checks the same world tangents as before.
+
 ---
 
 ## G-06 — A hit on the rotation axis gets the ZERO tangent, never `normalize()`'s NaN

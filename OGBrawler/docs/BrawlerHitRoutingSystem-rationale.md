@@ -221,7 +221,8 @@ reached with a half-initialised fallback.
 * the pristine says the fallback "is still load-bearing" because a horizontal-axis swing has a
   vertical tangent. That mechanism is real but no shipped Knockback row reaches it: rows 0-3 rotate
   about local Z, the aim rotation axis is ±Z (`dAttackMachineSimulation::setRadialSimulationInitialConditions`;
-  in the frame's terms both are the turn axis, `simFrame::kTurnAxis`, §9),
+  in the frame's terms both are vertical: the rows turn about `simFrame::kTurnAxis` and the aim axis is
+  ± it, `aimFallbackAxis` `(0, -1, 0)` inside the near-pole band, §9),
   so their tangent is a horizontal unit vector (the annulus gate keeps the hit's in-plane radius above
   the 0.9 m inner radius). Row 4, the only local-Y sequence, is a Stun, and its direction is discarded.
   The fallback is reached today only by a planted vertical tangent
@@ -338,16 +339,30 @@ The direction picks and the aim fallback go through og-simulation's frame vocabu
 bits as the literal it replaced.
 
 * **`normalisedXY` picks the ground-plane coordinates with `simFrame::planar(v)`**, the shipped
-  `(v.x, v.y)`. `hitDirectionXY` is a 2-D chart value, (forward, right). The movement sub-simulation
+  `(-v.z, -v.x)`. `hitDirectionXY` is a 2-D chart value, (forward, left) since og-sim-metres-yup task 26
+  ((forward, right) under chart P before it). The movement sub-simulation
   writes it into its tangent basis, and that basis carries the chart orientation
   (`BrawlerMovementSimulation-rationale.md` §18), so the two stay aligned when the frame changes.
   The fallback `glm::vec2(1.f, 0.f)` is the chart's forward and is not a frame literal.
 * **`attackerAimXY`** rotates `forward4`, `simFrame::kForward` with a zero w, by the attacker's
-  initial aim. When the stored axis is zero it falls back to `turnAxis`, `simFrame::kTurnAxis`, the
-  axis the machine also falls back to (`DAttackMachineSimulation-rationale.md` §16). Both are
+  initial aim. When the stored axis is zero it falls back to `aimFallbackAxis`, `(0, -1, 0)`, the
+  axis the machine also falls back to (`DAttackMachineSimulation-rationale.md` §16): the turn axis of
+  chart P, kept when og-sim-metres-yup task 26 made `simFrame::kTurnAxis` `+Y`. A `static_assert` after
+  the declaration pins its bits (`simFrameDetail::sameBits` against `glm::vec3(0.f, -1.f, 0.f)`):
+  `simFrame::kTurnAxis` there fails to compile (error C2338, measured by the task 26 rework). Both are
   `constexpr` locals, the constant-folding form for a vocabulary constant that enters arithmetic.
   The same section says what that form does not fix: the zero signs of the stored aim axis this
   branch reads, which depend on how the compiler optimises the machine, not on its source.
+* **What a different fallback would break, and when it is reached.** `glm::rotate(angle, +Y)` is
+  `glm::rotate(-angle, -Y)`, so for any non-zero stored angle a `+Y` fallback mirrors the aim that
+  `directionAwayFromAttacker` falls back to, and a knockback on that path goes the other way. A negated
+  axis (`-simFrame::kUp`) has `-0` components where this one has `+0` (the signed-zero rule). With the
+  shipped machine the branch is never taken with a non-zero angle: the machine writes `initialAimAngle`
+  and `initialAimRotationAxis` together, so a zero axis comes only from a value-initialised
+  `InitialConditions`, whose angle is also 0, and a rotation by 0 is the identity about either axis (up to
+  the signs of zeros). The value becomes load-bearing the day anything stores an angle without its axis.
+  Measured by poison (task 26, this axis re-pointed at `kTurnAxis` together with the machine's and the
+  guard's, restored byte-identical): no hit-routing case and no golden field changed, as expected.
 
 ---
 

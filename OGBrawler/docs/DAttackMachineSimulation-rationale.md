@@ -181,7 +181,7 @@ anywhere but last breaks `zero()`'s five-argument initializer (`C2440`, measured
 > parenthesized aggregate init, exactly as the pre-fold call site did.
 
 The prohibition in that block was guard **G-01** (retired by task 4), with its R0: `(0,0,1)` was the
-up axis then (the turn axis, `turnAxis` since og-sim-metres-yup task 22), and for this slice the normalize argument
+up axis then (the turn axis, `turnAxis` from og-sim-metres-yup task 22, `aimFallbackAxis` since task 26), and for this slice the normalize argument
 does not separate the two values.
 
 ---
@@ -815,14 +815,15 @@ not agree with each other:
 
 | id | `SimulatableBrawlerTypes.h`, sequence list | `SimulatableBrawlerTypes.h`, hit-reaction list | `DAttackDirectionClassifier.h` | the authored angle |
 |---|---|---|---|---|
-| 0 | "from idle to leftAttack" | "right" | `kRightSequenceId` | rises, −4π/8 → 3π/8 |
-| 1 | "from idle to rightAttack" | "left" | `kLeftSequenceId` | falls, 4π/8 → −3π/8 |
-| 2 | "from leftAttack to leftAttack" | "left -> left" | (none) | rises, 4π/8 → 17π/8 |
-| 3 | "from rightAttack to rightAttack" | "right -> right" | (none) | falls, −4π/8 → −17π/8 |
-| 4 | "from idle to rightAttack (vertical)" | "forward/overhead" | `kForwardSequenceId` | about Y, not Z |
+| 0 | "from idle to leftAttack" | "right" | `kRightSequenceId` | falls, 4π/8 → −3π/8 |
+| 1 | "from idle to rightAttack" | "left" | `kLeftSequenceId` | rises, −4π/8 → 3π/8 |
+| 2 | "from leftAttack to leftAttack" | "left -> left" | (none) | falls, −4π/8 → −17π/8 |
+| 3 | "from rightAttack to rightAttack" | "right -> right" | (none) | rises, 4π/8 → 17π/8 |
+| 4 | "from idle to rightAttack (vertical)" | "forward/overhead" | `kForwardSequenceId` | about `kVerticalTurnAxis`, not the turn axis |
 
-Read from the tree on 2026-10-03. The sequence list names 0 and 2 the same side ("leftAttack"), and
-the angle of 0 and of 2 rises while that of 1 and of 3 falls. So 2 continues 0's sweep and 3
+Read from the tree on 2026-10-03; the angles are the native chart's since og-sim-metres-yup task 26, which
+negated every one of them (under chart P 0 and 2 rose and 1 and 3 fell). The sequence list names 0 and 2
+the same side ("leftAttack"), and the angle of 0 and of 2 falls while that of 1 and of 3 rises. So 2 continues 0's sweep and 3
 continues 1's, and the button-keyed rule paired them the same way. The hit-reaction list calls 0
 "right" and 2 "left -> left", and the classifier calls 0 right. Nothing was renamed. The lead raises
 the labels with the user.
@@ -946,10 +947,29 @@ aim rotation axis (the second bullet).
 
 * **`setRadialSimulationInitialConditions`** flattens the aim with `simFrame::flatten`, which sets
   the up component to `+0`, the same bits as the replaced `glm::vec3(aim.x, aim.y, 0.f)`.
-  `defaultForward` is `simFrame::kForward`. `turnAxis` (defaultUp until og-sim-metres-yup task 22) is
-  `simFrame::kTurnAxis`: it is the rotation axis taken when the aim lies along ±forward, where
-  `cross(defaultForward, aimDirection)` vanishes (guard G-03's band). It was up in the Z-up frame; in the
-  shipped Y-up frame it is `(0, -1, 0)`, so task 22 renamed it.
+  `defaultForward` is `simFrame::kForward`. `aimFallbackAxis` (defaultUp until og-sim-metres-yup task 22,
+  then `turnAxis` until task 26) is `(0, -1, 0)`: it is the rotation axis taken when the aim lies along
+  ±forward, where `cross(defaultForward, aimDirection)` vanishes (guard G-03's band). It was up in the
+  Z-up frame; in the Y-up frame it was `simFrame::kTurnAxis` under chart P, `(0, -1, 0)`, so task 22
+  renamed it. Task 26 made `simFrame::kTurnAxis` `+Y` and kept this axis's value, built with
+  `simFrame::withHeight(glm::vec3(0.f), -1.f)` so its zeros stay `+0`. A `static_assert` after the
+  declaration pins those bits (`simFrameDetail::sameBits` against `glm::vec3(0.f, -1.f, 0.f)`), and so do
+  the same assertions after the two other copies of this axis, in `BrawlerHitRoutingSystem.h`'s
+  `attackerAimXY` and in `DAttackGuardSimulation.h`'s `integrate`. Measured by the task 26 rework:
+  `simFrame::kTurnAxis` at any of the three, `-simFrame::kUp` here and `simFrame::kUp * -1.f` in the guard
+  sub-simulation each fail to compile (error C2338).
+* **What a `+Y` or a negated fallback would break.** The lambda returns this axis when `|aimDot|` is
+  within `1e-4` of 1 (guard G-03's band), and the machine stores it, with `aimAngle`, as the radial's
+  `InitialConditions::initialAimRotationAxis`, a wire field. `glm::rotate(aimAngle, +Y)` is
+  `glm::rotate(-aimAngle, -Y)`: a different swing pose for every `aimAngle` the band admits other than an
+  exact 0, and near the antiparallel pole `aimAngle` is about π, where `sin` is not 0 in float. The
+  stored axis itself changes sign whatever the angle, so the correction payload changes too. A negated
+  axis (`-simFrame::kUp`) has `-0` components where `withHeight(glm::vec3(0.f), -1.f)` has `+0`, so the
+  stored axis's bytes change on the wire. The guard sub-simulation's copy turns the guard body the same
+  way. Measured (task 26, a poison build with all three fallback axes re-pointed at `kTurnAxis`, restored
+  byte-identical): `DAttackAbs.MachineNearPoleAimTakesTheEpsilonBandBranch` fails (`turnComponent` +1
+  where the band must give −1), and both sections of `DAttackGuard.NearPoleAimTakesTheEpsilonBandBranch`
+  fail. The golden trace stays exact: its scenario never aims inside the band, so it cannot see this edit.
 * **Both are `constexpr` locals: the constant-folding form, which does not fix the zero signs.**
   A vocabulary constant that enters arithmetic (a cross or matrix product, a rotation axis) is used
   through a `constexpr` local or as the `static constexpr` member itself, because a runtime copy
