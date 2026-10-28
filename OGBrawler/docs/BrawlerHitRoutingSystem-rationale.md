@@ -106,7 +106,10 @@ machine enters `HitFlinch` from any state on `wasHitThisTick`, `GuardFlinch` fro
 `GuardFlinch` on `wasProjectileBlockedThisTick`, and `GuardFlinch` from `Attacking` only on
 `wasGuardBlockedThisTick`. The movement sub-simulation launches on `wasHitThisTick` with
 `hitDirectionXY * knockbackSpeed`. ⚠ The projectile-block transition is gone since
-og-attackstatetransition-cleanup task 4.
+og-attackstatetransition-cleanup task 4. Branches 2 and 3 also write the 3-D `hitDirectionWorld`
+(og-ground-aligned-attacks task 9, §4.4). The movement's hit-tick write reads it with the knob on
+(og-ground-aligned-attacks task 9b, `BrawlerMovementSimulation-rationale.md` §26.1); with the knob off
+nothing reads it.
 
 ### 3.1 Branch 1 — the whole-slice reset (movement-sim task 27)
 
@@ -156,7 +159,8 @@ detected and routed again on each skipped pass, the accepted residual of
 `m_projectileHitReaction` (a Stun), or `m_projectileHitOnFlinchReaction` (a Knockback) when the target
 is in `HitFlinch`, whatever its reaction kind (user ruling 2026-09-21); the machine's cross-kind
 rules do the rest. The direction is the shot's `spawnDir` projected to the ground plane, falling back to forward (`(1, 0)`); a Stun
-discards it. The target's machine state is read in THIS pass, before any `integrate`, so a melee hit
+discards it. The 3-D `hitDirectionWorld` is the normalised `spawnDir` (§4.4); a projectile row's
+`directionSource` is ignored (design OQ15). The target's machine state is read in THIS pass, before any `integrate`, so a melee hit
 routed in the same pass has not reached the target's machine yet and a same-pass projectile sees the
 pre-hit state and stays a Stun (pinned by `HitRouting.ProjectileOnFlinchSameTickStaysAStun`). Both
 inputs are on the wire, so a resim reproduces the choice. See §6 for what that pass does to the
@@ -198,8 +202,9 @@ notion since task 17; the detector reads the state `integrate(T)` left.
 ### 4.1 `resolveHitReaction`
 
 It writes the whole reaction onto the slice: `wasHitThisTick`, the kind, and for a Knockback the
-spec's speed and the direction, with a dwell of `max(lockoutDuration, knockbackSpeed / launchDecel)`;
-for a Stun, speed 0, direction 0 and the spec's lockout. Routing resolves the dwell because it is
+spec's speed and both directions (`hitDirectionXY` and, since og-ground-aligned-attacks task 9,
+`hitDirectionWorld`), with a dwell of `max(lockoutDuration, knockbackSpeed / launchDecel)`;
+for a Stun, speed 0, both directions 0 and the spec's lockout. Routing resolves the dwell because it is
 the one place holding both the attack table and `launchDecel` (the rationale is the header comment
 of `BrawlerHitRoutingTest.cpp`, movement-sim task 27). The `OG_CHECK` on `launchDecel > 0` is the
 rule: a zero decel is an infinite slide with a zero-length lockout.
@@ -242,6 +247,43 @@ The detector's G-06 carried this note about this header's code. Task 29 moved it
 
 Re-verified by task 29 against the header. `attackerAimXY` ends in the same `normalisedXY`, so a NaN
 aim angle there falls back to the chart's forward, `(1, 0)` (`simFrame::kForward`, −Z in the shipped frame), the same way.
+
+### 4.4 The 3-D direction `hitDirectionWorld` and the authored row source (og-ground-aligned-attacks task 9)
+
+The og-ground-aligned-attacks design, §3.6 (user rulings OQ6 and OQ15, 2026-10-28):
+a knockback goes along the ATTACKER's swing tangent in 3-D, so a hit across a crease can launch the
+target. Routing resolves that direction beside `hitDirectionXY`; since task 9b the movement reads it
+with the knob on (`BrawlerMovementSimulation-rationale.md` §26.1). With the knob off nothing reads it,
+so task 9 was bit-identical by construction (both goldens exact).
+
+| source | `hitDirectionWorld` |
+|---|---|
+| melee, `HitDirectionSource::SwingTangent` (every shipped row) | `glm::normalize(hit.swingTangent)`; when the tangent's ground-plane projection is zero, `simFrame::compose(<the away-from-attacker fallback>, 0.f)` (guards G-08) |
+| melee, `HitDirectionSource::AuthoredInSwingFrame` | `glm::normalize(glm::mat3(attackerAimRotation(attacker)) * spec.authoredDirection)` |
+| projectile (either row) | `glm::normalize(slot.spawnDir)`; a zero `spawnDir` gives `simFrame::compose(glm::vec2(1.f, 0.f), 0.f)`, the 3-D form of the XY fallback |
+
+* **The authored direction is in swing-frame coordinates**: `simFrame::kForward` is the attacker's aim
+  and `simFrame::kUp` its ground normal, because `attackerAimRotation` is the rotation the radial IC
+  stores (off flat ground, behind `brawlerGround::kGroundAlignedAttacks`, the machine's tilt times its local
+  turn: og-ground-aligned-attacks task 5). It shares
+  the empty-axis fallback `attackerAimXY` uses (§9), so a value-initialised IC gives the identity, not
+  a NaN. A zero `authoredDirection` on an authored row fails an `OG_CHECK` whose message is the rule and
+  falls back to the tangent. It is the overhead's "possibility to launch" seam (OQ6): the overhead row
+  stays `{ HitReactionKind::Stun, 0.f, 0.72f }`, a Stun writes a zero direction, and no shipped row uses
+  the authored source (`GroundAlignedHitRouting.ShippedRowsKeepTheSwingTangentSource`).
+* **`hitDirectionXY` is computed exactly as before**: the two `resolveHitReaction` calls keep their
+  `normalisedXY(…)` arguments verbatim, and the extraction of `attackerAimRotation` out of `attackerAimXY`
+  keeps its operations. Measured by task 9: eleven routed hits (tangent, vertical tangent, every aim
+  fallback, Stuns, projectiles incl. a vertical and a zero `spawnDir`) printed `hitDirectionXY`, speed and
+  dwell bits before and after the change, identical; `GroundAlignedHitRouting.DirectionXYIsTodaysOnEveryFallbackPath`
+  compares them with a copy of the pre-task-9 formula.
+* **`HitReactionSpec`'s two members are appended with defaults** (`HitReaction.h`), so every positional
+  `{ kind, speed, lockout }` initialiser keeps compiling and keeps the tangent. They live in StaticData
+  and are never serialized.
+* **Pinned** by `GroundAlignedHitRoutingTest.cpp`: the authored `{ Knockback, 20, 0, AuthoredInSwingFrame,
+  normalize(kForward + kUp) }` row on a 30° attacker writes `R_ic · dir`, 45° forward-up in the attacker's
+  ground frame, within 1e-6. Measured by poison (task 9, `directionSource` ignored): that case goes RED with
+  12 failed assertions, `|world - R_ic dir| = 0.965926` at heading 0.
 
 ---
 
@@ -345,7 +387,8 @@ bits as the literal it replaced.
   (`BrawlerMovementSimulation-rationale.md` §18), so the two stay aligned when the frame changes.
   The fallback `glm::vec2(1.f, 0.f)` is the chart's forward and is not a frame literal.
 * **`attackerAimXY`** rotates `forward4`, `simFrame::kForward` with a zero w, by the attacker's
-  initial aim. When the stored axis is zero it falls back to `aimFallbackAxis`, `(0, -1, 0)`, the
+  initial aim, `attackerAimRotation` (extracted by og-ground-aligned-attacks task 9 so the authored
+  direction of §4.4 shares it). When the stored axis is zero that rotation falls back to `aimFallbackAxis`, `(0, -1, 0)`, the
   axis the machine also falls back to (`DAttackMachineSimulation-rationale.md` §16): the turn axis of
   chart P, kept when og-sim-metres-yup task 26 made `simFrame::kTurnAxis` `+Y`. A `static_assert` after
   the declaration pins its bits (`simFrameDetail::sameBits` against `glm::vec3(0.f, -1.f, 0.f)`):

@@ -19,6 +19,7 @@
 #include "OGSimulation/SpatialQueryResult.h"
 #include "OGSimulation/OGAssert.h"
 #include "OGSimulation/SimulationFrame.h"
+#include "OGSimulation/SurfaceFrame.h"
 #include "OGBrawler/SimulatableBrawler.h"
 #include "OGBrawler/DAttackRadialSimulation.h"
 #include "OGBrawler/BrawlerProjectileHitDetection.h"
@@ -204,10 +205,10 @@ void detectRadialHits(float deltaSeconds,
 			const glm::mat4x4 guardTransform = physics.getBodyTransform(hit.bodyId);
 
 			// ∴D-03  docs/BrawlerHitDetectionSystem-rationale.md
-			auto weaponHitIndicatorPosition = [&]() -> glm::vec3 {
-				const glm::vec2 weaponDirXY = glm::normalize(simFrame::planar(currentDirection));
-				const glm::vec2 attackerXY = simFrame::planar(rootTranslation);
-				const glm::vec2 opponentXY = simFrame::planar(hit.objectPosition);
+			auto weaponHitIndicatorPositionIn = [&](const glm::vec3& weaponDirection, const glm::vec3& attacker, const glm::vec3& opponent) -> glm::vec3 {
+				const glm::vec2 weaponDirXY = glm::normalize(simFrame::planar(weaponDirection));
+				const glm::vec2 attackerXY = simFrame::planar(attacker);
+				const glm::vec2 opponentXY = simFrame::planar(opponent);
 				const glm::vec2 v = attackerXY - opponentXY;
 				const float innerR = staticData.getAttackCircle().getInnerRadius();
 				const float outerR = staticData.getAttackCircle().getOuterRadius();
@@ -221,7 +222,18 @@ void detectRadialHits(float deltaSeconds,
 					t = glm::dot(opponentXY - attackerXY, weaponDirXY);
 				t = glm::clamp(t, 0.f, outerR);
 				return simFrame::compose(glm::vec2(attackerXY.x + t * weaponDirXY.x, attackerXY.y + t * weaponDirXY.y),
-					simFrame::height(hit.objectPosition));
+					simFrame::height(opponent));
+			};
+			auto weaponHitIndicatorPosition = [&]() -> glm::vec3 {
+				constexpr glm::vec3 up = simFrame::kUp;
+				const glm::vec3 swingUp = glm::mat3(initialRotation) * up;
+				if (surfaceFrame::isFlat(swingUp))
+					return weaponHitIndicatorPositionIn(currentDirection, rootTranslation, hit.objectPosition);
+				const glm::vec3 local = weaponHitIndicatorPositionIn(
+					surfaceFrame::tiltFromSurface(swingUp, currentDirection),
+					surfaceFrame::tiltFromSurface(swingUp, rootTranslation),
+					surfaceFrame::tiltFromSurface(swingUp, hit.objectPosition));
+				return surfaceFrame::tiltToSurface(swingUp, local);
 			};
 
 			// ∴D-04  docs/BrawlerHitDetectionSystem-rationale.md

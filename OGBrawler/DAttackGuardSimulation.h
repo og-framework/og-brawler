@@ -9,6 +9,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include "DAttackRadialSequence.h"
 #include "DAttackMachineSimulation.h"
+#include "OGBrawler/BrawlerGroundFrame.h"
 #include "OGBrawler/DAttackCircle.h"
 #include "OGBrawler/BrawlerSyncedPlayerInput.h"
 #include "OGSimulation/SimulationDependencies.h"
@@ -19,6 +20,7 @@
 #include "OGSimulation/QueryGeometry.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
 #include "OGSimulation/SimulationFrame.h"
+#include "OGSimulation/SurfaceFrame.h"
 
 #include "OGSimulation/CompilerControl.h"
 OGSIM_OPTIMIZE_OFF
@@ -153,7 +155,9 @@ public:
 	//
 	// Every field of the guard's pose is a CLOSED FORM over state that is already
 	// replicated: position = parent capsule position + attachmentOffset, rotation =
-	// f(this tick's aim input). Nothing is integrated — no torque and no angular
+	// f(this tick's aim input, this tick's ground sample) — the sample is a pure
+	// function of the restored capsule position and static geometry
+	// (og-ground-aligned-attacks task 6). Nothing is integrated — no torque and no angular
 	// velocity is ever written — so replicating it carried 52 B that told the
 	// receiver nothing it could not recompute. It is EXCLUDED from
 	// SerializableFields (see the empty specialization at the bottom of this file)
@@ -244,8 +248,15 @@ void integrate(float deltaSeconds,
 	const StaticData& staticData,
 	Dependencies deps,
 	const RuntimeBindings& bindings,
-	DerivedState& derivedState)
+	DerivedState& derivedState,
+	const brawlerGround::GroundSample& ground)
 {
+	// [og-ground-aligned-attacks task 6] The pose is built in the ground frame of this tick's
+	// sample: the aim is read as a local heading (the world aim taken into the frame, then
+	// flattened), the band/acos/cross below run on that heading exactly as before, and the
+	// rotation is tilted onto the ground last. A flat normal (always, while
+	// brawlerGround::kGroundAlignedAttacks is false) skips both steps: tiltFromSurface returns
+	// its input's bits and the tilt product is not taken, so today's expressions run verbatim.
 	const InitialConditions& initialConditions = deps.owned.get<InitialConditions>();
 	State& state = deps.owned.edit<State>();
 	const dAttackMachineSimulation::State& attackMachineSimulation = deps.external.get<dAttackMachineSimulation::State>();
@@ -262,7 +273,7 @@ void integrate(float deltaSeconds,
 	const glm::mat4 parentTransform = physics.getBodyTransform(bindings.parentBodyId);
 	const glm::vec3 rootTranslation = glm::vec3(parentTransform[3]) + bindings.attachmentOffset;
 
-	const glm::vec3 rawAim = simFrame::flatten(input.getPlayerInput().aimDirection);
+	const glm::vec3 rawAim = simFrame::flatten(surfaceFrame::tiltFromSurface(ground.normal, input.getPlayerInput().aimDirection));
 	const float aimLen = glm::length(rawAim);
 	constexpr glm::vec3 defaultForward = simFrame::kForward;
 	constexpr glm::vec3 aimFallbackAxis = simFrame::withHeight(glm::vec3(0.f), -1.f);
@@ -293,6 +304,8 @@ void integrate(float deltaSeconds,
 	// aim) is the ZERO VECTOR at BOTH poles, and glm::normalize of it divides by zero.
 	// acos returns an UNSIGNED angle, so at the antiparallel pole every axis normal to
 	// the horizontal plane gives the same rotation and aimFallbackAxis is a legitimate substitute.
+	// On a slope all of this runs in the LOCAL (pre-tilt) frame, on the local heading, so the
+	// band, its fallback axis and the mirror it accepts are unchanged; the tilt comes after.
 	// Inside the band (an aim within ~0.81 degrees of ±forward) the sign of the tiny
 	// residual angle is therefore NOT preserved — accepted deliberately: 0.81 degrees
 	// of facing on a 0.4 m sphere, against a NaN-free normalize. Pinned by that same
@@ -319,6 +332,13 @@ void integrate(float deltaSeconds,
 	// the pose fresh is what makes the FIRST Idle tick after an attack correct with no
 	// special case.
 	glm::mat4 guardTransform = glm::rotate(glm::mat4(1.f), aimAngle, aimRotationAxis);
+	// [og-ground-aligned-attacks task 6] G(n)·A(h): the tilt is applied to the rotation
+	// before the translation goes in, so the translation is still never rotated. Only off
+	// flat ground, by the flat rule: a flat normal runs today's expressions verbatim, so
+	// the identity product is not taken. No unit test or golden distinguishes the fold;
+	// do not delete this gate on that basis.
+	if (!surfaceFrame::isFlat(ground.normal))
+		guardTransform = glm::mat4(surfaceFrame::tiltMatrix(ground.normal)) * guardTransform;
 	guardTransform[3] = glm::vec4(rootTranslation, 1.f);
 	physics.setBodyTransform(bindings.ownBodyId, guardTransform);
 

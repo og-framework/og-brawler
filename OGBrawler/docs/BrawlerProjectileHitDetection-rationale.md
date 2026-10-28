@@ -47,7 +47,12 @@ statement for statement. Its operands:
 ⚠ **R0, 2026-09-24.** The guard transform claim was re-read from `dAttackGuardSimulation::integrate`:
 it writes `rotate(aimAngle, aimRotationAxis)`, the rotation that takes the default forward to the
 aim, with the root translation in column 3, on every tick. Column 0 is the aim only because the
-default forward is the X axis; that value was not re-read here. *(og-sim-metres-yup task 5a: the
+default forward is the X axis; that value was not re-read here. *(og-ground-aligned-attacks task 6:
+off flat ground the transform is no longer `rotate(aimAngle, aimRotationAxis)` alone. It is
+`glm::mat4(surfaceFrame::tiltMatrix(ground.normal))` times it, G(n)·A(h), with the translation put in
+after the product, so the forward column is the aim projected into the ground plane and the up column
+is the ground normal n. On flat ground the product is not taken and the transform is the rotation
+above. Task 8 reads that up column, §1 "The guard's plane".)* *(og-sim-metres-yup task 5a: the
 forward is now read as `simFrame::forwardColumn(guardTransform)` (`SimulationFrame.h`), the column at
 `kForward`'s index with `kForward`'s sign. In the Z-up frame it was routed in that was column 0, bit for bit, so the
 classification was unchanged; in the Y-up frame (shipped since og-sim-metres-yup task 19) it is column 2 negated, where column 0 would be the
@@ -62,9 +67,39 @@ move it unchanged, and unify the two in Backlog task 22 (guards G-06). The pins 
 `BlockIndicatorAtInnerCircle`, whose assertions did not change; only their helper now runs this
 pass before `integrate`.
 
+**The guard's plane (og-ground-aligned-attacks task 8, design §3.3).** The angle is measured in the
+plane of the guard, whose up is `surfaceFrame::surfaceUpOf(guardTransform)`, the pose's image of
+`simFrame::kUp` (the ground normal on a slope, by the task 6 pose above). Two branches, then the one
+clamp, `glm::acos` and half-angle test:
+* **Flat** (`surfaceFrame::isFlat(guardUp)`, always while `brawlerGround::kGroundAlignedAttacks` is
+  `false`): `incoming = -spawnDir` as before, by the flat rule. The angle is the 3-D one, so a pitched
+  shot into a flat guard counts its pitch. No shot is pitched while the knob is off (every launch
+  direction is horizontal); after the flip a shot launched along a slope is (task 5, `G·h_L`), and
+  `GroundAlignedProjectileBlockTest.cpp` keeps one at 0.3 rad pitch outside the middle section of a flat
+  guard that faces it.
+* **Slope:** `incoming` is projected onto the guard's plane (`incoming -= guardUp * dot(incoming,
+  guardUp)`). A zero projection (a shot along the guard's up) returns `false`: the shot lands. Otherwise
+  the projection is normalized and the shared clamp/`glm::acos`/half-angle test runs on it. Without the
+  zero check the normalize divides zero by zero and the test still says "not blocked" (task 8 measured
+  it inert); the explicit `return false` keeps that answer from resting on how NaN compares.
+* **Why the plane.** Rotating a flat configuration by the ground tilt gives the same outcome on the slope
+  (the conjugation identity, 2000 seeded shots). The 3-D angle does not: a shooter on flat ground firing
+  head-on into a guard on the 30° plane meets it at 30°, outside the 0.25 rad middle section, and could
+  never be blocked; in the guard's plane the angle is about 0 and it is blocked.
+
+`projectileGuardBlocks` has no caller outside this pass (task 8 grep over `Source/` and `Plugins/`).
+
 The block MARKER (T30, the inner-circle entry point) is not computed here. The pass hands the
 guard body's translation to `integrate` in `SlotDetection::targetRootPosition`, and `integrate`
-places the marker as before, next to the log line it prints.
+places the marker as before, next to the log line it prints. Since og-ground-aligned-attacks task 8
+the pass also writes the guard's up into `SlotDetection::guardUp` on a guard hit (`simFrame::kUp`
+otherwise), and `integrate` solves the entry point in the plane perpendicular to it: a flat up runs the
+horizontal-plane solve as before; any other up runs the same solve on the launch point, the launch
+direction and the root tilted into the guard's local frame with `surfaceFrame::tiltFromSurface`, and the
+marker is `spawnPos + t * spawnDir`, on the 3-D ray, as before. `SlotDetection` is derived state, off the
+wire: `GroundAlignedProjectileBlockTest.cpp` asserts at compile time that it has no
+`SerializableFields` and that the three projectile `SerializableFields` tuples still hold 5, 1 and 3
+fields.
 
 ---
 

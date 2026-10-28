@@ -3,6 +3,7 @@
 // docs/BrawlerInboundHit-rationale.md
 
 #include "glm/vec2.hpp"
+#include "glm/vec3.hpp"
 #include "OGBrawler/HitReaction.h"
 
 namespace brawlerInboundHit
@@ -17,5 +18,6 @@ namespace brawlerInboundHit
         float           knockbackSpeed = 0.f;
         float           flinchDuration = 0.f;
         glm::vec2       hitDirectionXY{0.f};
+        glm::vec3       hitDirectionWorld{0.f};
     };
 }

@@ -113,6 +113,12 @@ void SimulatableBrawler::integrate(
     const auto& guardBindings  = m_physics.get<dAttackGuardSimulation::PhysicsDeclaration>().bindings;
     const auto& movementBindings = m_physics.get<brawlerMovementSimulation::PhysicsDeclaration>().bindings;
 
+    // [og-ground-aligned-attacks task 4] THE PER-TICK GROUND SAMPLE, taken before the machine from the
+    // wire-restored movement State, and handed to the machine and the guard. While
+    // brawlerGround::kGroundAlignedAttacks is false it is kUp and issues no query.
+    const brawlerGround::GroundSample ground = brawlerMovementSimulation::sampleAttackGround(
+        state.get<brawlerMovementSimulation::State>(), staticData.m_movementStaticData, movementBindings, queryAdapter);
+
     {
         auto deps = makeDependencies<dAttackMachineSimulation::Dependencies>(state);
         const dAttackMachineSimulation::PlayerInputView machineInput = dAttackMachineSimulation::PlayerInputView::from(input);
@@ -122,7 +128,8 @@ void SimulatableBrawler::integrate(
             deps, m_characterBindings,
             // [hit-resolution T2] Plain by-ref inbound-hit slice (mirrors CharacterBindings).
             // Populated by brawlerHitRouting::System::preIntegrate this step (T3); read here to drive HitFlinch.
-            derivedState.edit<brawlerInboundHit::DerivedState>());
+            derivedState.edit<brawlerInboundHit::DerivedState>(),
+            ground);
     }
 
     {
@@ -132,7 +139,7 @@ void SimulatableBrawler::integrate(
             dAttackGuardSimulation::AllInput<PhysAdapterT, QueryAdapterT>(
                 guardInput, guardUtils),
             staticData.m_guardSimulationStaticData, deps,
-            guardBindings, derivedState.edit<dAttackGuardSimulation::DerivedState>());
+            guardBindings, derivedState.edit<dAttackGuardSimulation::DerivedState>(), ground);
     }
     
     {

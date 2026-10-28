@@ -186,6 +186,16 @@ forbidden include is typed in `DAttackMachineSimulation.h`, and the compiler hol
 > view declares the edge in the type the sub-sim owns, not in the dependency graph, so no
 > framework task was needed. The paragraph above stays as the record of the shape it described.
 
+⭐ **[og-ground-aligned-attacks task 4] `OGBrawler/BrawlerGroundFrame.h`, the ground-sample leaf.** It
+supplies `brawlerGround::GroundSample`, the return type of `sampleAttackGround` (§29), and
+`brawlerGround::kGroundAlignedAttacks`, that function's default template argument. It is a leaf (glm and
+og-simulation only) because the machine header needs the same type and cannot include this header back:
+this header includes `DAttackMachineSimulation.h`, so the shared type lives below both.
+
+⭐ **[og-ground-aligned-attacks task 13] `OGSimulation/SurfaceFrame.h`, included directly.** It supplies
+`surfaceFrame::isFlat`, which `detachesFromSupport` and step 2's tangent-frame choice read (§30). The leaf
+above already includes it; the header names it itself because it calls it.
+
 ---
 
 ## 2. Orientation — what this sub-simulation is and who owns what
@@ -1597,6 +1607,14 @@ task 27, 2026-09-12.** The gate is filled and BOTH arms are reachable:
   architect’s and is built as ruled; the measurement, and the recommendation to key it on the
   vertical CHANNEL instead, are in `impl/impl_notes_seam_27.md` and in guard `G-07`.
 
+⭐ **[og-ground-aligned-attacks task 13, 2026-10-28] Task 27's "true the day a lift is authored" is
+now.** The user's OQ6 ruling (knockback along the attacker's swing tangent; crease hits launch) needs
+the arm to read the target's ground, so the predicate gained a knob-gated slope arm that tests the
+velocity against the probe's face normal: `committed && dot(velocity, face) > kMinLaunchSine·|velocity|`.
+A same-face up-slope knockback no longer reaches it; a direction that leaves the face does, on any
+tick. The flat arm is the task-27 one, verbatim. Details, and the tangent frame while detached, in §30;
+the prohibitions in guard G-07.
+
 ---
 
 ## 23. The movement tick — steps 6′, 0, 1, 2, 3, 4, 5
@@ -2310,6 +2328,77 @@ thirty float steps from 20 leave about 6e-7 m/s behind (emulated in float32; in 
 `BrawlerMovement.LaunchedDecelsAtLaunchDecel` pins that (tick 32), and asserts the closed form against the
 shipped constants rather than restating 5.
 
+### 26.1 The hit-tick write of the attacker's direction (og-ground-aligned-attacks task 9b)
+
+User ruling OQ14, 2026-10-28: *"What if we just write the attackers tangent to the knockback and then let
+the current model do its thing?"* — "Yes". With the knob on (`brawlerGround::kGroundAlignedAttacks`, or
+`integrate<true>` in a test) the hit tick writes the attacker's 3-D direction into the velocity and the
+existing law resolves it. There is no launch or slide branch.
+
+**The write.** Step 2 computes `face` (§30), then
+`writesKnockbackVelocity<Aligned>(inboundHit, face, walkable, committed)`, and if it holds sets
+`state.velocity = inboundHit.hitDirectionWorld * inboundHit.knockbackSpeed;`. `hitDirectionWorld` is the
+routing's `d` (`BrawlerHitRoutingSystem-rationale.md` §4.4: the normalised swing tangent, an authored
+row direction, or the shot's `spawnDir`). The predicate is false, and the tick is today's, when the knob
+is off, when the tick is not a committed hit tick (`committed && inboundHit.wasHitThisTick`), when `d` is
+zero, or under the **flat rule**: `g` (the face when `walkable`, else `simFrame::kUp`) is flat and
+`simFrame::height(d) == 0.f`. A flat attacker's tangent and every `spawnDir` from flat ground are exactly
+horizontal (design §3.6), so a hit on flat ground from flat ground runs today's expressions verbatim.
+
+**Its position** is before the support classification, so the hit tick's own lift test (§30, guard
+G-07), tangent frame and channel decomposition all see the written velocity. Guard G-26 holds the
+position, and guard G-27 holds the flat rule at the predicate's last `return`.
+
+**The channel branch.** On a written tick step 3 takes `velocityUV = currentUV`, the decomposition of
+the written velocity, instead of the line above. Every other hit tick, and every flat-rule tick, keeps
+`velocityUV = inboundHit.hitDirectionXY * inboundHit.knockbackSpeed;`. The vertical channel runs today's
+law unchanged: on a written tick its input is the written velocity's up channel.
+
+**What the law then does.** Measured on the analytic 30° plane of `GroundAlignedKnockbackTest.cpp`, the
+target on the hover (`rideHeight`):
+
+- **`d` in the target's ground (same face).** The lift test does not detach, the up channel is rounding,
+  and the target slides along `d` at the knockback speed: over 24 in-plane directions the hit-tick
+  velocity is within 1.96e-7 rad of `d` and its speed within 3.8e-6 m/s of 20, `Supported` on the hit
+  tick and the next (`GroundAlignedKnockback.InPlaneTangentSlidesAlongTheFace`).
+- **`d` leaving the ground (a convex crease: a plateau attacker's horizontal tangent).** The lift test
+  detaches on the hit tick, so no servo acts and, with task 13's world-horizontal frame, gravity alone
+  changes the vertical velocity: over five headings it is `height(d) · speed + gravity · dt` exactly,
+  and the horizontal speed is the knockback speed
+  (`GroundAlignedKnockback.DirectionLeavingTheFaceLaunchesOnTheHitTick`). A flat target hit by a 30°
+  up-slope tangent detaches on the hit tick the same way, through the flat arm
+  (`GroundAlignedKnockback.FlatTargetHitByASlopeTangentLaunches`).
+- **`d` entering the ground (a concave crease: a horizontal tangent 30° into the face).** The target
+  stays `Supported` on the hit tick. This outcome is emergent, not designed, and only printed by
+  `GroundAlignedKnockback.DirectionIntoTheFaceStaysSupported`. The decomposition is oblique (`decomposeVelocity`:
+  `u` along the face, `up` world-vertical), so a horizontal `d · speed` lands as `speed / cos 30°` =
+  23.09 m/s on `u` and `−speed · tan 30°` = −11.55 m/s in the up channel. The servo then adds at most
+  `hoverMaxAccel · dt` (4.84 m/s net of gravity) per tick: the hit tick ends at 20.58 m/s, of which
+  19.74 m/s lies along the face. Over the 30-tick lockout the rig printed:
+  - with no floor (servo only): 7.38 m along the face, the target dips to −0.043 m clearance
+    (`rideHeight` 0.1), and from tick 4 the lift test detaches it (derived: the servo's recovery drives the
+    up channel above the 2° margin), unsupported for 27 ticks;
+  - with an emulated floor contact (the capsule pushed out along the plane normal, step 6′ live):
+    6.27 m along the face, minimum clearance −1.7e-7 m, unsupported for 6 ticks from tick 25.
+
+  Neither rig has Jolt's contact. Task 10's slope golden measures the real travel and minimum
+  clearance, and G3 judges it; an explicit slide is the follow-up if the dip shows.
+
+**The overhead (seq 4).** Its damaging arc is a downswing, and its tangent `(0, −cos θ, −sin θ)` in the
+swing frame points down by at least cos 45°. Rotated into an attacker on flat ground or on the 30° face,
+for 8 headings and θ from 2π/8 to −1.5π/8, and applied to a target on either ground, it never detaches:
+480 hits, 0 detaches, the highest direction height −0.2588 (`GroundAlignedKnockback.OverheadDownswingNeverDetaches`).
+Its row stays `{ HitReactionKind::Stun, 0.f, 0.72f }`, so in the shipped data no overhead knockback is
+written at all. A launching overhead is an authored row direction (`HitDirectionSource::AuthoredInSwingFrame`,
+og-ground-aligned-attacks task 9), not a change here.
+
+**The knob off.** `writesKnockbackVelocity<false>` is `false` before it reads anything, so `integrate<false>`
+never reads `hitDirectionWorld`: on the 30° plane and on flat ground, five directions, a `<false>` run
+with the field set and one with it zero are bit-equal for 40 ticks
+(`GroundAlignedKnockback.KnobOffIgnoresTheWorldDirection`). With the knob on, a flat target hit by a
+horizontal `d` (both flat planes, five pre-hit states including an airborne one, three directions) is
+bit-equal to `<false>` for 40 ticks (`GroundAlignedKnockback.FlatTargetWithAHorizontalDirectionKeepsTodaysBits`).
+
 ---
 
 ## 27. The attack slide’s ratio form — task 84 ∴D-07
@@ -2399,6 +2488,113 @@ digit on every tick, and `== glm::vec3(0.f)` with no `Approx` on the last),
 `AttackSlideDirectionIsLockedAgainstTheStick` (stick held exactly reversed),
 `AttackSlideRetargetsWhenTheEndTickMoves` and, for the number the ratio depends on,
 `DAttack.Integrate3.AttackEndTickMatchesTheFirstIdleTick`.
+
+---
+
+## 28. The ground probe, extracted — `probeGround` (og-ground-aligned-attacks task 4)
+
+Step 2's attachment probe is a function of its own since og-ground-aligned-attacks task 4:
+`probeGround(const State&, const StaticData&, const RuntimeBindings&, Q& query)` returns a `GroundProbe`
+`{hit, clearance, walkable}`. Its body is step 2's lines **moved verbatim and in order**, from
+`const float probeLength = sd.rideHeight + sd.snapDistance;` through the `walkable` test, with the
+`const glm::vec3 up = kWorldUp;` seed repeated at its top so `-up * probeLength` and the walkable dot are
+the same expressions as before. `integrate` calls it where those lines stood and binds the three results
+to the names step 2 always used (`probe`, `clearance`, `walkable`), so every later reader in the step is
+unchanged; step 2 keeps its own `up` local for the support classification and the tangent frame.
+
+**Why extract it.** The probe gains a second caller, the attack ground sample (§29), which must issue
+**the same sweep**: the same volume (`bindings.queryVolumeIds[0]`), the same pose (the body position in
+`State`, which rollback restores), the same delta (straight down `rideHeight + snapDistance`), and so the
+same static-world filter that volume carries. One function makes "the same sweep" a fact of the code
+rather than a second copy to keep in step.
+
+**What it does not change.** The movement still makes exactly one sweep per tick, the same call as
+before (`BrawlerGroundSample.ProbeGroundIssuesTheMovementSweep` compares the call `probeGround` records
+with the one `integrate` records; `BrawlerGroundSample.MovementIntegrateSweepsOncePerTick` counts them).
+The function sits inside the header's `OGSIM_OPTIMIZE_OFF` pair, like `integrate`. None of the moved
+lines carried a `⛔G` or `∴D` tag (checked against the pre-task header), so no tag moved.
+
+---
+
+## 29. The attack ground sample — `sampleAttackGround` (og-ground-aligned-attacks task 4)
+
+`sampleAttackGround<Aligned = brawlerGround::kGroundAlignedAttacks>(state, sd, bindings, query)` is the
+single source of the ground normal the attack code is built in. `SimulatableBrawler::integrate` calls it
+once per tick **before the machine**, from the movement `State` as the tick finds it, and hands the
+`brawlerGround::GroundSample` to the machine and the guard (`BrawlerGroundFrame-rationale.md` §1).
+
+- **Knob off (`Aligned` false, which ships until the flip):** it returns the default sample,
+  `simFrame::kUp`, **without issuing a query** (`if constexpr`). So the knob-off build adds no sweep to
+  the step, a test mock that scripts sweeps through the whole composite sees an unshifted script, and the
+  headless harness sees the same query load. `BrawlerGroundSample.KnobOffMakesNoQueryAndReturnsUp` pins it.
+- **Knob on:** one `probeGround` sweep (§28). The face is the hit's exact face normal
+  `SweepHit::surfaceNormal` when the adapter provided one (non-zero), else the sweep's `normal`; the sample
+  is that face when the hit is blocked and the face passes the movement's own walkable test
+  (`glm::dot(face, kWorldUp) >= sd.cosMaxSlope`), and `kUp` otherwise (a miss, a face past the cap, a
+  vertical exact face under a walkable sweep normal). The walkable test is applied to the **face**, not
+  read from the probe's own `walkable` (which tests the sweep `normal`), so an exact face past the cap is
+  rejected even when the sweep normal would pass.
+- **Not `DerivedState::surfaceNormal`.** The movement's `DerivedState::surfaceNormal` is step 2's `n`
+  (the sweep `normal` on walkable ground, else `kWorldUp`), written during the movement step and not
+  restored on rollback: on the first replayed tick it holds the pre-rollback value. The sample reads only
+  the `SweepHit` fields of its own sweep. The names are alike; the quantities are not.
+- **Same tick, same position.** The sample runs before the movement block, so it sees the position the
+  movement's own probe sees later in the tick, except on a teleport tick (the movement applies the
+  teleport seed before its probe): the sample then uses the pre-teleport position, which is deterministic
+  on every peer.
+
+---
+
+## 30. The surface-relative lift test and the tangent frame while detached (og-ground-aligned-attacks task 13)
+
+Step 2 now computes, before the support classification:
+
+- `face`: the probe's `surfaceNormal` when it is non-zero, else its `normal`. This is the face rule of
+  `sampleAttackGround` (§29), and it is meaningful only while `walkable`: every reader below tests
+  `walkable` first.
+- since og-ground-aligned-attacks task 9b, the hit-tick knockback write
+  (`writesKnockbackVelocity<Aligned>(inboundHit, face, walkable, committed)`, §26.1, guards G-26 and G-27), so the
+  classification below sees the written velocity;
+- `detached = detachesFromSupport<Aligned>(state, up, face, committed)`, and
+  `support = (walkable && !detached) ? Supported : Unsupported`, as before.
+
+**The lift test** (guard G-07). With `Aligned` false (the shipped knob, `brawlerGround::kGroundAlignedAttacks`)
+or on a flat face it is task 27's `committed && dot(velocity, up) > 0`. On a non-flat face with the knob
+on it is `committed && dot(velocity, face) > kMinLaunchSine · |velocity|`, with `kMinLaunchSine` = sin 2°.
+The 2° margin sits above Jolt's sweep-normal error bound (0.0221, a `static_assert`) and well above the
+rounding of a velocity built in the target's own plane (a same-face tangent gives `dot(v, n)` of order
+1e-6 · |v| at most; exactly 0 for the 20 m/s up-slope case), so an in-ground knockback slides and a leaving one launches. Measured on the analytic 30°
+plane: an in-plane 20 m/s velocity in any of 360 directions never detaches; 5° out of the plane in every
+one of them always does; 1° out does not, 3° out does.
+
+**The tangent frame while detached.** Before task 13 the frame normal was
+`n = walkable ? probe.normal : up`: keyed on the probe, not on support. A launched target still inside
+the probe range (0.5 m, `rideHeight + snapDistance`) of a 30° face therefore decelerated (`launchDecel`,
+step 3's committed arm) along a `u` with a vertical part, adding about ±`launchDecel · sin 30°` = ±20 m/s²
+to its vertical acceleration. Now
+`n = (walkable && !(Aligned && detached && !surfaceFrame::isFlat(face))) ? probe.normal : up`: on a
+non-flat face, a detached target uses world up, so `u` and `v` are world-horizontal, the deceleration is
+horizontal and only gravity changes the vertical velocity. Measured
+(`GroundAlignedKnockback.DetachedTargetDeceleratesWorldHorizontally`, 0.2 m above a 30° face, 5° out of
+it at 20 m/s): the vertical velocity changes by `gravity · dt` per tick to within 4.1e-7 m/s over the 7
+ticks the probe still hits; with the knob off the same seed's vertical change is off by 0.333 m/s per
+tick (`launchDecel · dt · sin 30°`).
+
+**What does not change.** `n` reads only the probe and `detached`, so computing it after the
+classification moves no flat value; with the knob off the expression reduces to `walkable` and every
+value is today's (both goldens exact). Gravity, the servo axis (`up`, ruling #26 (a)), the landing
+(step 6′, guard G-08) and the vertical law are untouched. There is still no `DAttackState::Launched`.
+
+**Near a crease.** The face is the exact face of whatever the probe's sweep hit, and near a crease that
+is not always the face the target stands over. Measured on the Jolt slope scene (30° face, flat plateau
+above, flat landing below): a slope-side target within about 0.2 m of the convex top edge gets the
+plateau's face (flat), while its sweep `normal` is an edge normal; the flat arm then decides, so an
+up-slope velocity with any upward world component detaches there, as it does today. A flat-side target
+within about 0.1 m of the concave crease gets the slope's face, so the slope arm decides for it.
+
+`integrate` itself gained the template parameter (`template <bool Aligned = brawlerGround::kGroundAlignedAttacks,
+typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>`), so every existing call deduces the
+adapters and takes the knob; a test runs the knob-on path with `integrate<true>`.
 
 ---
 

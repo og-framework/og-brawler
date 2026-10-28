@@ -45,11 +45,21 @@ before this task: the `RuntimeBindings` alias and the `staticDataOf` member temp
 vectors past 1, `td` is NaN while `normalizedCollisionDirection` is still finite. With the
 positive gate, `NaN < x` is false, the function returns `false`, and the attack lands. With the
 negated early return, `NaN >= x` is also false. Control then falls into the inner test,
-`td < shieldAngle` is false, and the `else` arm reads `simFrame::turnComponent(guardAxis)` (the
-component along the turn axis, `y` in the shipped frame since og-sim-metres-yup task 26) from a finite, near-zero `glm::cross`. That component can have
+`td < shieldAngle` is false, and the `else` arm reads `side`, on the flat branch
+`simFrame::turnComponent(guardAxis)` (the
+component along the turn axis, `y` in the shipped frame since og-sim-metres-yup task 26) of a finite, near-zero `glm::cross`. That component can have
 either sign, so the swing can be reported as **blocked** on NaN.
-(A NaN from `normalize` of a zero vector propagates into `guardAxis` and returns `false` under
+(A NaN from `normalize` of a zero vector propagates into `guardAxis` and `side` and returns `false` under
 both forms. Only the rounding NaN separates them.)
+
+**The slope branch is under the same gate** (og-ground-aligned-attacks task 7). Since that task the
+predicate computes `td` and `side` in one of two branches, flat or the guard's plane
+(`DAttackRadialSimulation-rationale.md` §7), and then runs one shared decision block, so this gate has a
+single site for both. The slope branch clamps the dot before `std::acos` and returns `false` on a zero
+projected direction before the gate, so for finite inputs the rounding NaN above arises only on the flat
+branch. Keep both
+branches feeding the one gate: a second, per-branch copy of the decision block is a second site this
+tag does not cover.
 
 **What breaks if the edit is made.** Near-collinear guard contacts become blocks where the
 shipped predicate lets them through. The detector and the block-prediction visualization both

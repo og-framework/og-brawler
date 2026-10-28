@@ -29,6 +29,7 @@
 #include "OGBrawlerLog.h"
 #include "OGSimulation/OGAssert.h"
 #include "OGSimulation/SimulationFrame.h"
+#include "OGSimulation/SurfaceFrame.h"
 
 #include "OGSimulation/CompilerControl.h"
 OGSIM_OPTIMIZE_OFF
@@ -272,17 +273,34 @@ inline bool wouldGuardBlock(
 	const glm::vec3& guardOverlapPosition)
 {
 	const glm::vec3 guardForward = simFrame::forwardColumn(guardTransform);
-	glm::vec3 collidingPosition = guardOverlapPosition;
-	collidingPosition = simFrame::withHeight(collidingPosition, simFrame::height(attackerRoot));
-	const glm::vec3 collisionDirection = attackerRoot - collidingPosition;
-	const glm::vec3 normalizedCollisionDirection = glm::normalize(collisionDirection);
+	const glm::vec3 guardUp = surfaceFrame::surfaceUpOf(guardTransform);
 	const float shieldAngle      = 0.25f;
 	const float outerShieldAngle = glm::pi<float>() * 0.5;
-	const float td = std::acos(glm::dot(normalizedCollisionDirection, guardForward));
+	float td;
+	float side;
+	if (surfaceFrame::isFlat(guardUp))
+	{
+		glm::vec3 collidingPosition = guardOverlapPosition;
+		collidingPosition = simFrame::withHeight(collidingPosition, simFrame::height(attackerRoot));
+		const glm::vec3 collisionDirection = attackerRoot - collidingPosition;
+		const glm::vec3 normalizedCollisionDirection = glm::normalize(collisionDirection);
+		td = std::acos(glm::dot(normalizedCollisionDirection, guardForward));
+		const glm::vec3 guardAxis = glm::cross(normalizedCollisionDirection, guardForward);
+		side = simFrame::turnComponent(guardAxis);
+	}
+	else
+	{
+		glm::vec3 collisionDirection = attackerRoot - guardOverlapPosition;
+		collisionDirection -= guardUp * glm::dot(collisionDirection, guardUp);
+		if (glm::dot(collisionDirection, collisionDirection) <= 0.f)
+			return false;
+		const glm::vec3 normalizedCollisionDirection = glm::normalize(collisionDirection);
+		td = std::acos(glm::clamp(glm::dot(normalizedCollisionDirection, guardForward), -1.f, 1.f));
+		side = glm::dot(glm::cross(normalizedCollisionDirection, guardForward), guardUp);
+	}
 	// ⛔G-03  docs/DAttackRadialSimulation-guards.md
 	if (td < outerShieldAngle)
 	{
-		const glm::vec3 guardAxis = glm::cross(normalizedCollisionDirection, guardForward);
 		if (td < shieldAngle)
 		{
 			if (activeAttackSequence == 4)
@@ -290,9 +308,9 @@ inline bool wouldGuardBlock(
 		}
 		else
 		{
-			if (simFrame::turnComponent(guardAxis) < 0.f && (activeAttackSequence == 0 || activeAttackSequence == 2))
+			if (side < 0.f && (activeAttackSequence == 0 || activeAttackSequence == 2))
 				return true;
-			if (simFrame::turnComponent(guardAxis) > 0.f && (activeAttackSequence == 1 || activeAttackSequence == 3))
+			if (side > 0.f && (activeAttackSequence == 1 || activeAttackSequence == 3))
 				return true;
 		}
 	}
@@ -312,12 +330,17 @@ void setInitialConditions(float deltaSeconds,
 	const RuntimeBindings& bindings,
 	DerivedState& derivedState)
 {
-	OGBLOG_G("[Radial.setInitialConditions] seq=%u aimAngle=%.4f axis=(%.3f,%.3f,%.3f) (attackTimer reset to 0)",
+	constexpr glm::vec3 up = simFrame::kUp;
+	const glm::vec3 swingPlaneUp = glm::mat3(glm::rotate(glm::mat4(1.f), initialConditions.initialAimAngle, initialConditions.initialAimRotationAxis)) * up;
+	OGBLOG_G("[Radial.setInitialConditions] seq=%u aimAngle=%.4f axis=(%.3f,%.3f,%.3f) (attackTimer reset to 0) up=(%.9g,%.9g,%.9g)",
 		initialConditions.activeAttackSequence,
 		initialConditions.initialAimAngle,
 		initialConditions.initialAimRotationAxis.x,
 		initialConditions.initialAimRotationAxis.y,
-		initialConditions.initialAimRotationAxis.z);
+		initialConditions.initialAimRotationAxis.z,
+		swingPlaneUp.x,
+		swingPlaneUp.y,
+		swingPlaneUp.z);
 	OG_CHECK(isRealAttackSequence(initialConditions.activeAttackSequence)
 		&& initialConditions.activeAttackSequence < staticData.getAttackSequences().size(),
 		"dAttackRadialSimulation::setInitialConditions - the InitialConditions sequence does not "

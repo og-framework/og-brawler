@@ -23,11 +23,13 @@
 #include "OGSimulation/SpatialQueryResult.h"
 #include "OGSimulation/OGAssert.h"
 #include "OGSimulation/SimulationFrame.h"
+#include "OGSimulation/SurfaceFrame.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
 #include "OGBrawler/BrawlerCharacterBindings.h"
 #include "OGBrawler/DAttackMachineSimulation.h"
 #include "OGBrawler/BrawlerInboundHit.h"
 #include "OGBrawler/BrawlerSyncedPlayerInput.h"
+#include "OGBrawler/BrawlerGroundFrame.h"
 #include "OGBrawlerLog.h"
 
 #include "OGSimulation/CompilerControl.h"
@@ -489,24 +491,122 @@ static_assert(!detail::kHasLaunched<DAttackState>,
     "brawlerMovementSimulation::detachesFromSupport - `DAttackState::Launched` NOW EXISTS, and "
     "THERE IS NO `Launched` BY DESIGN (task 27, user ruling 2026-09-12): `HitFlinch` PLUS "
     "`dAttackMachineSimulation::State::m_hitReaction` IS the hit-reaction state, and the arm "
-    "below is keyed on VELOCITY - `committed && dot(velocity, up) > 0` - not on an enumerator, so "
-    "it is false for every XY knockback and true the day a lift is authored, with no enumerator "
-    "knowledge at all. A fifth DAttackState bumps `kDAttackStateCount`, moves the visualizer's "
-    "`kMachineStateCellCount` fence and four switch sites in another initiative's files, and "
-    "leaves `HitFlinch` with no writer. Re-read that decision before deleting this line. "
-    "Was fence T3-17 (the Launched half).");
+    "below is keyed on VELOCITY - `committed && dot(velocity, up) > 0` on flat ground, "
+    "`committed && dot(velocity, face) > kMinLaunchSine * |velocity|` on a slope - not on an "
+    "enumerator, so it is false for every in-ground knockback and true for one that leaves the "
+    "ground, with no enumerator knowledge at all. A fifth DAttackState bumps "
+    "`kDAttackStateCount`, moves the visualizer's `kMachineStateCellCount` fence and four "
+    "switch sites in another initiative's files, and leaves `HitFlinch` with no writer. "
+    "Re-read that decision before deleting this line. Was fence T3-17 (the Launched half).");
 static_assert(detail::kHasHitFlinch<DAttackState>,
     "VACUITY CONTROL for the assertion above - if DAttackState is renamed, moved or gutted, "
     "`!kHasLaunched` goes SILENTLY TRUE and the tripwire is gone with no diagnostic anywhere. "
     "Was fence T3-17.");
 
+inline constexpr float kMinLaunchSine = 0.0348995f;
+
+static_assert(kMinLaunchSine > 0.0221f,
+    "brawlerMovementSimulation::kMinLaunchSine - the launch threshold must stay above 0.0221, "
+    "the bound sqrt(2 * 1e-4 / 0.41) on Jolt's sweep-normal error (1e-4 m tolerance, 0.41 m probe "
+    "radius): at or below it a normal outlier, not the velocity, decides whether a knockback "
+    "launches.");
+
 // ⛔G-07  docs/BrawlerMovementSimulation-guards.md
-inline bool detachesFromSupport(const State& state, const glm::vec3& up, bool committed)
+template <bool Aligned = brawlerGround::kGroundAlignedAttacks>
+bool detachesFromSupport(const State& state, const glm::vec3& up, const glm::vec3& face, bool committed)
 {
+    if constexpr (Aligned)
+    {
+        if (!surfaceFrame::isFlat(face))
+        {
+            return committed && glm::dot(state.velocity, face) > kMinLaunchSine * glm::length(state.velocity);
+        }
+    }
+    else
+    {
+        (void)face;
+    }
     return committed && glm::dot(state.velocity, up) > 0.f;
 }
 
-template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
+template <bool Aligned = brawlerGround::kGroundAlignedAttacks>
+bool writesKnockbackVelocity(const brawlerInboundHit::DerivedState& inboundHit, const glm::vec3& face, bool walkable, bool committed)
+{
+    if constexpr (!Aligned)
+    {
+        (void)inboundHit;
+        (void)face;
+        (void)walkable;
+        (void)committed;
+        return false;
+    }
+    else
+    {
+        const glm::vec3& d = inboundHit.hitDirectionWorld;
+        if (!(committed && inboundHit.wasHitThisTick) || d == glm::vec3(0.f))
+        {
+            return false;
+        }
+        const glm::vec3 g = walkable ? face : simFrame::kUp;
+        // ⛔G-27  docs/BrawlerMovementSimulation-guards.md
+        return !(surfaceFrame::isFlat(g) && simFrame::height(d) == 0.f);
+    }
+}
+
+struct GroundProbe
+{
+    SweepHit hit;
+    float clearance;
+    bool walkable;
+};
+
+template <typename Q>
+GroundProbe probeGround(const State& state, const StaticData& sd, const RuntimeBindings& bindings, Q& query)
+{
+    const glm::vec3 up = kWorldUp;
+
+    const float probeLength = sd.rideHeight + sd.snapDistance;
+    glm::mat4 probePose(1.f);
+    probePose[3] = glm::vec4(state.bodyState.position, 1.f);
+
+    SweepHit probe;
+    if (!bindings.queryVolumeIds.empty())
+    {
+        probe = query.sweep(bindings.queryVolumeIds[0], probePose, -up * probeLength);
+    }
+
+    const float clearance = probe.blocked ? probe.fraction * probeLength : probeLength;
+    const bool walkable   = probe.blocked && glm::dot(probe.normal, up) >= sd.cosMaxSlope;
+
+    return GroundProbe{probe, clearance, walkable};
+}
+
+template <bool Aligned = brawlerGround::kGroundAlignedAttacks, typename Q>
+brawlerGround::GroundSample sampleAttackGround(const State& state, const StaticData& sd, const RuntimeBindings& bindings, Q& query)
+{
+    if constexpr (!Aligned)
+    {
+        (void)state;
+        (void)sd;
+        (void)bindings;
+        (void)query;
+        return brawlerGround::GroundSample{};
+    }
+    else
+    {
+        // ⛔G-25  docs/BrawlerMovementSimulation-guards.md
+        const GroundProbe probe = probeGround(state, sd, bindings, query);
+        const SweepHit& hit = probe.hit;
+        const glm::vec3 face = glm::dot(hit.surfaceNormal, hit.surfaceNormal) > 0.f ? hit.surfaceNormal : hit.normal;
+        if (hit.blocked && glm::dot(face, kWorldUp) >= sd.cosMaxSlope)
+        {
+            return brawlerGround::GroundSample{face};
+        }
+        return brawlerGround::GroundSample{};
+    }
+}
+
+template <bool Aligned = brawlerGround::kGroundAlignedAttacks, typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
 void integrate(float deltaSeconds,
     const AllInput<PhysicsBodyAdapterType, SpatialQueryAdapterType>& input,
     const StaticData& sd,
@@ -582,24 +682,25 @@ void integrate(float deltaSeconds,
 
     const glm::vec3 up = kWorldUp;
 
-    const float probeLength = sd.rideHeight + sd.snapDistance;
-    glm::mat4 probePose(1.f);
-    probePose[3] = glm::vec4(state.bodyState.position, 1.f);
+    const GroundProbe groundProbe = probeGround(state, sd, bindings, query);
+    const SweepHit& probe = groundProbe.hit;
+    const float clearance = groundProbe.clearance;
+    const bool walkable   = groundProbe.walkable;
 
-    SweepHit probe;
-    if (!bindings.queryVolumeIds.empty())
-    {
-        probe = query.sweep(bindings.queryVolumeIds[0], probePose, -up * probeLength);
-    }
+    const glm::vec3 face = glm::dot(probe.surfaceNormal, probe.surfaceNormal) > 0.f ? probe.surfaceNormal : probe.normal;
 
-    const float clearance = probe.blocked ? probe.fraction * probeLength : probeLength;
-    const bool walkable   = probe.blocked && glm::dot(probe.normal, up) >= sd.cosMaxSlope;
+    // ⛔G-26  docs/BrawlerMovementSimulation-guards.md
+    const bool knockbackWritten = writesKnockbackVelocity<Aligned>(inboundHit, face, walkable, committed);
+    if (knockbackWritten)
+        state.velocity = inboundHit.hitDirectionWorld * inboundHit.knockbackSpeed;
 
-    const SupportState support = (walkable && !detachesFromSupport(state, up, committed))
+    const bool detached  = detachesFromSupport<Aligned>(state, up, face, committed);
+
+    const SupportState support = (walkable && !detached)
         ? SupportState::Supported
         : SupportState::Unsupported;
 
-    const glm::vec3 n = walkable ? probe.normal : up;
+    const glm::vec3 n = (walkable && !(Aligned && detached && !surfaceFrame::isFlat(face))) ? probe.normal : up;
     glm::vec3 u(simFrame::kForward);
     glm::vec3 v(simFrame::kRight);
     buildTangentFrame(n, u, v);
@@ -653,8 +754,13 @@ void integrate(float deltaSeconds,
     if (committed)
     {
         if (inboundHit.wasHitThisTick)
+        {
             // ∴D-06  docs/BrawlerMovementSimulation-rationale.md
-            velocityUV = inboundHit.hitDirectionXY * inboundHit.knockbackSpeed;
+            if (knockbackWritten)
+                velocityUV = currentUV;
+            else
+                velocityUV = inboundHit.hitDirectionXY * inboundHit.knockbackSpeed;
+        }
         else
             velocityUV = moveTowards(currentUV, glm::vec2(0.f), sd.launchDecel * dt);
     }

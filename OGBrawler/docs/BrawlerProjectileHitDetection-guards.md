@@ -169,6 +169,12 @@ section, silently, in a task that was meant to change only where detection runs.
 poison (task 17): widening the angle to four times the middle section turns
 `BrawlerProjectile.DamageOnGuardSide` (a guard pi/4 off the shot) from a hit into a block.
 
+**The guard's-plane branch is the projectile's own too** (og-ground-aligned-attacks task 8). Since that
+task `projectileGuardBlocks` projects the incoming direction onto the guard's plane when the guard's up
+is not flat (`BrawlerProjectileHitDetection-rationale.md` §1), and both branches end in the same clamp,
+`glm::acos` and half-angle test. This prohibition covers both: neither branch is replaced by
+`wouldGuardBlock`, and the half-angle argument stays.
+
 ---
 
 ## G-07 — A slot from a LATER tick than the step is not in flight
@@ -205,6 +211,25 @@ with this branch replaced by the direct call, the suite stays green; with it rep
 deleted, the suite still stays green. The G-07 case can no longer see G-07. For
 `tick >= spawnTick` the function returns exactly `elapsedSecondsAt`, so the pass and `integrate`
 still sample the same closed-form point (∴D-02).
+
+---
+
+## G-09 — A flat guard keeps the 3-D angle; the projection runs only off flat
+
+**Tag site:** `BrawlerProjectileHitDetection.h`, on `if (!surfaceFrame::isFlat(guardUp))` in
+`projectileGuardBlocks`.
+
+**The prohibition.** ⛔ Do not drop this gate so that every guard projects the incoming direction,
+and do not move the flat case into the projection. The flat rule of og-ground-aligned-attacks: a flat
+normal runs the pre-initiative expressions verbatim, the 3-D angle between the guard's forward and
+`-spawnDir`. Projecting on flat ground too is a gameplay change that needs its own user ruling.
+
+**What breaks if the edit is made.** Pitched shots into a flat guard change outcome: a shot outside
+the middle section only by its pitch becomes a block. No shot is pitched while
+`brawlerGround::kGroundAlignedAttacks` is `false`, but after the flip every shot launched along a slope
+is. Measured by poison (task 8, `if (true || !surfaceFrame::isFlat(guardUp))`):
+`GroundAlignedProjectileBlock.FlatGuardReproducesTodaysOutcomeAndMarkerBits` goes RED,
+`outcomeMismatches == 0` with expansion `504 == 0`, every one of its 504 shots pitched ±0.3 rad.
 
 ---
 

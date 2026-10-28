@@ -6,6 +6,8 @@
 #include "glm/vec3.hpp"
 #include "glm/common.hpp"
 #include <glm/gtc/quaternion.hpp>
+#include "glm/gtc/matrix_transform.hpp"
+#include "glm/mat3x3.hpp"
 #include "DAttackRadialSequence.h"
 #include "DAttackRadialSimulation.h"
 #include "OGBrawler/DAttackSequenceId.h"
@@ -15,6 +17,7 @@
 #include "OGBrawler/BrawlerCharacterBindings.h"
 #include "OGBrawler/BrawlerInboundHit.h"
 #include "OGBrawler/BrawlerSyncedPlayerInput.h"
+#include "OGBrawler/BrawlerGroundFrame.h"
 #include "OGBrawler/InputSequence/InputSequence.h"
 #include "OGBrawler/InputSequence/GameMotions.h"
 #include "OGSimulation/SimulationDependencies.h"
@@ -22,6 +25,7 @@
 #include "OGSimulation/SimulationFieldDescriptors.h"
 #include "OGSimulation/OGAssert.h"
 #include "OGSimulation/SimulationFrame.h"
+#include "OGSimulation/SurfaceFrame.h"
 #include "OGBrawlerLog.h"
 
 // ∴D-03  docs/DAttackMachineSimulation-rationale.md
@@ -215,11 +219,13 @@ template <typename PhysicsAdapterType>
 void setRadialSimulationInitialConditions(float deltaTime,
 	const AllInput<PhysicsAdapterType>& input,
 	dAttackRadialSimulation::InitialConditions& attackIntialConditions,
-	State& state)
+	State& state,
+	const brawlerGround::GroundSample& ground)
 {
 	attackIntialConditions.activeAttackSequence = state.m_activeAttackSequence;
 
-	const glm::vec3 aimDirection = glm::normalize(simFrame::flatten(input.getPlayerInput().aimDirection));
+	const glm::vec3 aimDirection = glm::normalize(simFrame::flatten(
+		surfaceFrame::tiltFromSurface(ground.normal, input.getPlayerInput().aimDirection)));
 	constexpr glm::vec3 defaultForward = simFrame::kForward;
 	constexpr glm::vec3 aimFallbackAxis = simFrame::withHeight(glm::vec3(0.f), -1.f);
 	static_assert(simFrameDetail::sameBits(aimFallbackAxis, glm::vec3(0.f, -1.f, 0.f)),
@@ -238,8 +244,18 @@ void setRadialSimulationInitialConditions(float deltaTime,
 			return glm::normalize(glm::cross(defaultForward, aimDirection));
 	}();
 
-	attackIntialConditions.initialAimAngle = aimAngle;
-	attackIntialConditions.initialAimRotationAxis = aimRotationAxis;
+	if (surfaceFrame::isFlat(ground.normal))
+	{
+		attackIntialConditions.initialAimAngle = aimAngle;
+		attackIntialConditions.initialAimRotationAxis = aimRotationAxis;
+	}
+	else
+	{
+		const surfaceFrame::AngleAxis swingFrame = surfaceFrame::toAngleAxis(surfaceFrame::tiltMatrix(ground.normal)
+			* glm::mat3(glm::rotate(glm::mat4(1.f), aimAngle, aimRotationAxis)));
+		attackIntialConditions.initialAimAngle = swingFrame.angle;
+		attackIntialConditions.initialAimRotationAxis = swingFrame.axis;
+	}
 }
 }
 
@@ -284,7 +300,7 @@ void integrate(float deltaTime,
 		{
 			state.m_currentState = DAttackState::Attacking; state.m_timeInCurrentState = 0.f;
 
-			setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state);
+			setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state, brawlerGround::GroundSample{});
 		}
 
 		break;
@@ -307,7 +323,7 @@ void integrate(float deltaTime,
 				state.m_queuedAttackSequence = InvalidAttackSequenceId;
 				state.m_activeAttackSequence = 4;
 
-				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state);
+				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state, brawlerGround::GroundSample{});
 			}
 			else if (attackState.attackTimer > 0.3)
 			{
@@ -331,7 +347,7 @@ void integrate(float deltaTime,
 				state.m_activeAttackSequence = state.m_queuedAttackSequence;
 				state.m_queuedAttackSequence = InvalidAttackSequenceId;
 
-				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state);
+				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state, brawlerGround::GroundSample{});
 			}
 			else
 			{
@@ -408,7 +424,7 @@ void integrate2(float deltaTime,
 		{
 			state.m_currentState = DAttackState::Attacking; state.m_timeInCurrentState = 0.f;
 
-			setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state);
+			setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state, brawlerGround::GroundSample{});
 		}
 
 		break;
@@ -431,7 +447,7 @@ void integrate2(float deltaTime,
 				state.m_queuedAttackSequence = InvalidAttackSequenceId;
 				state.m_activeAttackSequence = 4;
 
-				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state);
+				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state, brawlerGround::GroundSample{});
 			}
 			else if (attackState.attackTimer > 0.3)
 			{
@@ -455,7 +471,7 @@ void integrate2(float deltaTime,
 				state.m_activeAttackSequence = state.m_queuedAttackSequence;
 				state.m_queuedAttackSequence = InvalidAttackSequenceId;
 
-				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state);
+				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state, brawlerGround::GroundSample{});
 			}
 			else
 			{
@@ -537,7 +553,8 @@ void launchHadouken(float deltaTime,
 	Dependencies& deps,
 	const simulatableBrawler::CharacterBindings& characterBindings,
 	dAttackRadialSimulation::InitialConditions& attackIntialConditions,
-	State& state)
+	State& state,
+	const brawlerGround::GroundSample& ground)
 {
 	const PlayerInputView& playerInput = input.getPlayerInput();
 	const DAttackState fromState = state.m_currentState;
@@ -551,16 +568,17 @@ void launchHadouken(float deltaTime,
 			characterBindings.capsuleBodyId)[3]);
 
 	constexpr glm::vec3 aimFallback = simFrame::kForward;
-	const glm::vec3 aimXYraw = simFrame::flatten(playerInput.aimDirection);
+	const glm::vec3 aimXYraw = simFrame::flatten(surfaceFrame::tiltFromSurface(ground.normal, playerInput.aimDirection));
 	const glm::vec3 aimXY = (glm::length(aimXYraw) < 0.0001f)
 		? aimFallback
 		: glm::normalize(aimXYraw);
+	const glm::vec3 launchDir = surfaceFrame::tiltToSurface(ground.normal, aimXY);
 
 	projectileIC.spawnRequestPending = 1;
 	projectileIC.spawnPos = parentPosition
-		+ aimXY * projSD.spawnForwardOffset
-		+ simFrame::withHeight(glm::vec3(0.f), projSD.spawnHeightOffset);
-	projectileIC.spawnDir = aimXY;
+		+ launchDir * projSD.spawnForwardOffset
+		+ surfaceFrame::tiltToSurface(ground.normal, simFrame::withHeight(glm::vec3(0.f), projSD.spawnHeightOffset));
+	projectileIC.spawnDir = launchDir;
 
 	state.m_activeAttackSequence = kHadoukenSequenceSentinel;
 	attackIntialConditions.activeAttackSequence = kHadoukenSequenceSentinel;
@@ -594,7 +612,8 @@ void integrate3(float deltaTime,
 	const AllInput<PhysicsAdapterType>& input,
 	Dependencies deps,
 	const simulatableBrawler::CharacterBindings& characterBindings,
-	const brawlerInboundHit::DerivedState& inboundHit)
+	const brawlerInboundHit::DerivedState& inboundHit,
+	const brawlerGround::GroundSample& ground)
 {
 	const dAttackRadialSimulation::State& attackState = deps.external.get<dAttackRadialSimulation::State>();
 	dAttackRadialSimulation::InitialConditions& attackIntialConditions = deps.external.edit<dAttackRadialSimulation::InitialConditions>();
@@ -628,7 +647,7 @@ void integrate3(float deltaTime,
 	{
 		if (wantsProjectile(playerInput))
 		{
-			launchHadouken(deltaTime, input, deps, characterBindings, attackIntialConditions, state);
+			launchHadouken(deltaTime, input, deps, characterBindings, attackIntialConditions, state, ground);
 			break;
 		}
 
@@ -657,7 +676,7 @@ void integrate3(float deltaTime,
 					state.m_activeAttackSequence, state.m_attackEndTick);
 				state.m_currentState = DAttackState::Attacking; state.m_timeInCurrentState = 0.f;
 
-				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state);
+				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state, ground);
 			}
 
 		}
@@ -687,7 +706,7 @@ void integrate3(float deltaTime,
 				state.m_queuedAttackSequence = InvalidAttackSequenceId;
 				state.m_activeAttackSequence = 4;
 
-				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state);
+				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state, ground);
 			}
 			else if (attackState.attackTimer > 0.3)
 			{
@@ -716,7 +735,7 @@ void integrate3(float deltaTime,
 
 		if (hadoukenActive && !inHadoukenCommitment && wantsHeldProjectile(playerInput))
 		{
-			launchHadouken(deltaTime, input, deps, characterBindings, attackIntialConditions, state);
+			launchHadouken(deltaTime, input, deps, characterBindings, attackIntialConditions, state, ground);
 		}
 		else if (!inHadoukenCommitment && attackState.currenSequenceId == InvalidAttackSequenceId)
 		{
@@ -737,7 +756,7 @@ void integrate3(float deltaTime,
 				OGBLOG_G("[Machine.transition] Attacking -> Attacking (queued seq=%u) endTick=%u",
 					state.m_activeAttackSequence, state.m_attackEndTick);
 
-				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state);
+				setRadialSimulationInitialConditions(deltaTime, input, attackIntialConditions, state, ground);
 			}
 			else
 			{

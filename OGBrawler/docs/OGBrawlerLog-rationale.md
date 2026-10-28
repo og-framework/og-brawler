@@ -78,7 +78,8 @@ The comment this replaces, verbatim (the prohibition in the same block is guards
 
 ⚠ R0: `[Movement.hover]` has **nine** float conversions and one `%u` — ten conversions, not ten
 floats. The second clause still holds with the prefix: the widest in-scope sub-simulation line,
-`[Radial.setInitialConditions]`, is 266 + 30 = 296.
+`[Radial.setInitialConditions]`, was 266 + 30 = 296; since og-ground-aligned-attacks task 5c added its
+`up=` direction (three `%.9g` floats, §4.2) it is 322 + 30 = 352, still under half of 1024.
 
 ## 3. The one bound a type cannot prove: `%s`
 
@@ -102,9 +103,11 @@ argument **type** can produce. Each number comes from this derivation:
 | `%f` `%F` | `double` | 1 + 309 + point + fraction | as above with `DBL_MAX` (309 integer digits) |
 | `%s` | `const char*` | `kMaxStringArgBytes` or a smaller precision | §3 |
 | `%.*f` `%.*F` | an `int` precision, then `float` / `double` | as `%f` with fraction `kMaxStarPrecision` (9): 50 / 320 | §4.1 |
+| `%g` `%G` | `float` / `double` | the larger of 1 + P + 1 + 2 + 3 and `kMaxNonFiniteBytes` (10); P = the precision, 6 by default, 0 counts as 1 | §4.2 |
 | anything else | — | `kUnbounded` | length modifiers `h l ll z j t L`, a `*` width, a `*` precision on any conversion but `f`/`F` or with a non-`int` argument, unknown conversions, the end of the string |
 
-`inf` and `nan` print shorter than any finite bound. A field width counts when it exceeds the bound.
+`inf` and `nan` print shorter than any finite `%f` bound; `%g` charges a floor for them (§4.2). A field width
+counts when it exceeds the bound.
 
 **Why the type and not the format.** `"%.4f"` says nothing about whether it gets a `float` or a
 `double`. Task 7 measured the same four-conversion format compiling with floats and firing with doubles.
@@ -145,6 +148,31 @@ returns the would-be length (measured with MSVC 14.38: an 8-byte buffer given `"
 
 The self-tests pin 50, 320 and a mixed `"x=%.*f y=%u"` (2 + 50 + 3 + 10), and assert `kUnbounded` for a
 `*` precision with a `float`, a 64-bit or a missing argument, a `*` width, and `%.*s` and `%.*u`.
+
+### 4.2 `%g` — og-ground-aligned-attacks task 5c
+
+The radial `[Radial.setInitialConditions]` line prints its `up=` direction with `%.9g`. Nine significant
+digits round-trip any `float`, so the log resolves one float ULP, which is the size of the cross-platform
+axis difference that initiative measures. `%e` stays `kUnbounded`.
+
+With P significant digits (the precision; 6 when there is none; a precision of 0 counts as 1), `%g`
+prints one of two styles:
+- the `e` style, the widest finite text: a sign, P digits, the point, `e`, the exponent's sign and its
+  digits. The exponent is charged three digits, because a `double` reaches `e+308`. That is
+  1 + P + 1 + 2 + 3;
+- the `f` style, chosen for decimal exponents -4 to P - 1. Its widest text is `-0.000` followed by P
+  digits, P + 6 characters.
+
+A non-finite value can be longer than a small-P bound: the MSVC runtime prints a signalling NaN as
+`-nan(snan)` (10 characters) and a quiet one as `-nan(ind)` (9). So the bound is never below
+`kMaxNonFiniteBytes`, defined as `sizeof("-nan(snan)") - 1`. Measured with MSVC 2022 (`/O2 /fp:fast`):
+`%.9g` printed `-DBL_MAX` as `-1.79769313e+308` (16, the bound), `-FLT_MAX` as `-3.40282347e+38` (15) and
+`-0.000123456789` as `-0.000123456789` (15); `%g` printed `-DBL_MAX` in 13, the bound; `%.1g` printed both
+NaNs as above and every finite value in at most 7.
+
+The self-tests pin 16 (`%.9g` float, `%.9G` double), 13 (`%g`), `kMaxNonFiniteBytes` (`%.1g`, `%.0g`,
+and `kMaxNonFiniteBytes == 10`), 20 (`%20.9g`: the width wins) and `kUnbounded` for a `%.9g` given an
+`unsigned int`.
 
 ## 5. The integrate-scope prefix — og-netcode-v2-field-defects task 16
 

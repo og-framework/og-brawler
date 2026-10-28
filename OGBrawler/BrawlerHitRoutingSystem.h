@@ -101,6 +101,7 @@ namespace brawlerHitRouting
                         staticData, spec,
                         normalisedXY(hit.swingTangent,
                                      directionAwayFromAttacker(*attackerPtr, *target)),
+                        meleeDirectionWorld(spec, hit.swingTangent, *attackerPtr, *target),
                         target->editAllState().editDerivedState()
                             .edit<brawlerInboundHit::DerivedState>());
                 }
@@ -135,6 +136,7 @@ namespace brawlerHitRouting
                         targetFlinching ? staticData.m_projectileHitOnFlinchReaction
                                         : staticData.m_projectileHitReaction,
                         normalisedXY(slot.spawnDir, glm::vec2(1.f, 0.f)),
+                        projectileDirectionWorld(slot.spawnDir),
                         target->editAllState().editDerivedState()
                             .edit<brawlerInboundHit::DerivedState>());
                 }
@@ -183,7 +185,7 @@ namespace brawlerHitRouting
             return lengthSq > 0.f ? xy * (1.f / glm::sqrt(lengthSq)) : fallback;
         }
 
-        static glm::vec2 attackerAimXY(const SimulatableBrawler& attacker)
+        static glm::mat4 attackerAimRotation(const SimulatableBrawler& attacker)
         {
             const dAttackRadialSimulation::InitialConditions& ic =
                 attacker.getAllState().getState()
@@ -194,14 +196,17 @@ namespace brawlerHitRouting
                 "Not simFrame::kTurnAxis or kUp: they are +Y since og-sim-metres-yup task 26, and rotate(a, +Y) is rotate(-a, -Y), a mirrored fallback aim. "
                 "Not -simFrame::kUp or kUp * -1.f: their -0 zeros differ from the machine's axis. "
                 "Was the chart-P simFrame::kTurnAxis.");
-            constexpr glm::vec4 forward4(simFrame::kForward, 0.f);
             const glm::vec3 axis =
                 (glm::dot(ic.initialAimRotationAxis, ic.initialAimRotationAxis) > 0.f)
                     ? ic.initialAimRotationAxis
                     : aimFallbackAxis;
-            const glm::vec3 aim = glm::vec3(
-                glm::rotate(glm::mat4(1.f), ic.initialAimAngle, axis)
-                    * forward4);
+            return glm::rotate(glm::mat4(1.f), ic.initialAimAngle, axis);
+        }
+
+        static glm::vec2 attackerAimXY(const SimulatableBrawler& attacker)
+        {
+            constexpr glm::vec4 forward4(simFrame::kForward, 0.f);
+            const glm::vec3 aim = glm::vec3(attackerAimRotation(attacker) * forward4);
             return normalisedXY(aim, glm::vec2(1.f, 0.f));
         }
 
@@ -217,9 +222,39 @@ namespace brawlerHitRouting
             return normalisedXY(targetPosition - attackerPosition, attackerAimXY(attacker));
         }
 
+        static glm::vec3 meleeDirectionWorld(const HitReactionSpec& spec,
+                                             const glm::vec3& swingTangent,
+                                             const SimulatableBrawler& attacker,
+                                             const SimulatableBrawler& target)
+        {
+            const bool authored = spec.directionSource == HitDirectionSource::AuthoredInSwingFrame;
+            const bool authoredUsable =
+                glm::dot(spec.authoredDirection, spec.authoredDirection) > 0.f;
+            OG_CHECK(!authored || authoredUsable,
+                "brawlerHitRouting::System::meleeDirectionWorld - a row whose directionSource is "
+                "AuthoredInSwingFrame must author a NON-ZERO authoredDirection. Routing normalises "
+                "it, so a zero vector is a NaN knockback direction; the row falls back to the "
+                "swing tangent instead.");
+            if (authored && authoredUsable)
+                return glm::normalize(glm::mat3(attackerAimRotation(attacker)) * spec.authoredDirection);
+            const glm::vec2 xy = simFrame::planar(swingTangent);
+            // ⛔G-08  docs/BrawlerHitRoutingSystem-guards.md
+            return glm::dot(xy, xy) > 0.f
+                ? glm::normalize(swingTangent)
+                : simFrame::compose(directionAwayFromAttacker(attacker, target), 0.f);
+        }
+
+        static glm::vec3 projectileDirectionWorld(const glm::vec3& spawnDir)
+        {
+            return glm::dot(spawnDir, spawnDir) > 0.f
+                ? glm::normalize(spawnDir)
+                : simFrame::compose(glm::vec2(1.f, 0.f), 0.f);
+        }
+
         static void resolveHitReaction(const simulatableBrawler::StaticData& staticData,
                                        const HitReactionSpec& spec,
                                        const glm::vec2& directionXY,
+                                       const glm::vec3& directionWorld,
                                        brawlerInboundHit::DerivedState& slice)
         {
             OG_CHECK(staticData.m_movementStaticData.launchDecel > 0.f,
@@ -234,6 +269,7 @@ namespace brawlerHitRouting
             slice.reactionKind   = spec.kind;
             slice.knockbackSpeed = knockback ? spec.knockbackSpeed : 0.f;
             slice.hitDirectionXY = knockback ? directionXY : glm::vec2(0.f);
+            slice.hitDirectionWorld = knockback ? directionWorld : glm::vec3(0.f);
             slice.flinchDuration = knockback
                 ? glm::max(spec.lockoutDuration,
                            spec.knockbackSpeed / staticData.m_movementStaticData.launchDecel)

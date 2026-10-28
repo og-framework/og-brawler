@@ -19,6 +19,7 @@
 #include "OGSimulation/QueryGeometry.h"
 #include "OGSimulation/BodyId.h"
 #include "OGSimulation/SimulationFrame.h"
+#include "OGSimulation/SurfaceFrame.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
 #include "OGBrawler/DAttackRadialSimulation.h"
 #include "OGBrawler/BrawlerSyncedPlayerInput.h"
@@ -280,6 +281,10 @@ struct SlotDetection
     BodyId      struckRootBodyId;       // Hit / BlockedByGuard: the struck character's root body id
     glm::vec3   objectPosition{};       // Hit / BlockedByGuard: the struck shape's position
     glm::vec3   targetRootPosition{};   // BlockedByGuard: the guard body's translation (the character root)
+    // Guard hits: surfaceFrame::surfaceUpOf(the guard body's transform), the up of the plane the
+    // block test and the block marker work in [og-ground-aligned-attacks task 8]. kUp otherwise.
+    // DerivedState only, like every field here: never serialized, never compared.
+    glm::vec3   guardUp{simFrame::kUp};
 };
 
 class DerivedState
@@ -548,14 +553,26 @@ void integrate(float dt,
             {
                 // T30 — place the block marker on the inner circle where the launch ray
                 // enters it (the edge facing the shooter), not at the character root.
-                // Solve |O + t*D - C|^2 = r^2 in the horizontal plane (O = spawnPos, D = spawnDir,
+                // Solve |O + t*D - C|^2 = r^2 in the guard's plane (O = spawnPos, D = spawnDir,
                 // C = charPos, r = innerCircleRadius). Pick the smaller positive root —
                 // the entry point. Fallback to the struck shape's position if the ray misses.
+                // [og-ground-aligned-attacks task 8] The guard's plane is the one perpendicular
+                // to detected.guardUp. A flat guard up runs the horizontal-plane picks exactly as
+                // before; any other up solves on the three points tilted into the guard's local
+                // frame (tiltFromSurface), whose planar picks are the guard's plane. t is the
+                // parameter along the 3-D ray either way, so the marker stays on the ray.
                 glm::vec3 blockPos = detected.objectPosition;
                 bool foundIntersection = false;
-                const glm::vec2 rayO = simFrame::planar(slot.spawnPos);
-                const glm::vec2 rayD = simFrame::planar(slot.spawnDir);
-                const glm::vec2 circC = simFrame::planar(charPos);
+                const bool flatGuard = surfaceFrame::isFlat(detected.guardUp);
+                const glm::vec2 rayO = flatGuard
+                    ? simFrame::planar(slot.spawnPos)
+                    : simFrame::planar(surfaceFrame::tiltFromSurface(detected.guardUp, slot.spawnPos));
+                const glm::vec2 rayD = flatGuard
+                    ? simFrame::planar(slot.spawnDir)
+                    : simFrame::planar(surfaceFrame::tiltFromSurface(detected.guardUp, slot.spawnDir));
+                const glm::vec2 circC = flatGuard
+                    ? simFrame::planar(charPos)
+                    : simFrame::planar(surfaceFrame::tiltFromSurface(detected.guardUp, charPos));
                 const glm::vec2 fromC = rayO - circC;
                 const float aQ = glm::dot(rayD, rayD);
                 const float bQ = 2.f * glm::dot(fromC, rayD);
@@ -569,7 +586,8 @@ void integrate(float dt,
                         t = (-bQ + sq) / (2.f * aQ);
                     if (t >= 0.f)
                     {
-                        // Preserve the projectile's height (constant-height flight by design).
+                        // A point on the launch ray: the flight is straight in its launch plane by
+                        // design (a horizontal launch keeps its height).
                         blockPos = slot.spawnPos + t * slot.spawnDir;
                         foundIntersection = true;
                     }

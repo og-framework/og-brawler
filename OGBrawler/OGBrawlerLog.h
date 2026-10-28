@@ -27,6 +27,7 @@ namespace ogblog
     namespace detail
     {
         inline constexpr std::size_t kUnbounded = static_cast<std::size_t>(-1) / 2;
+        inline constexpr std::size_t kMaxNonFiniteBytes = sizeof("-nan(snan)") - 1;
 
         enum class ArgClass : unsigned char { Int32, Float, Double, CString, Unsupported };
 
@@ -118,6 +119,14 @@ namespace ogblog
                     const std::size_t point = (fraction > 0 || alternate) ? 1 : 0;
                     if (arg == ArgClass::Float)  bound = 1 + 39 + point + fraction;
                     if (arg == ArgClass::Double) bound = 1 + 309 + point + fraction;
+                    break;
+                }
+                case 'g': case 'G':
+                {
+                    const std::size_t significant = !hasPrecision ? 6 : (precision == 0 ? 1 : precision);
+                    const std::size_t widest = 1 + significant + 1 + 2 + 3;
+                    if (arg == ArgClass::Float || arg == ArgClass::Double)
+                        bound = widest > kMaxNonFiniteBytes ? widest : kMaxNonFiniteBytes;
                     break;
                 }
                 case 's':
@@ -219,6 +228,14 @@ namespace ogblog
         static_assert(worstCaseFormattedLength("%.4f", TypeList<float>{}) == 45);
         static_assert(worstCaseFormattedLength("%.0f", TypeList<float>{}) == 40);
         static_assert(worstCaseFormattedLength("%.4f", TypeList<double>{}) == 315);
+        static_assert(worstCaseFormattedLength("%.9g", TypeList<float>{}) == 16);
+        static_assert(worstCaseFormattedLength("%.9G", TypeList<double>{}) == 16);
+        static_assert(worstCaseFormattedLength("%g", TypeList<float>{}) == 13);
+        static_assert(kMaxNonFiniteBytes == 10);
+        static_assert(worstCaseFormattedLength("%.1g", TypeList<float>{}) == kMaxNonFiniteBytes);
+        static_assert(worstCaseFormattedLength("%.0g", TypeList<float>{}) == kMaxNonFiniteBytes);
+        static_assert(worstCaseFormattedLength("%20.9g", TypeList<float>{}) == 20);
+        static_assert(worstCaseFormattedLength("%.9g", TypeList<unsigned int>{}) == kUnbounded);
         static_assert(worstCaseFormattedLength("%s", TypeList<const char*>{}) == kMaxStringArgBytes);
         static_assert(worstCaseFormattedLength("a%%b", TypeList<>{}) == 3);
         static_assert(worstCaseFormattedLength("x=%u y=%s", TypeList<unsigned int, const char*>{}) == 2 + 10 + 3 + kMaxStringArgBytes);

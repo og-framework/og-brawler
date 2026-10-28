@@ -125,6 +125,23 @@ The two trailing comments on the branches of `t`, carried:
 					t = glm::dot(opponentXY - attackerXY, weaponDirXY); // closest point on weapon line
 ```
 
+**In the swing's plane (og-ground-aligned-attacks task 7, design §3.3).** The solve above is the lambda
+`weaponHitIndicatorPositionIn`, which takes the weapon direction, the attacker and the opponent as
+arguments. `weaponHitIndicatorPosition` calls it. It reads the swing plane's up, `swingUp =
+glm::mat3(initialRotation) * simFrame::kUp` (the rotated up of the radial IC; on a slope the ground
+normal, `DAttackRadialSimulation-rationale.md` §5).
+* **Flat** (`surfaceFrame::isFlat(swingUp)`, always while `brawlerGround::kGroundAlignedAttacks` is
+  `false`): the solve runs on `currentDirection`, `rootTranslation` and `hit.objectPosition`, today's
+  expressions by the flat rule.
+* **Slope:** the same solve runs on `surfaceFrame::tiltFromSurface(swingUp, ·)` of the three, the swing
+  frame in which `swingUp` is `simFrame::kUp`, and its result is mapped back with
+  `surfaceFrame::tiltToSurface`. The marker is then on the opponent's inner circle in the swing's plane,
+  at the opponent's height along `swingUp`, as it is on flat ground along `simFrame::kUp`. The tilt is a
+  rotation about the world origin, and the solve uses only differences and dot products, so rotating the
+  points about the origin rather than about the attacker gives the same point up to rounding.
+  `GroundAlignedMeleeBlockTest.cpp` measures it on the 30° plane (off the swing plane and off the inner
+  circle by at most 2.4e-7 m).
+
 ---
 
 ## 4. The block classification is the shared pure predicate ∴D-04
@@ -334,7 +351,9 @@ ground-plane coordinates of the weapon direction, the attacker and the opponent 
 the replaced `(x, y)` picks and `(x, y, z)` build, bit for bit. The two sums
 `attackerXY.x + t * weaponDirXY.x` and `attackerXY.y + t * weaponDirXY.y` are still written per
 component, so they are the same float operations. The intersection uses only dot products in the
-plane, so it gives the same point in either 2-D chart.
+plane, so it gives the same point in either 2-D chart. On a slope (§3, og-ground-aligned-attacks task 7)
+the same picks run on the three points carried into the swing frame by `surfaceFrame::tiltFromSurface`,
+whose up is `simFrame::kUp`, and `surfaceFrame::tiltToSurface` carries the result back.
 
 `currentDirection` (the root transform applied to `DAttackRadialSequence::defaultForward()`, which
 returns `simFrame::kForward`) and the swing tangent (`swingTangentAt`, a cross product with the world

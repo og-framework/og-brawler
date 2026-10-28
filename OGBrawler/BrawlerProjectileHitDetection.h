@@ -10,6 +10,7 @@
 
 #include "OGSimulation/SpatialQueryResult.h"
 #include "OGSimulation/SimulationFrame.h"
+#include "OGSimulation/SurfaceFrame.h"
 #include "OGBrawler/SimulatableBrawler.h"
 #include "OGBrawler/BrawlerProjectileSimulation.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
@@ -59,7 +60,16 @@ inline bool projectileGuardBlocks(const glm::mat4& guardTransform, const glm::ve
 	if (fwdLen > 0.0001f)
 		guardForward /= fwdLen;
 
-	const glm::vec3 incoming = -spawnDir;
+	const glm::vec3 guardUp = surfaceFrame::surfaceUpOf(guardTransform);
+	glm::vec3 incoming = -spawnDir;
+	// ⛔G-09  docs/BrawlerProjectileHitDetection-guards.md
+	if (!surfaceFrame::isFlat(guardUp))
+	{
+		incoming -= guardUp * glm::dot(incoming, guardUp);
+		if (glm::dot(incoming, incoming) <= 0.f)
+			return false;
+		incoming = glm::normalize(incoming);
+	}
 	const float d     = glm::clamp(glm::dot(guardForward, incoming), -1.f, 1.f);
 	const float angle = glm::acos(d);
 	return angle <= guardMiddleSectionHalfAngle;
@@ -168,6 +178,7 @@ void detectProjectileHits(float deltaSeconds, std::uint32_t tick,
 		{
 			const glm::mat4 guardTransform = physics.getBodyTransform(hit.bodyId);
 			targetRootPosition = glm::vec3(guardTransform[3]);
+			detection.guardUp = surfaceFrame::surfaceUpOf(guardTransform);
 			// ⛔G-06  docs/BrawlerProjectileHitDetection-guards.md
 			blocked = projectileGuardBlocks(guardTransform, slot.spawnDir, staticData.guardMiddleSectionHalfAngle);
 		}

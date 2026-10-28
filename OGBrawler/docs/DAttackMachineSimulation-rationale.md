@@ -93,6 +93,13 @@ composite and this slice lives on the `DerivedState` composite.
 #include "glm/common.hpp"	// glm::abs -- see the task-32 note at the abs site below
 ```
 
+The machine header also includes the leaf `BrawlerGroundFrame.h` (og-ground-aligned-attacks task 4) for
+`brawlerGround::GroundSample`, the type of `integrate3`'s ground parameter (§17). It is a leaf for the same
+reason as `BrawlerCharacterBindings.h`: the movement header, which produces the sample, includes this one.
+og-ground-aligned-attacks task 5 added og-simulation's `OGSimulation/SurfaceFrame.h` for the ground-frame
+helpers the two attack writers use (§16), and glm's matrix-transform and 3×3-matrix headers for the
+`glm::rotate` and `glm::mat3` of the composite swing frame.
+
 ---
 
 ## 2. The file-scope constants
@@ -955,7 +962,7 @@ aim rotation axis (the second bullet).
   `simFrame::withHeight(glm::vec3(0.f), -1.f)` so its zeros stay `+0`. A `static_assert` after the
   declaration pins those bits (`simFrameDetail::sameBits` against `glm::vec3(0.f, -1.f, 0.f)`), and so do
   the same assertions after the two other copies of this axis, in `BrawlerHitRoutingSystem.h`'s
-  `attackerAimXY` and in `DAttackGuardSimulation.h`'s `integrate`. Measured by the task 26 rework:
+  `attackerAimRotation` (in `attackerAimXY` until og-ground-aligned-attacks task 9) and in `DAttackGuardSimulation.h`'s `integrate`. Measured by the task 26 rework:
   `simFrame::kTurnAxis` at any of the three, `-simFrame::kUp` here and `simFrame::kUp * -1.f` in the guard
   sub-simulation each fail to compile (error C2338).
 * **What a `+Y` or a negated fallback would break.** The lambda returns this axis when `|aimDot|` is
@@ -994,3 +1001,62 @@ aim rotation axis (the second bullet).
   og-sim-metres-yup task 22). It starts from `+0` and places one value, so it is the replaced literal
   `(0, 0, offset)` bit for bit for either sign of the offset. `simFrame::kUp * projSD.spawnHeightOffset` would
   give `-0` components for a negative offset.
+* **The ground frame (og-ground-aligned-attacks task 5).** Both attack writers read the aim in the
+  brawler's ground frame, the sample `ground.normal` (§17, written `n` below), through og-simulation's
+  `surfaceFrame` helpers (`OGSimulation/SurfaceFrame.h`). `surfaceFrame::tiltToSurface(n, v)` is the
+  shortest rotation `G(n)` that takes `simFrame::kUp` to `n`, and
+  `surfaceFrame::tiltFromSurface` is its inverse.
+  * `setRadialSimulationInitialConditions` reads the **local heading**
+    `glm::normalize(simFrame::flatten(surfaceFrame::tiltFromSurface(n, aim)))`: the aim's orthogonal
+    projection onto the ground plane, written in the frame where that plane is horizontal. The lines
+    after it (the near-pole band of guard G-03, the `acos`, the cross product and `aimFallbackAxis`)
+    are unchanged and run on the local heading, so the band and the fallback apply in the local frame.
+    Their rotation `A` turns `kForward` onto the local heading about `±kUp`, or about the fallback axis
+    `(0, -1, 0)` inside the band, so `A` keeps `kUp`. On non-flat ground the stored pair is
+    `surfaceFrame::toAngleAxis(surfaceFrame::tiltMatrix(n) * glm::mat3(glm::rotate(glm::mat4(1.f), aimAngle, aimRotationAxis)))`,
+    the composite `G·A`: the rotated `kUp` is `n` (the swing plane is the ground plane) and the rotated
+    `kForward` is the projected aim. The order is the point: `A·G` tilts the ground frame and then turns
+    it about world up, so the plane no longer contains the aim's projection and its normal is not `n`.
+    Measured (task 5, a poison build with the product reversed, restored byte-identical): the 360-aim
+    case `GroundAlignedMachine.SwingFrameLiesInTheGroundPlane` fails with a worst `|R·kUp − n|` of 1, and
+    `GroundAlignedMachine.NearPoleLocalHeadingComposesTheFallbackAxis` fails by 0.005.
+  * `launchHadouken` takes the same local heading before its degenerate-aim test
+    (`simFrame::flatten(surfaceFrame::tiltFromSurface(n, aim))`, then `aimFallback` or `glm::normalize`
+    as before) and tilts the result back: `launchDir = surfaceFrame::tiltToSurface(n, aimXY)` is both the
+    forward offset's direction and `spawnDir`, so the projectile flies in the ground plane. The height
+    offset is `surfaceFrame::tiltToSurface(n, simFrame::withHeight(glm::vec3(0.f), projSD.spawnHeightOffset))`,
+    which is `spawnHeightOffset` along `n`: the projectile starts that far from the capsule measured along
+    the normal, at any heading. The spawn sum keeps its operand order (capsule, then the forward offset,
+    then the height offset).
+  * **Flat ground keeps today's bits.** The radial write is selected by `surfaceFrame::isFlat(n)`: flat
+    writes `aimAngle` and `aimRotationAxis` themselves, never the composite (which would round them
+    through a quaternion). Both tilt helpers return their argument unchanged for a flat `n`
+    (`SurfaceFrame-guards.md` G-01), so with `n = kUp` the aim reads, the fallback and the spawn sum are
+    the same operations in the same order as before task 5. Pinned by
+    `GroundAlignedMachine.FlatSampleReproducesTodaysInitialConditions` (366 aims; angle, axis, spawn
+    position and direction compared bit for bit against a copy of the pre-task-5 expressions, which also
+    passed against the pre-task-5 header) and by both brawler golden traces in exact mode. While
+    `brawlerGround::kGroundAlignedAttacks` is `false` the sample is always `kUp`.
+
+---
+
+## 17. The ground sample parameter (og-ground-aligned-attacks task 4)
+
+`integrate3` takes a last parameter `const brawlerGround::GroundSample& ground` (`BrawlerGroundFrame.h`),
+the brawler's ground normal for this tick. `SimulatableBrawler::integrate` computes it once per tick,
+before this call, with `brawlerMovementSimulation::sampleAttackGround`, and passes the same sample to the
+guard sub-simulation. Like the inbound slice it is a plain by-reference parameter, not an `ExternalDeps`
+entry: it is not state and has no owner, it is re-sampled from wire-restored movement state every tick
+(`BrawlerGroundFrame-rationale.md` §2).
+
+`integrate3` forwards it to every `launchHadouken` and `setRadialSimulationInitialConditions` call it
+makes, because those are the two places an attack's frame is fixed: the Hadouken launch writes the
+projectile's spawn position and direction, and the radial initial conditions fix the swing plane for the
+whole swing. The legacy `integrate` and `integrate2` (§11) pass a default `brawlerGround::GroundSample{}`,
+which is `simFrame::kUp`, so they keep their flat behaviour whatever the ground.
+
+Both receivers use the sample since og-ground-aligned-attacks task 5 (task 4 added the parameter and
+ignored it): `setRadialSimulationInitialConditions` builds the swing frame and `launchHadouken` the launch
+in the ground frame, and a flat sample keeps the pre-task-5 expressions (§16, the ground-frame bullet).
+The knob `brawlerGround::kGroundAlignedAttacks` is `false`, so the sample is `kUp` in any case and no value
+the machine writes changes.

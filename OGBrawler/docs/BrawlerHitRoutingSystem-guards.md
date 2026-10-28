@@ -24,8 +24,9 @@ bytes of that header, cited as `<!-- pristine lines A-B -->`. The full comment a
 **Not here, because the compiler holds them** (rationale §2, each measured by compiling): the
 four-hook `SimulationSystem` concept, detection firing before routing, and the inbound slice staying
 off the wire. Branch 2's literal substitution of the ledger for the per-tick signal does not compile
-either, but a rewrite would, so G-04 stands. The empty-aim fallback axis in `attackerAimXY` is held by a
-`static_assert` on its bits (og-sim-metres-yup task 26, rationale §9).
+either, but a rewrite would, so G-04 stands. The empty-aim fallback axis in `attackerAimRotation` (which
+`attackerAimXY` calls since og-ground-aligned-attacks task 9) is held by a `static_assert` on its bits
+(og-sim-metres-yup task 26, rationale §9).
 
 ---
 
@@ -115,7 +116,8 @@ a correction repairs. ⚠ The sort is cross-peer only because the key is: it is 
 
 **The prohibition.** ⛔ Do not replace the assignment with per-field resets, and do not delete it.
 The slice holds three one-shot bools (two since og-attackstatetransition-cleanup task 4) and the resolved reaction beside them (kind, speed, dwell,
-direction; `BrawlerInboundHit-rationale.md` §2). Routing owns its whole lifecycle, and the
+direction, and since og-ground-aligned-attacks task 9 the 3-D `hitDirectionWorld`; `BrawlerInboundHit-rationale.md` §2).
+The assignment resets `hitDirectionWorld` too, with no edit here: that is the point of the rule. Routing owns its whole lifecycle, and the
 assignment is what makes a field added later reset with the rest.
 
 **What breaks if the edit is made.** A field the reset does not name keeps the value an earlier
@@ -270,6 +272,32 @@ statement is the only path from it to the machine.
 
 **Score (§9.1):** moving it into the detector moves the tagged statement to a destination, a cut at
 the tag (clause E) → `yes`; deletion → `yes`.
+
+---
+
+## G-08 — The 3-D direction falls back on the tangent's GROUND-PLANE length, never its 3-D length
+
+**Tag site:** `BrawlerHitRoutingSystem.h`, on the `return glm::dot(xy, xy) > 0.f ? glm::normalize(swingTangent) : simFrame::compose(…)`
+statement in `meleeDirectionWorld` (og-ground-aligned-attacks task 9, design §3.6).
+
+**The prohibition.** ⛔ Key the fallback on `xy = simFrame::planar(swingTangent)`, the same test
+`normalisedXY` makes for `hitDirectionXY` (G-05), and fall back to `simFrame::compose(directionAwayFromAttacker(…), 0.f)`.
+Do not test the tangent's 3-D length, and do not normalise the tangent unconditionally: a tangent
+with no ground-plane projection is exactly the case where `hitDirectionXY` already fell back.
+
+**What breaks if the edit is made.** A vertical tangent (a horizontal-axis swing, G-05's case) writes
+a vertical `hitDirectionWorld` while `hitDirectionXY` holds the away-from-attacker fallback: the two
+directions of one hit disagree, and once the movement writes `hitDirectionWorld` times the speed into
+the velocity (og-ground-aligned-attacks task 9b, with the knob on), the target is launched straight up instead of pushed away. A zero tangent is caught either
+way; the planar test also keeps a NaN tangent on the fallback, as `normalisedXY` does (rationale §4.3).
+Not reachable with the shipped table: rows 0-3 swing in the attacker's ground plane, so on flat ground
+their tangent is horizontal (G-05's R0) and on a 30° plane its ground-plane length is at least cos 30° of its length.
+Measured by poison (task 9, the test changed to `glm::dot(swingTangent, swingTangent) > 0.f`):
+`GroundAlignedHitRouting.MeleeTangentWithNoGroundProjectionWritesTheHorizontalFallback` goes RED,
+`sameBits(slice.hitDirectionWorld, simFrame::compose(xy, 0.f))` false and
+`simFrame::height(slice.hitDirectionWorld) == 0.f` with expansion `1.0f == 0.0f`.
+
+**Score (§9.1):** substitution on the tagged statement → `yes`.
 
 ---
 
