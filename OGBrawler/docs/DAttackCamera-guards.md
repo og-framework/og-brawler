@@ -8,9 +8,12 @@ than reused.
 The header's range rules are held by the compiler and need no entry: the hard pitch limits stay inside
 (0°, 90°), the default limits sit inside the hard ones, the stick deadzone is below 1, the pull's
 e-fold (and the minimum a host value is raised to) and cap are positive, and the default hold-off and
-dominance ratio are not negative (`static_assert`s in `DAttackCamera.h`; rationale §6 and §13). The
-Catch2 suite in og-brawler-tests (`DAttackOrbitCameraTest.cpp`, `DAttackCameraIsoSeedTest.cpp`) pins
-the behaviour.
+dominance ratio are not negative, the default fields of view (at the target pitch and at the horizon) are
+angles inside (0°, 180°), and the
+field-of-view axes are the console values 0 and 1 (`static_assert`s in `DAttackCamera.h`; rationale §6,
+§13 and §14). The Catch2 suite in og-brawler-tests (`DAttackOrbitCameraTest.cpp`,
+`DAttackCameraIsoSeedTest.cpp`, `DAttackCameraFramingTest.cpp`, `DAttackCameraFollowTest.cpp`,
+`DAttackCameraMatchSoloTest.cpp`) pins the behaviour.
 
 ---
 

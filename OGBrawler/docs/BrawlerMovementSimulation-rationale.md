@@ -2523,7 +2523,7 @@ single source of the ground normal the attack code is built in. `SimulatableBraw
 once per tick **before the machine**, from the movement `State` as the tick finds it, and hands the
 `brawlerGround::GroundSample` to the machine and the guard (`BrawlerGroundFrame-rationale.md` §1).
 
-- **Knob off (`Aligned` false, which ships until the flip):** it returns the default sample,
+- **Knob off (`Aligned` false, which shipped until the flip, og-ground-aligned-attacks task 10):** it returns the default sample,
   `simFrame::kUp`, **without issuing a query** (`if constexpr`). So the knob-off build adds no sweep to
   the step, a test mock that scripts sweeps through the whole composite sees an unshifted script, and the
   headless harness sees the same query load. `BrawlerGroundSample.KnobOffMakesNoQueryAndReturnsUp` pins it.
@@ -2533,7 +2533,10 @@ once per tick **before the machine**, from the movement `State` as the tick find
   (`glm::dot(face, kWorldUp) >= sd.cosMaxSlope`), and `kUp` otherwise (a miss, a face past the cap, a
   vertical exact face under a walkable sweep normal). The walkable test is applied to the **face**, not
   read from the probe's own `walkable` (which tests the sweep `normal`), so an exact face past the cap is
-  rejected even when the sweep normal would pass.
+  rejected even when the sweep normal would pass. Since og-ground-aligned-attacks task 13b this rule is the
+  helper `attackGroundNormal(hit, sd)`, which step 2's `face` calls too (§31, guard G-28); the sample is
+  `brawlerGround::GroundSample{attackGroundNormal(probe.hit, sd)}`, bit for bit the value the two returns gave
+  before.
 - **Not `DerivedState::surfaceNormal`.** The movement's `DerivedState::surfaceNormal` is step 2's `n`
   (the sweep `normal` on walkable ground, else `kWorldUp`), written during the movement step and not
   restored on rollback: on the first replayed tick it holds the pre-rollback value. The sample reads only
@@ -2549,16 +2552,18 @@ once per tick **before the machine**, from the movement `State` as the tick find
 
 Step 2 now computes, before the support classification:
 
-- `face`: the probe's `surfaceNormal` when it is non-zero, else its `normal`. This is the face rule of
-  `sampleAttackGround` (§29), and it is meaningful only while `walkable`: every reader below tests
-  `walkable` first.
+- `face`: `attackGroundNormal(probe, sd)` since og-ground-aligned-attacks task 13b (§31): the probe's
+  `surfaceNormal` when it is non-zero, else its `normal`, kept when the hit is blocked and passes the walkable
+  test on the face itself, else `kWorldUp`. It is the attack sample's value (§29). Until task 13b it was the
+  face without that test (`surfaceNormal` when non-zero, else `normal`), which let an unwalkable exact face
+  under a walkable sweep normal reach the readers below; §31 has the case.
 - since og-ground-aligned-attacks task 9b, the hit-tick knockback write
   (`writesKnockbackVelocity<Aligned>(inboundHit, face, walkable, committed)`, §26.1, guards G-26 and G-27), so the
   classification below sees the written velocity;
 - `detached = detachesFromSupport<Aligned>(state, up, face, committed)`, and
   `support = (walkable && !detached) ? Supported : Unsupported`, as before.
 
-**The lift test** (guard G-07). With `Aligned` false (the shipped knob, `brawlerGround::kGroundAlignedAttacks`)
+**The lift test** (guard G-07). With `Aligned` false (`brawlerGround::kGroundAlignedAttacks` until the flip, task 10)
 or on a flat face it is task 27's `committed && dot(velocity, up) > 0`. On a non-flat face with the knob
 on it is `committed && dot(velocity, face) > kMinLaunchSine · |velocity|`, with `kMinLaunchSine` = sin 2°.
 The 2° margin sits above Jolt's sweep-normal error bound (0.0221, a `static_assert`) and well above the
@@ -2590,11 +2595,67 @@ is not always the face the target stands over. Measured on the Jolt slope scene 
 above, flat landing below): a slope-side target within about 0.2 m of the convex top edge gets the
 plateau's face (flat), while its sweep `normal` is an edge normal; the flat arm then decides, so an
 up-slope velocity with any upward world component detaches there, as it does today. A flat-side target
-within about 0.1 m of the concave crease gets the slope's face, so the slope arm decides for it.
+within about 0.1 m of the concave crease gets the slope's face, so the slope arm decides for it. Closer to
+the convex edge (0.1 m, task 10's slope golden) the exact face is the slope box's 60° end face, past the
+walkable cap; since task 13b `face` is world up there (§31), so the flat arm decides there too.
 
 `integrate` itself gained the template parameter (`template <bool Aligned = brawlerGround::kGroundAlignedAttacks,
 typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>`), so every existing call deduces the
 adapters and takes the knob; a test runs the knob-on path with `integrate<true>`.
+
+---
+
+## 31. One ground rule for the movement and the attack — `attackGroundNormal` (og-ground-aligned-attacks task 13b)
+
+`inline glm::vec3 attackGroundNormal(const SweepHit& hit, const StaticData& sd)` is the ground normal both the
+attack and the movement build in: the hit's `surfaceNormal` when it is non-zero, else its `normal`, returned when
+`hit.blocked && glm::dot(face, kWorldUp) >= sd.cosMaxSlope`, else `kWorldUp`. Its two readers are
+`sampleAttackGround<true>` (§29) and step 2's `face` (§30). Guard G-28 forbids a second derivation.
+
+**Why.** Task 10's slope golden found the two readers disagreeing (its impl notes' open point 2, its review's L1).
+Step 2 took `face` as the exact face with no walkable test, and its `walkable` reads the sweep's GJK `normal`
+(`probeGround`, §28). Within about 0.1 m of the convex edge those are different surfaces: the GJK normal is an
+edge normal, (0, 0.977, 0.211) at F's spot, which passes the cap, and the exact face is the slope box's upper end
+face, (0, 0.5, −0.866), 60° from up, which does not (`maxSlopeAngleDeg` is 45°). So the end face fed
+`writesKnockbackVelocity` and `detachesFromSupport` while the attack sample gave world up for the same hit.
+
+**What changed.** Only the `face` step 2 hands to those two predicates and to the `n` test. Where the exact face
+is walkable (every face interior, the plateau, both sides of the concave crease) the helper returns the same
+face as before. Where it is not, it returns `kWorldUp`, so the predicates run their flat arms: the flat rule
+(guard G-27) writes nothing for a horizontal direction, and the lift test is the task-27 `dot(velocity, up) > 0`.
+For a miss, or a blocked hit with both normals past the cap, `walkable` is false, so `support` is `Unsupported`
+and `n` is `up` whatever `face` is; no value changes there. `walkable`, the clearance and snap, and the frame
+normal `n = probe.normal` are untouched.
+
+**Measured** (`GroundAlignedKnockbackTest.cpp`, the plane rig with a scripted exact face):
+- `GroundAlignedKnockback.UnwalkableExactFaceOverAWalkableSweepIsWorldUp`. Sweep normals (0, 1, −0) and 20°, exact
+  faces the 60° end face and a vertical one. For three horizontal directions, including the one along the face's
+  horizontal part, which leaves the face by 0.866, the knob-on run is bit-equal to the knob-off run for 40 ticks
+  (480 ticks) and the leaving direction stays `Supported` on its hit tick. For two directions 10° out of the
+  horizontal, chosen so that the end-face lift test and the world-up one disagree, the run is bit-equal to one
+  whose exact face is `kWorldUp` (320 ticks), and the hit tick detaches exactly when the direction points up.
+  With step 2 on the pre-task expression it fails on tick 1 (`first differing field velocity`).
+- `GroundAlignedKnockback.WalkableExactFaceStillDecides`. A walkable exact face over a different walkable sweep
+  normal (a 30° face over 15° and 29° sweeps, and over a flat one; the plateau over a 15° sweep) is returned bit
+  for bit, and a horizontal direction that leaves the 30° face launches through the slope arm on the hit tick (9
+  hits), as before.
+- `BrawlerGroundSample.AlignedSampleIsTheSharedGroundNormal`. On 1049 scripted hits (the cases of
+  `BrawlerGroundSampleTest.cpp` and a grid of sweep normals, exact faces and blocked flags, the cap included) the
+  sample, the helper and the pre-task sample expression are bit-equal.
+
+**The knob off.** `writesKnockbackVelocity<false>` and `detachesFromSupport<false>` discard `face`, and the `n`
+test reads it only under `Aligned`, so step 2 computes the helper's value but nothing reads it; every `<false>`
+case in `GroundAlignedKnockbackTest.cpp` and `BrawlerGroundSampleTest.cpp` passes unchanged.
+
+**On the slope golden** (`BrawlerJoltSlopeGoldenTraceTest-rationale.md` §7). Only F's convex-crease hits change.
+F rests 0.1 m from the edge with a vertical velocity of +1.11e-6 m/s (the hover servo's residue). On both hit
+ticks (990 and 1100) the flat lift test reads that residue and detaches F, and the knockback is today's
+`velocityUV` in the tangent frame of the edge normal, 12.2° from up. Thrown onto the plateau (990) F rises 0.84 m
+and is `Unsupported` for 43 ticks; thrown down the slope (1100) it falls off the edge for 23. At that spot the
+knob-on movement now runs the knob-off expressions: 990's measurements equal those of task 10's knob-off
+recording of the same scenario field for field. 1100's do not (5.75 m of travel and 23 `Unsupported` ticks
+against 5.86 m and 24): from tick 1101 F's probe finds the slope face, (0, 0.866, 0.5), where the knob-on
+detached frame (§30) gives `n` = world up.
 
 ---
 

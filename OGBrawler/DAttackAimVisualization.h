@@ -11,6 +11,8 @@
 #include "DAttackCircle.h"
 #include "OGSimulation/DMathUtil.h"
 #include "DAttackVisualizationUtils.h"
+#include "DAttackGuardSimulation.h"
+#include "OGBrawler/DAttackDirectionClassifier.h"
 #include "OGSimulation/SimulationFrame.h"
 
 #include "OGSimulation/CompilerControl.h"
@@ -68,38 +70,30 @@ private:
 };
 
 
-template <typename RendererFunctorType, typename LoggingFunctorType>
-void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
-	const dAttackRadialSimulation::State& simulationState,
-	const dAttackRadialSimulation::InitialConditions& simulationInitialConditions,
-	const dAttackRadialSimulation::DerivedState& radialSimulationDerivedState,
-	const dAttackRadialSimulation::StaticData& radialSimulationStaticData,
-	State& state)
+namespace detail
 {
-	// activeAttackSequence may carry a reserved sentinel (e.g. kHadoukenSequenceSentinel)
-	// for the 1+ ticks between the machine writing it and the Attacking→Idle exit clearing
-	// it. The aim viz does not consume the sequence, but the bare index would still read
-	// ~4 billion entries out of bounds, so gate it behind isRealAttackSequence.
-	if (isRealAttackSequence(simulationInitialConditions.activeAttackSequence))
-	{
-		const DAttackRadialSequence& sequence = radialSimulationStaticData.getAttackSequences()[simulationInitialConditions.activeAttackSequence];
-		(void)sequence; // currently unused in the aim viz; bound for parity with the radial viz sites
-	}
-	const DAttackCircle& circle = radialSimulationStaticData.getAttackCircle();
-	auto rendererFunctor = input.getRendererFunctorImpl();
 
-	const glm::mat4 rootTransform = glm::translate(glm::mat4(1.f), simulationState.bodyState.position)
-	                               * glm::mat4_cast(simulationState.bodyState.rotation);
-	const glm::vec3 rootTranslation = glm::vec3(rootTransform[3]);
-	glm::mat3 rootRotation = glm::mat3(rootTransform);
-
-
+// [og-ground-aligned-attacks task 11] The aim indicator's draw calls about rootTranslation:
+// today's expressions, moved out of visualize unchanged but for their inputs. aimDirection and
+// moveDirectionWorld are the world inputs (a world-aligned indicator) or their local headings (a
+// ground-frame one, drawn through dAttackVisualizationUtils::GroundFrameRenderer); attackSequenceId
+// is dAttackDirection::classify's id on the WORLD inputs either way.
+template <typename IndicatorRendererType>
+void drawAimIndicator(IndicatorRendererType rendererFunctor,
+	const glm::vec3& aimDirection,
+	const glm::vec2& moveStick,
+	const glm::vec3& moveDirectionWorld,
+	unsigned int attackSequenceId,
+	bool attackInProgress,
+	const glm::vec3& rootTranslation,
+	const dAttackRadialSimulation::StaticData& radialSimulationStaticData)
+{
 	const float aimArchAngle = 0.1f;
-	rendererFunctor.drawLine(rootTranslation - input.getAimDirection() * 0.3f, rootTranslation + input.getAimDirection() * radialSimulationStaticData.getAttackCircle().getOuterRadius(), 1, 0.01f);
+	rendererFunctor.drawLine(rootTranslation - aimDirection * 0.3f, rootTranslation + aimDirection * radialSimulationStaticData.getAttackCircle().getOuterRadius(), 1, 0.01f);
 	// Green outer arc visualizing the forward-strike window. UE DrawDebugCircleArc sweeps
 	// from -AngleWidth to +AngleWidth (it's a half-angle — see DrawDebugHelpers.cpp:497),
 	// so π/16 gives a total span of π/8.
-	rendererFunctor.drawCircleArc(rootTranslation, input.getAimDirection(), radialSimulationStaticData.getAttackCircle().getOuterRadius(), glm::pi<float>() / 32.f, 1, 0.01f);
+	rendererFunctor.drawCircleArc(rootTranslation, aimDirection, radialSimulationStaticData.getAttackCircle().getOuterRadius(), glm::pi<float>() / 32.f, 1, 0.01f);
 
 	// Inner-radius arc: a quarter circle on the character's screen-right of aim, overhanging
 	// both ends by aimArchAngle (spans aimArchAngle .. -(π/2 + aimArchAngle) about
@@ -114,27 +108,23 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 		const float innerArcCenterOffset = (innerArcRightExtent - innerArcLeftExtent) * 0.5f; // negative → clockwise from above
 		constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
 		const glm::mat4 innerArcCenterRot = glm::rotate(glm::mat4(1.f), innerArcCenterOffset, turnAxis);
-		const glm::vec3 innerArcCenter = glm::vec3(innerArcCenterRot * glm::vec4(input.getAimDirection(), 0.f));
+		const glm::vec3 innerArcCenter = glm::vec3(innerArcCenterRot * glm::vec4(aimDirection, 0.f));
 		rendererFunctor.drawCircleArc(rootTranslation, innerArcCenter, radialSimulationStaticData.getAttackCircle().getInnerRadius(), innerArcHalfAngle, 1, 0.01f);
 	}
 
 	if (const std::optional<glm::vec3> rightMarkerEnd = dAttackVisualizationUtils::aimRightMarkerEnd(
-			rootTranslation, input.getAimDirection(), radialSimulationStaticData.getAttackCircle().getInnerRadius()))
+			rootTranslation, aimDirection, radialSimulationStaticData.getAttackCircle().getInnerRadius()))
 	{
 		rendererFunctor.drawLine(rootTranslation, *rightMarkerEnd, 1, 0.01f);
 	}
 
 
-	const glm::vec4 defaultForward4(DAttackRadialSequence::defaultForward(), 0.f);
-	const glm::vec3 currentDirection = glm::vec3(rootTransform * defaultForward4);
-	input.getLoggingFunctor().logVec3("dAttackRadialVisualization currentDirection: ", currentDirection);
-
 	// moveDirectionWorld normalized — retained for the yellow move-direction line below.
 	// The forward/left/right classification, the inner-circle origin point, and the
-	// predicted attack-sequence id are now produced by the shared pure helper
-	// dAttackVisualizationUtils::computeAttackIndicatorGeometry (see below), so the aim
-	// viz and the new block-prediction viz cannot drift on either value.
-	const glm::vec3 moveDirection = glm::normalize(glm::vec3(input.getMoveDirectionWorld()));
+	// predicted attack-sequence id are now produced by dAttackDirection::classify (in visualize)
+	// and the shared pure helper dAttackVisualizationUtils::attackIndicatorGeometryFor (see
+	// below), so the aim viz and the new block-prediction viz cannot drift on either value.
+	const glm::vec3 moveDirection = glm::normalize(glm::vec3(moveDirectionWorld));
 
 
 	// Red lined attack-direction indicator (thicker than the green reference arcs above).
@@ -155,10 +145,9 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	// Shared classifier + inner-circle origin point. The block-prediction viz consumes the
 	// same helper (and its predictedSequenceIdFromIdle) so the two indicators can't diverge.
 	const dAttackVisualizationUtils::AttackIndicatorGeometry attackGeometry =
-		dAttackVisualizationUtils::computeAttackIndicatorGeometry(
-			input.getAimDirection(),
-			input.getMoveDirection(),
-			input.getMoveDirectionWorld(),
+		dAttackVisualizationUtils::attackIndicatorGeometryFor(
+			attackSequenceId,
+			aimDirection,
 			rootTranslation,
 			kIndicatorRadius);
 
@@ -187,9 +176,9 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 	constexpr float kShaftWidth   = 0.15f;   // shaft perpendicular width (blade)
 	constexpr float kTriangleSide = 0.15f;   // triangular tip side length (equilateral)
 
-	if (!isRealAttackSequence(simulationInitialConditions.activeAttackSequence))
+	if (!attackInProgress)
 	{
-		const glm::vec3 aimTip = rootTranslation + input.getAimDirection() * radialSimulationStaticData.getAttackCircle().getOuterRadius();
+		const glm::vec3 aimTip = rootTranslation + aimDirection * radialSimulationStaticData.getAttackCircle().getOuterRadius();
 
 		// Compute the "reference handle length" — the chord of the inner circle traced by
 		// a canonical (-π/6 about simFrame::kTurnAxis, i.e. π/6 clockwise from aim seen from
@@ -197,7 +186,7 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 		// handle length; the forward case reuses the same value so both indicators have
 		// visually identical handle proportions.
 		const glm::vec3 aimDirectionXY = glm::normalize(
-			simFrame::flatten(input.getAimDirection()));
+			simFrame::flatten(aimDirection));
 		const float refThresholdAngle = -glm::pi<float>() / 6.f;
 		constexpr glm::vec3 turnAxis = simFrame::kTurnAxis;
 		const glm::mat4 refRot = glm::rotate(glm::mat4(1.f), refThresholdAngle, turnAxis);
@@ -251,11 +240,65 @@ void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
 		}
 	}
 
-	if (glm::length(input.getMoveDirection()) > 0.0001f)
-		input.getRendererFunctorImpl().drawLine(rootTranslation - moveDirection*0.15f, rootTranslation + moveDirection * radialSimulationStaticData.getAttackCircle().getInnerRadius() * 0.4f, 3, 0.01f);
+	if (glm::length(moveStick) > 0.0001f)
+		rendererFunctor.drawLine(rootTranslation - moveDirection*0.15f, rootTranslation + moveDirection * radialSimulationStaticData.getAttackCircle().getInnerRadius() * 0.4f, 3, 0.01f);
 
-	// render 
+}
 
+}
+
+template <typename RendererFunctorType, typename LoggingFunctorType>
+void visualize(const Input<RendererFunctorType, LoggingFunctorType>& input,
+	const dAttackRadialSimulation::State& simulationState,
+	const dAttackRadialSimulation::InitialConditions& simulationInitialConditions,
+	const dAttackRadialSimulation::DerivedState& radialSimulationDerivedState,
+	const dAttackRadialSimulation::StaticData& radialSimulationStaticData,
+	const dAttackGuardSimulation::State& guardState,
+	State& state)
+{
+	// activeAttackSequence may carry a reserved sentinel (e.g. kHadoukenSequenceSentinel)
+	// for the 1+ ticks between the machine writing it and the Attacking→Idle exit clearing
+	// it. The aim viz does not consume the sequence, but the bare index would still read
+	// ~4 billion entries out of bounds, so gate it behind isRealAttackSequence.
+	if (isRealAttackSequence(simulationInitialConditions.activeAttackSequence))
+	{
+		const DAttackRadialSequence& sequence = radialSimulationStaticData.getAttackSequences()[simulationInitialConditions.activeAttackSequence];
+		(void)sequence; // currently unused in the aim viz; bound for parity with the radial viz sites
+	}
+	const DAttackCircle& circle = radialSimulationStaticData.getAttackCircle();
+	auto rendererFunctor = input.getRendererFunctorImpl();
+
+	const glm::mat4 rootTransform = glm::translate(glm::mat4(1.f), simulationState.bodyState.position)
+	                               * glm::mat4_cast(simulationState.bodyState.rotation);
+	const glm::vec3 rootTranslation = glm::vec3(rootTransform[3]);
+	glm::mat3 rootRotation = glm::mat3(rootTransform);
+
+
+	const glm::vec4 defaultForward4(DAttackRadialSequence::defaultForward(), 0.f);
+	const glm::vec3 currentDirection = glm::vec3(rootTransform * defaultForward4);
+	input.getLoggingFunctor().logVec3("dAttackRadialVisualization currentDirection: ", currentDirection);
+
+	// [og-ground-aligned-attacks task 11] The indicator lies in the plane normal to the guard body's
+	// up while idle and to the swing frame's up during a real attack sequence (the user's OQ9
+	// ruling); a flat up draws today's expressions with the world inputs. The weapon body's own
+	// idle pose stays world-aligned, so it cannot give the up.
+	const glm::vec3 indicatorUp = dAttackVisualizationUtils::aimIndicatorUp(simulationInitialConditions, guardState);
+	const bool worldAligned = dAttackVisualizationUtils::drawsWorldAligned(indicatorUp);
+	const unsigned int attackSequenceId =
+		dAttackDirection::classify(input.getAimDirection(), input.getMoveDirectionWorld(), input.getMoveDirection());
+	const glm::vec3 indicatorAim = worldAligned
+		? input.getAimDirection()
+		: dAttackVisualizationUtils::localHeading(indicatorUp, input.getAimDirection());
+	const glm::vec3 indicatorMove = worldAligned
+		? input.getMoveDirectionWorld()
+		: dAttackVisualizationUtils::localHeading(indicatorUp, input.getMoveDirectionWorld());
+	const bool attackInProgress = isRealAttackSequence(simulationInitialConditions.activeAttackSequence);
+
+	dAttackVisualizationUtils::drawInIndicatorFrame(rendererFunctor, rootTranslation, indicatorUp,
+		[&](auto indicatorRenderer) {
+			detail::drawAimIndicator(indicatorRenderer, indicatorAim, input.getMoveDirection(), indicatorMove,
+				attackSequenceId, attackInProgress, rootTranslation, radialSimulationStaticData);
+		});
 }
 
 }

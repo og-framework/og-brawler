@@ -581,6 +581,16 @@ GroundProbe probeGround(const State& state, const StaticData& sd, const RuntimeB
     return GroundProbe{probe, clearance, walkable};
 }
 
+inline glm::vec3 attackGroundNormal(const SweepHit& hit, const StaticData& sd)
+{
+    const glm::vec3 face = glm::dot(hit.surfaceNormal, hit.surfaceNormal) > 0.f ? hit.surfaceNormal : hit.normal;
+    if (hit.blocked && glm::dot(face, kWorldUp) >= sd.cosMaxSlope)
+    {
+        return face;
+    }
+    return kWorldUp;
+}
+
 template <bool Aligned = brawlerGround::kGroundAlignedAttacks, typename Q>
 brawlerGround::GroundSample sampleAttackGround(const State& state, const StaticData& sd, const RuntimeBindings& bindings, Q& query)
 {
@@ -596,13 +606,7 @@ brawlerGround::GroundSample sampleAttackGround(const State& state, const StaticD
     {
         // ⛔G-25  docs/BrawlerMovementSimulation-guards.md
         const GroundProbe probe = probeGround(state, sd, bindings, query);
-        const SweepHit& hit = probe.hit;
-        const glm::vec3 face = glm::dot(hit.surfaceNormal, hit.surfaceNormal) > 0.f ? hit.surfaceNormal : hit.normal;
-        if (hit.blocked && glm::dot(face, kWorldUp) >= sd.cosMaxSlope)
-        {
-            return brawlerGround::GroundSample{face};
-        }
-        return brawlerGround::GroundSample{};
+        return brawlerGround::GroundSample{attackGroundNormal(probe.hit, sd)};
     }
 }
 
@@ -687,7 +691,8 @@ void integrate(float deltaSeconds,
     const float clearance = groundProbe.clearance;
     const bool walkable   = groundProbe.walkable;
 
-    const glm::vec3 face = glm::dot(probe.surfaceNormal, probe.surfaceNormal) > 0.f ? probe.surfaceNormal : probe.normal;
+    // ⛔G-28  docs/BrawlerMovementSimulation-guards.md
+    const glm::vec3 face = attackGroundNormal(probe, sd);
 
     // ⛔G-26  docs/BrawlerMovementSimulation-guards.md
     const bool knockbackWritten = writesKnockbackVelocity<Aligned>(inboundHit, face, walkable, committed);

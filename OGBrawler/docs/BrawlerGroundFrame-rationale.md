@@ -57,20 +57,25 @@ alike and the quantities are not.
 
 ## §3 `kGroundAlignedAttacks`
 
-A `constexpr bool`, `false`. It is the one switch for the whole feature, applied at the single normal
-source: `sampleAttackGround`'s default template argument is this constant, and with it `false` the
-sample is `kUp` and issues no query. Every consumer then runs its flat path, so the slope and ramp ticks
-keep today's values bit for bit while the consumers are built and tested; unit tests reach the slope
-paths by calling `sampleAttackGround<true>` or by passing a tilted `GroundSample` directly.
+A `constexpr bool`, `true` since og-ground-aligned-attacks task 10. It is the one switch for the whole
+feature, applied at the single normal source: `sampleAttackGround`'s default template argument is this
+constant (the movement's `detachesFromSupport`, `writesKnockbackVelocity` and `integrate` default to it
+too). With it `true` the sample is the walkable ground's face normal, and every consumer follows it off
+flat ground; on flat ground each consumer's flat path still runs today's expressions. With it `false`
+the sample is `kUp` and issues no query, so every consumer runs its flat path everywhere: that was the
+state while the consumers were built and tested (tasks 4 to 9b), when the slope and ramp ticks kept
+their values bit for bit; unit tests reach either path by calling `sampleAttackGround<true>` or by
+passing a tilted `GroundSample` directly.
 
-Turning it on is one edit with consequences outside this header: on a slope the radial initial
-conditions a peer predicts change, so the correction wire format version moves with it, and the golden
-traces are re-recorded. Per-consumer switches and a runtime console variable were considered and rejected
-(peers must agree on the value; a runtime value would need the wire token to carry it).
+Changing it is one edit with consequences outside this header: on a slope the radial initial conditions
+a peer predicts change, so the correction wire format version moves with it (9 -> 10 at the flip), and
+the golden traces are re-recorded. Per-consumer switches and a runtime console variable were considered
+and rejected (peers must agree on the value; a runtime value would need the wire token to carry it).
 
 ---
 
 ## Provenance
 
-Written with the header on 2026-10-28 (og-ground-aligned-attacks task 4). Nothing in this file depends
+Written with the header on 2026-10-28 (og-ground-aligned-attacks task 4); §3 updated for the flip
+(task 10). Nothing in this file depends
 on any document outside this submodule.

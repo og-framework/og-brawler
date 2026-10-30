@@ -10,7 +10,7 @@
 namespace brawlerGround
 {
     // ⛔G-01  docs/BrawlerGroundFrame-guards.md
-    inline constexpr bool kGroundAlignedAttacks = false;
+    inline constexpr bool kGroundAlignedAttacks = true;
 
     struct GroundSample
     {

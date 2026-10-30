@@ -1058,5 +1058,6 @@ which is `simFrame::kUp`, so they keep their flat behaviour whatever the ground.
 Both receivers use the sample since og-ground-aligned-attacks task 5 (task 4 added the parameter and
 ignored it): `setRadialSimulationInitialConditions` builds the swing frame and `launchHadouken` the launch
 in the ground frame, and a flat sample keeps the pre-task-5 expressions (§16, the ground-frame bullet).
-The knob `brawlerGround::kGroundAlignedAttacks` is `false`, so the sample is `kUp` in any case and no value
-the machine writes changes.
+Until og-ground-aligned-attacks task 10 the knob `brawlerGround::kGroundAlignedAttacks` was `false`, so the
+sample was `kUp` in any case and no value the machine wrote changed; since the flip the sample is the
+walkable ground's face normal, and off flat ground the swing frame and the launch follow it.

@@ -75,8 +75,9 @@ it, so the live count is `11 + this list`:
 | `G-25` | og-ground-aligned-attacks task 4 | `sampleAttackGround`’s sweep — the sample comes from the State it is given |
 | `G-26` | og-ground-aligned-attacks task 9b | step 2’s hit-tick knockback write — before the classification |
 | `G-27` | og-ground-aligned-attacks task 9b, rework 1 | `writesKnockbackVelocity`’s flat-rule `return` — the flat rule kept |
+| `G-28` | og-ground-aligned-attacks task 13b | step 2’s `face` — the one ground rule, shared with the attack sample |
 
-**Live guards today: 17.**
+**Live guards today: 18.**
 
 ---
 
@@ -365,7 +366,8 @@ vacuity ended.
 ON A SLOPE (user ruling OQ6, 2026-10-28; old OQ7 (a)).** The site and the id are unchanged; the
 predicate is now a template on `Aligned` (default `brawlerGround::kGroundAlignedAttacks`) and takes the
 probe's face normal `face` (the hit's `surfaceNormal` when non-zero, else its `normal`: the face rule
-of `sampleAttackGround`). Two arms:
+of `sampleAttackGround`; since og-ground-aligned-attacks task 13b it is `attackGroundNormal(probe, sd)`,
+which also gives `kWorldUp` for a miss or a face past the walkable cap, guard G-28). Two arms:
 
 - **Flat** (`!Aligned`, or `surfaceFrame::isFlat(face)`): `committed && glm::dot(state.velocity, up) > 0.f`,
   the task-27 arm, verbatim.
@@ -752,6 +754,44 @@ The flat golden and the flat-ground tests would have to absorb both.
 **What else this site carries.** The predicate's other `false` returns (the knob off, a tick that is
 not a committed hit tick, a zero `d`) are not the flat rule. The line above the tag picks `g`, the
 plane the rule tests. `integrate`'s step 2 reads the predicate (guard G-26).
+
+---
+
+## G-28 — The ground face comes from `attackGroundNormal`, in both readers
+
+**Tag site:** `BrawlerMovementSimulation.h`, in `integrate`'s step 2, immediately above
+`const glm::vec3 face = attackGroundNormal(probe, sd);`. The other reader is `sampleAttackGround`'s aligned
+branch, `return brawlerGround::GroundSample{attackGroundNormal(probe.hit, sd)};`, two lines under guard G-25's
+tag.
+
+**Added by:** og-ground-aligned-attacks task 13b, 2026-10-28 (task 10's open point 2, confirmed by its review
+as L1). Not part of task 68's conversion census.
+
+**The prohibition.**
+
+> ⛔ **DO NOT RE-DERIVE THE GROUND FACE.** Step 2's `face` and the attack ground sample are one value,
+> `inline glm::vec3 attackGroundNormal(const SweepHit& hit, const StaticData& sd)`: the hit's `surfaceNormal`
+> when it is non-zero, else its `normal`, kept only when the hit is blocked and
+> `glm::dot(face, kWorldUp) >= sd.cosMaxSlope`, else `kWorldUp`. Do not compute either reader's face from the
+> `SweepHit` fields in place, and do not drop the walkable test for step 2 because step 2 tests `walkable`:
+> `walkable` tests the sweep's `normal`, not the face. Seen failing in task 13b: step 2 back on
+> `glm::dot(probe.surfaceNormal, probe.surfaceNormal) > 0.f ? probe.surfaceNormal : probe.normal` fails
+> `GroundAlignedKnockback.UnwalkableExactFaceOverAWalkableSweepIsWorldUp` on tick 1 (`first differing field
+> velocity`, sweep normal (0, 1, −0), face (0, 0.5, −0.866), direction (0, 0, −1)) and
+> `BrawlerJoltSlopeGoldenTrace.KnockbacksFollowTheAttackersSwing` (`1101 == 1100`: G's hit on F at 1100 stays
+> `Supported` on its hit tick).
+
+**The consequence.** Near a convex edge the sweep's `normal` is walkable while the exact face is the box's
+60° end face. A face taken without the walkable test feeds that end face to `writesKnockbackVelocity` and
+`detachesFromSupport`, while `sampleAttackGround` gives the attack `kWorldUp` for the same hit, so the attack
+and the movement disagree about one brawler's ground. In task 10's slope golden, G's hit on F at 990 (onto the
+plateau) detached through the slope arm with no height gained, and the one at 1100 (down the slope) counted as
+entering the ground.
+
+**What breaks if it moves.** `BrawlerGroundSample.AlignedSampleIsTheSharedGroundNormal` compares the sample
+with the helper and with the pre-task expression, bit for bit, on 1049 scripted hits. The slope golden trace's
+measurement (`groundOf` in `BrawlerJoltSlopeGoldenTraceTest.cpp`) classifies each knockback against the same
+helper.
 
 ---
 

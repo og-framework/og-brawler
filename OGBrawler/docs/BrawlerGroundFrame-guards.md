@@ -18,7 +18,7 @@ message; it may never again appear as a `⛔G-nn` **tag**.
 
 ## G-01 — `kGroundAlignedAttacks` is flipped only together with the correction wire version
 
-**Tag site:** `BrawlerGroundFrame.h`, immediately above `inline constexpr bool kGroundAlignedAttacks = false;`.
+**Tag site:** `BrawlerGroundFrame.h`, immediately above `inline constexpr bool kGroundAlignedAttacks = true;`.
 
 **The prohibition.** Do not change the value of `kGroundAlignedAttacks` on its own. Changing it changes
 what a peer predicts on sloped ground, so the same change must raise the correction wire format version
@@ -31,10 +31,11 @@ connect, and on any sloped ground they compute different radial initial conditio
 the same input. Every attack started on a slope then mispredicts and is corrected, with no refusal at
 login and no error anywhere; on flat ground both builds agree, so a flat test arena shows nothing.
 
-**What breaks if it moves.** The constant is read in exactly one place, as the default template argument
-of `brawlerMovementSimulation::sampleAttackGround`; every consumer receives the sample from there. A
-second switch elsewhere would let a consumer follow the ground while the sample stays `kUp`, or the
-reverse.
+**What breaks if it moves.** In production the constant is read only in `BrawlerMovementSimulation.h`, as
+the default template argument of `brawlerMovementSimulation::sampleAttackGround`, `detachesFromSupport`,
+`writesKnockbackVelocity` and `integrate`; every attack consumer receives the sample from
+`sampleAttackGround`. A second switch elsewhere would let a consumer follow the ground while the sample
+stays `kUp`, or the reverse.
 
 ---
 
@@ -48,5 +49,6 @@ The default normal's bits are a `static_assert` in the header, not a guard (rati
 
 ## Provenance
 
-G-01 was written with the header on 2026-10-28 (og-ground-aligned-attacks task 4). Nothing in this file
+G-01 was written with the header on 2026-10-28 (og-ground-aligned-attacks task 4); task 10 flipped the
+constant to `true`, with the correction wire version 9 -> 10. Nothing in this file
 depends on any document outside this submodule.

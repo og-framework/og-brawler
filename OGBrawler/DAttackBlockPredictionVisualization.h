@@ -11,6 +11,8 @@
 #include "DAttackRadialSimulation.h"
 #include "DAttackCircle.h"
 #include "DAttackVisualizationUtils.h"
+#include "DAttackGuardSimulation.h"
+#include "OGBrawler/DAttackDirectionClassifier.h"
 #include "OGSimulation/SpatialQueryAdapter.h"
 #include "OGSimulation/SpatialQueryResult.h"
 #include "OGSimulation/QueryGeometry.h"
@@ -108,7 +110,8 @@ template <typename PhysicsBodyReaderAdapterType, typename SpatialQueryAdapterTyp
 void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType, RendererFunctorType>& input,
 	State& state,
 	const dAttackRadialSimulation::StaticData& staticData,
-	const dAttackRadialSimulation::State& radialState)
+	const dAttackRadialSimulation::State& radialState,
+	const dAttackGuardSimulation::State& guardState)
 {
 	auto rendererFunctor = input.getRendererFunctorImpl();
 
@@ -129,13 +132,22 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 	// (2) Attack-indicator geometry — the predicted attack direction (the wedge's angular
 	// center) plus the predicted-from-Idle sequence id (4/1/0), shared with the aim viz so
 	// the two indicators cannot drift on angular position or predicted sequence.
+	//
+	// [og-ground-aligned-attacks task 11] The wedge, the sweep arc and the blue block arc lie in
+	// the plane normal to the guard body's up (the user's OQ9 ruling; this viz only draws while
+	// idle); a flat up draws today's expressions with the world aim. The sequence is classified on
+	// the world aim and move either way, as the machine classifies it.
 	const float innerRadius = staticData.getAttackCircle().getInnerRadius();
 	const float outerRadius = staticData.getAttackCircle().getOuterRadius();
+	const glm::vec3 indicatorUp = dAttackVisualizationUtils::guardBodyUp(guardState);
+	const bool worldAligned = dAttackVisualizationUtils::drawsWorldAligned(indicatorUp);
+	const glm::vec3 indicatorAim = worldAligned
+		? input.getAimDirection()
+		: dAttackVisualizationUtils::localHeading(indicatorUp, input.getAimDirection());
 	const dAttackVisualizationUtils::AttackIndicatorGeometry attackGeometry =
-		dAttackVisualizationUtils::computeAttackIndicatorGeometry(
-			input.getAimDirection(),
-			input.getMoveStick(),
-			input.getMoveDirectionWorld(),
+		dAttackVisualizationUtils::attackIndicatorGeometryFor(
+			dAttackDirection::classify(input.getAimDirection(), input.getMoveDirectionWorld(), input.getMoveStick()),
+			indicatorAim,
 			attackerRoot,
 			innerRadius);
 
@@ -147,7 +159,7 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 	// counter-clockwise from above, so the left swing's wedge (on the aim's right) turns by
 	// -5π/12, matching computeAttackIndicatorGeometry's threshold-rotation convention.
 	const glm::vec3 aimDirectionXY = glm::normalize(
-		simFrame::flatten(input.getAimDirection()));
+		simFrame::flatten(indicatorAim));
 	glm::vec3 wedgeCenterDirectionXY = attackGeometry.attackDirectionXY;
 	if (attackGeometry.kind != dAttackVisualizationUtils::AttackDirectionKind::Forward)
 	{
@@ -197,98 +209,101 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 		float outerR;
 		unsigned int alpha;   // 0..255; per-call, passed straight through drawSegmentSolid → drawMesh
 	};
-	if (attackGeometry.kind == dAttackVisualizationUtils::AttackDirectionKind::Forward)
-	{
-		// Forward: peripheral (bright) + main swing-band segment 3 (dim). No segment 4.
-		// User rationale: forward attack visually points straight at whoever is in
-		// front; the peripheral is the primary read, and a dim swing band segment
-		// gives just enough hint of reach without cluttering the aim direction.
-		const WedgeSegment forwardSegments[3] = {
-			{ 0.f,           peripheralMid, 55 },  // peripheral, innermost
-			{ peripheralMid, innerRadius,   90 },  // peripheral, outer half (peak for forward)
-			{ innerRadius,   swingBandMid,  40 },  // swing-band segment 3, DIM for forward
-		};
-		for (const auto& seg : forwardSegments)
-			dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, attackerRoot,
-				wedgeCenterDirectionXY, areaNormal, areaAngularWidth,
-				seg.outerR, seg.innerR, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/, 0.01f, seg.alpha);
-	}
-	else
-	{
-		// Left/Right: peripheral + full swing band, four segments.
-		const WedgeSegment sideSegments[4] = {
-			{ 0.f,           peripheralMid, 25 },  // peripheral, innermost
-			{ peripheralMid, innerRadius,   40 },  // peripheral, outer half
-			{ innerRadius,   swingBandMid,  80 },  // swing band, peak
-			{ swingBandMid,  swingBandOuter, 40 }, // swing band, fade to reach limit
-		};
-		for (const auto& seg : sideSegments)
-			dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, attackerRoot,
-				wedgeCenterDirectionXY, areaNormal, areaAngularWidth,
-				seg.outerR, seg.innerR, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/, 0.01f, seg.alpha);
-	}
-
-	// (4b) Sweep-direction indicator — a thin amber arc line + 3 small chevrons
-	// distributed along it, running from the wedge's near edge to near the aim
-	// direction. Communicates that the swing MOVES from the wedge position toward
-	// the aim direction (research report: HUD direction communication, Rec 1+2 hybrid).
-	//
-	// Only drawn for L/R attacks (forward attack is a thrust, no sweep motion).
-	if (attackGeometry.kind != dAttackVisualizationUtils::AttackDirectionKind::Forward)
-	{
-		const float kSweepArcRadius            = 1.15f;                    // radius (m) at which the arc + chevrons sit
-		const float kSweepNearWedgeAng         = glm::pi<float>() / 3.f;   // 60° — arc's wedge-side end
-		const float kSweepNearAimAng           = 0.f;                       // arc ends ON the aim direction vector
-		const float kSweepChevronNearAimAng    = glm::pi<float>() / 12.f;  // 15° — chevron aim-side end (chevrons stop short of the aim line so the last chevron doesn't overlap it)
-		const float kSweepChevronSize          = 0.2f;                     // equilateral side (m)
-		const float kSweepArcThickness         = 0.01f;                      // debug-line thickness for the arc
-		const float kSweepChevronHeight        = kSweepChevronSize * 0.5f * 1.7320508f;  // (√3/2)·side
-
-		// Sign convention: about simFrame::kTurnAxis (+Y), the left attack's arc (on the aim's
-		// right) is a negative rotation from aim (clockwise from above), the right attack's a
-		// positive one (counter-clockwise).
-		const float sign                    = (attackGeometry.kind == dAttackVisualizationUtils::AttackDirectionKind::Left) ? -1.f : 1.f;
-		const float wedgeSideAngle          = sign * kSweepNearWedgeAng;
-		const float arcAimSideAngle         = sign * kSweepNearAimAng;
-		const float chevronAimSideAngle     = sign * kSweepChevronNearAimAng;
-		const float arcMidAngle             = (wedgeSideAngle + arcAimSideAngle) * 0.5f;
-		const float arcHalfAngle            = std::abs(wedgeSideAngle - arcAimSideAngle) * 0.5f;
-		constexpr glm::vec3 turnAxis        = simFrame::kTurnAxis;
-
-		// Arc line — drawCircleArc spans ±arcHalfAngle around arcMidDir.
+	dAttackVisualizationUtils::drawInIndicatorFrame(rendererFunctor, attackerRoot, indicatorUp,
+		[&](auto indicatorRenderer) {
+		if (attackGeometry.kind == dAttackVisualizationUtils::AttackDirectionKind::Forward)
 		{
-			const glm::mat4 rot = glm::rotate(glm::mat4(1.f), arcMidAngle, turnAxis);
-			const glm::vec3 arcMidDir = glm::vec3(rot * glm::vec4(aimDirectionXY, 0.f));
-			rendererFunctor.drawCircleArc(attackerRoot, arcMidDir, kSweepArcRadius, arcHalfAngle, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/, kSweepArcThickness);
+			// Forward: peripheral (bright) + main swing-band segment 3 (dim). No segment 4.
+			// User rationale: forward attack visually points straight at whoever is in
+			// front; the peripheral is the primary read, and a dim swing band segment
+			// gives just enough hint of reach without cluttering the aim direction.
+			const WedgeSegment forwardSegments[3] = {
+				{ 0.f,           peripheralMid, 55 },  // peripheral, innermost
+				{ peripheralMid, innerRadius,   90 },  // peripheral, outer half (peak for forward)
+				{ innerRadius,   swingBandMid,  40 },  // swing-band segment 3, DIM for forward
+			};
+			for (const auto& seg : forwardSegments)
+				dAttackVisualizationUtils::drawSegmentSolid(indicatorRenderer, attackerRoot,
+					wedgeCenterDirectionXY, areaNormal, areaAngularWidth,
+					seg.outerR, seg.innerR, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/, 0.01f, seg.alpha);
+		}
+		else
+		{
+			// Left/Right: peripheral + full swing band, four segments.
+			const WedgeSegment sideSegments[4] = {
+				{ 0.f,           peripheralMid, 25 },  // peripheral, innermost
+				{ peripheralMid, innerRadius,   40 },  // peripheral, outer half
+				{ innerRadius,   swingBandMid,  80 },  // swing band, peak
+				{ swingBandMid,  swingBandOuter, 40 }, // swing band, fade to reach limit
+			};
+			for (const auto& seg : sideSegments)
+				dAttackVisualizationUtils::drawSegmentSolid(indicatorRenderer, attackerRoot,
+					wedgeCenterDirectionXY, areaNormal, areaAngularWidth,
+					seg.outerR, seg.innerR, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/, 0.01f, seg.alpha);
 		}
 
-		// 3 chevrons distributed evenly along the arc. Each chevron's apex points
-		// along the arc tangent TOWARD the aim direction.
-		for (int i = 0; i < 3; ++i)
+		// (4b) Sweep-direction indicator — a thin amber arc line + 3 small chevrons
+		// distributed along it, running from the wedge's near edge to near the aim
+		// direction. Communicates that the swing MOVES from the wedge position toward
+		// the aim direction (research report: HUD direction communication, Rec 1+2 hybrid).
+		//
+		// Only drawn for L/R attacks (forward attack is a thrust, no sweep motion).
+		if (attackGeometry.kind != dAttackVisualizationUtils::AttackDirectionKind::Forward)
 		{
-			const float t = static_cast<float>(i) / 2.f;   // 0, 0.5, 1
-			const float chevronAngle = wedgeSideAngle + t * (chevronAimSideAngle - wedgeSideAngle);
+			const float kSweepArcRadius            = 1.15f;                    // radius (m) at which the arc + chevrons sit
+			const float kSweepNearWedgeAng         = glm::pi<float>() / 3.f;   // 60° — arc's wedge-side end
+			const float kSweepNearAimAng           = 0.f;                       // arc ends ON the aim direction vector
+			const float kSweepChevronNearAimAng    = glm::pi<float>() / 12.f;  // 15° — chevron aim-side end (chevrons stop short of the aim line so the last chevron doesn't overlap it)
+			const float kSweepChevronSize          = 0.2f;                     // equilateral side (m)
+			const float kSweepArcThickness         = 0.01f;                      // debug-line thickness for the arc
+			const float kSweepChevronHeight        = kSweepChevronSize * 0.5f * 1.7320508f;  // (√3/2)·side
 
-			const glm::mat4 radialRot = glm::rotate(glm::mat4(1.f), chevronAngle, turnAxis);
-			const glm::vec3 radialDir = glm::vec3(radialRot * glm::vec4(aimDirectionXY, 0.f));
-			const glm::vec3 chevronCenter = attackerRoot + radialDir * kSweepArcRadius;
+			// Sign convention: about simFrame::kTurnAxis (+Y), the left attack's arc (on the aim's
+			// right) is a negative rotation from aim (clockwise from above), the right attack's a
+			// positive one (counter-clockwise).
+			const float sign                    = (attackGeometry.kind == dAttackVisualizationUtils::AttackDirectionKind::Left) ? -1.f : 1.f;
+			const float wedgeSideAngle          = sign * kSweepNearWedgeAng;
+			const float arcAimSideAngle         = sign * kSweepNearAimAng;
+			const float chevronAimSideAngle     = sign * kSweepChevronNearAimAng;
+			const float arcMidAngle             = (wedgeSideAngle + arcAimSideAngle) * 0.5f;
+			const float arcHalfAngle            = std::abs(wedgeSideAngle - arcAimSideAngle) * 0.5f;
+			constexpr glm::vec3 turnAxis        = simFrame::kTurnAxis;
 
-			// Tangent toward aim = rotate radial by (-sign · π/2) about simFrame::kTurnAxis (+Y).
-			// For left (sign=-1): tangent = rotate(radial, +π/2) = CCW → moves toward smaller |θ| (from -60° to -15°) = toward aim.
-			// For right (sign=+1): tangent = rotate(radial, -π/2) = CW rotation → moves toward smaller +θ = toward aim.
-			const glm::mat4 tangentRot = glm::rotate(glm::mat4(1.f), -sign * glm::pi<float>() * 0.5f, turnAxis);
-			const glm::vec3 tangentDir = glm::vec3(tangentRot * glm::vec4(radialDir, 0.f));
+			// Arc line — drawCircleArc spans ±arcHalfAngle around arcMidDir.
+			{
+				const glm::mat4 rot = glm::rotate(glm::mat4(1.f), arcMidAngle, turnAxis);
+				const glm::vec3 arcMidDir = glm::vec3(rot * glm::vec4(aimDirectionXY, 0.f));
+				indicatorRenderer.drawCircleArc(attackerRoot, arcMidDir, kSweepArcRadius, arcHalfAngle, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/, kSweepArcThickness);
+			}
 
-			// Chevron triangle: apex at (2/3)·height in tangentDir from center, base at
-			// -(1/3)·height in tangentDir, corners at ±(side/2)·radialDir from base mid.
-			const glm::vec3 apex      = chevronCenter + (2.f / 3.f) * kSweepChevronHeight * tangentDir;
-			const glm::vec3 baseMid   = chevronCenter - (1.f / 3.f) * kSweepChevronHeight * tangentDir;
-			const glm::vec3 baseLeft  = baseMid + (kSweepChevronSize * 0.5f) * radialDir;
-			const glm::vec3 baseRight = baseMid - (kSweepChevronSize * 0.5f) * radialDir;
+			// 3 chevrons distributed evenly along the arc. Each chevron's apex points
+			// along the arc tangent TOWARD the aim direction.
+			for (int i = 0; i < 3; ++i)
+			{
+				const float t = static_cast<float>(i) / 2.f;   // 0, 0.5, 1
+				const float chevronAngle = wedgeSideAngle + t * (chevronAimSideAngle - wedgeSideAngle);
 
-			rendererFunctor.drawTriangle(apex, baseLeft, baseRight, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/);
+				const glm::mat4 radialRot = glm::rotate(glm::mat4(1.f), chevronAngle, turnAxis);
+				const glm::vec3 radialDir = glm::vec3(radialRot * glm::vec4(aimDirectionXY, 0.f));
+				const glm::vec3 chevronCenter = attackerRoot + radialDir * kSweepArcRadius;
+
+				// Tangent toward aim = rotate radial by (-sign · π/2) about simFrame::kTurnAxis (+Y).
+				// For left (sign=-1): tangent = rotate(radial, +π/2) = CCW → moves toward smaller |θ| (from -60° to -15°) = toward aim.
+				// For right (sign=+1): tangent = rotate(radial, -π/2) = CW rotation → moves toward smaller +θ = toward aim.
+				const glm::mat4 tangentRot = glm::rotate(glm::mat4(1.f), -sign * glm::pi<float>() * 0.5f, turnAxis);
+				const glm::vec3 tangentDir = glm::vec3(tangentRot * glm::vec4(radialDir, 0.f));
+
+				// Chevron triangle: apex at (2/3)·height in tangentDir from center, base at
+				// -(1/3)·height in tangentDir, corners at ±(side/2)·radialDir from base mid.
+				const glm::vec3 apex      = chevronCenter + (2.f / 3.f) * kSweepChevronHeight * tangentDir;
+				const glm::vec3 baseMid   = chevronCenter - (1.f / 3.f) * kSweepChevronHeight * tangentDir;
+				const glm::vec3 baseLeft  = baseMid + (kSweepChevronSize * 0.5f) * radialDir;
+				const glm::vec3 baseRight = baseMid - (kSweepChevronSize * 0.5f) * radialDir;
+
+				indicatorRenderer.drawTriangle(apex, baseLeft, baseRight, dAttackVisualizationUtils::kAttackDirectionColorId /*amber*/);
+			}
 		}
-	}
+		});
 
 	// Blue block arc alpha (PIE-tuned): bumped from 80 to 130 so the block signal reads
 	// stronger than the amber swing band it overlays (amber segment 3 = 80). The blue
@@ -296,6 +311,11 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 	// same angular position — the wedgeCenterDirectionXY is already correct for the
 	// pending sequence).
 	const unsigned int blueArcAlpha = 130;
+
+	// The behind-attacker filter's world-horizontal aim: today's aimDirectionXY on a flat up.
+	const glm::vec3 worldAimDirectionXY = worldAligned
+		? aimDirectionXY
+		: glm::normalize(simFrame::flatten(input.getAimDirection()));
 
 	// (5) Parent the shared target-viz query volumes to the attacker before querying.
 	for (const auto& volumeId : state.getVolumeIds())
@@ -366,11 +386,14 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 		// says about their guard direction, so their guard state should NOT trigger the
 		// block indicator. Test: the ground-plane defender-from-attacker vector dotted with
 		// the ground-plane aim direction; negative → defender is behind → skip.
+		// [og-ground-aligned-attacks task 11] Kept WORLD-horizontal: it decides whether the
+		// blue arc is drawn and draws nothing itself. For a horizontal world aim, its dot differs
+		// from the in-plane test's by (defender's height off the plane) * dot(aim, up).
 		{
 			const glm::vec3 defenderBodyPos = queryReport[actorHit.bodyHitIndex].objectPosition;
 			const glm::vec3 relative = defenderBodyPos - attackerRoot;
 			const glm::vec2 relativeXY = simFrame::planar(relative);
-			const glm::vec2 aimXY = simFrame::planar(aimDirectionXY);
+			const glm::vec2 aimXY = simFrame::planar(worldAimDirectionXY);
 			if (glm::dot(relativeXY, aimXY) < 0.f)
 				continue;
 		}
@@ -412,9 +435,12 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 		// fires, the blue arc overlays the amber segment 3 exactly, reading as "the primary
 		// swing band changing state" rather than a separate visual element. Same angular
 		// center/width as the amber wedge.
-		dAttackVisualizationUtils::drawSegmentSolid(rendererFunctor, attackerRoot,
-			wedgeCenterDirectionXY, areaNormal, areaAngularWidth,
-			swingBandMid, innerRadius, 2 /*Blue*/, 0.01f, blueArcAlpha);
+		dAttackVisualizationUtils::drawInIndicatorFrame(rendererFunctor, attackerRoot, indicatorUp,
+			[&](auto indicatorRenderer) {
+				dAttackVisualizationUtils::drawSegmentSolid(indicatorRenderer, attackerRoot,
+					wedgeCenterDirectionXY, areaNormal, areaAngularWidth,
+					swingBandMid, innerRadius, 2 /*Blue*/, 0.01f, blueArcAlpha);
+			});
 	}
 }
 
