@@ -26,6 +26,8 @@ extern OGBRAWLER_API const ActionDescriptor SetSchemeCameraRelative;
 extern OGBRAWLER_API const ActionDescriptor SetSchemeAimRelative;
 extern OGBRAWLER_API const ActionDescriptor SetSchemeMoveRelativeAim;
 extern OGBRAWLER_API const ActionDescriptor SetSchemeAimRelativeSwapped;
+// Controls-help legend toggle (H / gamepad View): HUD-only, feeds no simulation input.
+extern OGBRAWLER_API const ActionDescriptor ToggleControlsLegend;
 
 OGBRAWLER_API MappingContext buildDefaultContext();
 

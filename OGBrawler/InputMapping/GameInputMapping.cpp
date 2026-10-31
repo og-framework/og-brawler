@@ -19,6 +19,7 @@ const ActionDescriptor SetSchemeCameraRelative  { "SetSchemeCameraRelative",  Ac
 const ActionDescriptor SetSchemeAimRelative     { "SetSchemeAimRelative",     ActionValueType::Boolean };
 const ActionDescriptor SetSchemeMoveRelativeAim { "SetSchemeMoveRelativeAim", ActionValueType::Boolean };
 const ActionDescriptor SetSchemeAimRelativeSwapped { "SetSchemeAimRelativeSwapped", ActionValueType::Boolean };
+const ActionDescriptor ToggleControlsLegend { "ToggleControlsLegend", ActionValueType::Boolean };
 
 MappingContext buildDefaultContext()
 {
@@ -169,6 +170,17 @@ MappingContext buildDefaultContext()
 		ActionMapping mapping;
 		mapping.action = &SetSchemeAimRelativeSwapped;
 		mapping.bindings = { { KeyId::Key_0, KeyModifier::None } };
+		ctx.actionMappings.push_back(std::move(mapping));
+	}
+
+	// ToggleControlsLegend: H + Gamepad View (Back) open and close the controls-help legend.
+	{
+		ActionMapping mapping;
+		mapping.action = &ToggleControlsLegend;
+		mapping.bindings = {
+			{ KeyId::Key_H, KeyModifier::None },
+			{ KeyId::Gamepad_Special_Left, KeyModifier::None },
+		};
 		ctx.actionMappings.push_back(std::move(mapping));
 	}
 
