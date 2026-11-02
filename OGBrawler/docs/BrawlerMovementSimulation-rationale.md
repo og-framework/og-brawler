@@ -1419,11 +1419,29 @@ the shape was deliberate rather than clumsy, and the reflex edit — *"simplify 
 dot products"* — leaves every flat-ground case in the suite green, by the `s == 0` identity
 below.
 ⭐ **Task 82 closed that case.** This heading ends in `∴D-01`, and that tag is the line
-immediately above the expression in `BrawlerMovementSimulation.h`. It is a DERIVATION tag, not a
+immediately above the function's first statement in `BrawlerMovementSimulation.h`, the fast-path
+test `if (glm::abs(glm::dot(v, up)) <= kDualBasisFastPathTolerance)`. That test chooses between the
+2×2 solve below and the exact solve of §19.1, so the one tag covers both arms (until
+og-ground-aligned-attacks task 30 the function was the 2×2 solve alone, and the tag sat immediately
+above `a`'s expression). It is a DERIVATION tag, not a
 fence: it prohibits nothing and says only *the reasoning for this expression is here*.
 `tools/lint/guard_tag_lint.ps1` gates the join in both directions — delete the expression and
 the tag goes with it, leaving this section an ORPHAN under CHECK 2; strip `∴D-01` from this
 heading and CHECK 1 rejects the tag that still names it.
+
+> ### R0-27 — FALSE for a normal with a sideways part: "only `v` is perpendicular to both (`v = cross(n, u)` is horizontal)"
+>
+> `buildTangentFrame` builds `u` from `kForward`, so `v = cross(n, u)` is horizontal only when `n`
+> lies in the up–forward plane: flat ground and every face that leans toward ±Z. A normal with a
+> sideways (X) component gives `v` a vertical part. For n = (0.5, 0.866, 0), a 30° face rising
+> along X (UE Y): `u = (0, 0, −1)`, `v = (−0.866, 0.5, 0)` and `dot(v, up) = 0.5`. Then `planar`
+> is not in the (u, up) plane, the "2x2 solve" below is a projection, and the part of V outside
+> that plane is dropped: a 20 m/s fall came back as `(a, b, c) = (0, −10, −15)`, which recomposes
+> to (8.66, −20, 0) (og-ground-aligned-attacks task 23, finding M4; reproduced by
+> `BrawlerVelocityDecomposition.APureFallLeavesTheTangentChannelsEmpty`). So "`v` is perpendicular
+> to the other two" and "SOLVE ... EXACTLY" in the quote below hold only on those frames. The
+> quote is the 2×2 arm as it was written; since og-ground-aligned-attacks task 30 the function runs
+> it only where the premise holds, and §19.1 is the solve for every other frame.
 
 
 <!-- header lines 1082-1116 -->
@@ -1464,6 +1482,75 @@ walkable test caps the normal at `cosMaxSlope`. The assert below is the statemen
 coupling — if a future `SupportState` arm lets the frame tilt to vertical, this is where it
 surfaces, not in a silent division by zero.
 ```
+
+### 19.1 The exact solve for every frame — og-ground-aligned-attacks task 30
+
+**The two arms.** `decomposeVelocity` first tests `glm::abs(glm::dot(v, up)) <= kDualBasisFastPathTolerance`
+(`1.e-6f`).
+
+- **Fast path:** the 2×2 solve quoted above, the same operations in the same order, with its `OG_CHECK`.
+- **Otherwise, the dual solve:**
+
+  ```text
+  vxUp = cross(v, up)     upxU = cross(up, u)     uxV = cross(u, v)
+  det  = dot(u, vxUp)
+  a = dot(V, vxUp) / det     b = dot(V, upxU) / det     c = dot(V, uxV) / det
+  ```
+
+**Why the dual solve is exact.** Each of the three crosses is perpendicular to two of `u`, `v`, `up`.
+`dot(V, cross(v, up))` therefore removes `b·v` and `c·up` from `V = a·u + b·v + c·up` and leaves
+`a·dot(u, cross(v, up))`, which is `a·det`; `b` and `c` follow the same way. All three share the one
+determinant, because the scalar triple product is unchanged by a cyclic shift:
+`dot(u, cross(v, up)) = dot(v, cross(up, u)) = dot(up, cross(u, v))`.
+
+**Why `det > 0`.** For `buildTangentFrame`'s frame, `u` is a unit vector perpendicular to `n` and
+`v = kChartOrientation · cross(n, u)`. With `kChartOrientation = +1` (R0-26), `cross(u, v) =
+cross(u, cross(n, u)) = n·dot(u, u) − u·dot(u, n) = n`, so `det = dot(up, n)`. That is at least
+`cosMaxSlope` (cos 45°) on a walkable normal and 1 for world up, the only two kinds of `n` that
+`integrate` hands to `buildTangentFrame`. Two checks hold the coupling:
+
+- a `static_assert` on `simFrame::kChartOrientation > 0.f`, because a negative orientation would
+  negate `det`;
+- `OG_CHECK(det > 0.f, …)` in the dual arm, which fails for a frame that `buildTangentFrame` did not
+  make for an up-facing normal.
+
+**What `c` is.** Since `cross(u, v) = n`, `c = dot(V, n) / dot(up, n)`: the speed along up at which
+the capsule closes on (or leaves) the face. A velocity along the face has `c = 0`, and a fall gives
+`c = V.up` with `a = b = 0`, which are the two checks of the quote above, now on every frame.
+
+**Why the fast path is kept, and why the 2×2 lines are kept verbatim.** On a frame whose `v` is
+horizontal the 2×2 solve is already exact. The dual solve gives the same channels there, but
+not the same bits: with the dual solve forced on every frame (task 30's poison arm B),
+`BrawlerVelocityDecomposition.TheFastPathIsTheLegacySolveBitForBit` found 15,645 of 30,000 vectors
+with a differing channel on flat ground and the ±Z 30° faces (the first: `a` 27.2208405 against
+27.2208385). Both golden traces then failed in exact mode (the flat one from tick 168, the slope one
+from tick 11). Keeping the five lines unchanged keeps every float on those frames
+unchanged, and the bit-identity case pins it against a frozen copy of them (`legacyDecompose`).
+
+**Why `1.e-6f`.**
+
+- On flat ground and on every face leaning toward ±Z, `dot(v, up)` is exactly zero [derived]: `n`
+  and `u` have no X component, so `v`'s up component, `n.z·u.x − n.x·u.z`, is a difference of products
+  with a zero factor. Those frames take the fast path at any tolerance of zero or above.
+- How much the 2×2 solve drops grows with `|dot(v, up)|`: over 20,000 random walkable frames and
+  unit velocities, the residual was at most 1.40 × `|dot(v, up)|` × `|V|` [measured, task 30, float64].
+  At the tolerance that is at most 1.4e-6 · `|V|`.
+- A tilted GJK normal leaves the fast path. In the flat golden trace one tick does: character A on
+  the 20° ramp at tick 233, with `n` 0.66° off the up–forward plane and `dot(v, up) = −0.0124`.
+
+**Where it changed behaviour** (task 30):
+
+- `PlatformEdge.KnockbacksAcrossTheImportedPlatformRims`, the imported platform's rims: the ticks
+  whose decomposition residual exceeded 1e-3 m/s fell from 2018 (the largest 9.2049 m/s) to 0.
+- The flat golden trace: the one off-plane tick above. Its vertical channel moved by −2.99e-6 m/s
+  [derived: both solves recomputed in float64 from the tick's printed frame normal and velocity], the
+  servo's damping (`1 − 57.04·dt` ≈ 0.049) kept about 5% of that, and two recorded fields changed on ticks 233 and 234 by
+  1.49e-7 m/s, so the golden was re-recorded. The slope golden's every tick took the fast path
+  (`max |dot(v, up)|` = 0 over 10,360 calls), and it is unchanged.
+
+**What did not change.** `buildTangentFrame` is unchanged. Building `u` from the fall line instead
+(task 23's option E) was rejected: it is ill-conditioned near flat ground and flips `u`'s sign on
+−Z faces, which would spin the uv chart that `committedStepDir` is stored in.
 
 ---
 

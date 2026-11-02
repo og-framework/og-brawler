@@ -411,24 +411,48 @@ struct VelocityChannels
     float     up;
 };
 
+inline constexpr float kDualBasisFastPathTolerance = 1.e-6f;
+
+static_assert(simFrame::kChartOrientation > 0.f,
+    "brawlerMovementSimulation::decomposeVelocity - the dual solve's determinant is "
+    "kChartOrientation * dot(up, n) for buildTangentFrame's v, and its OG_CHECK(det > 0) "
+    "holds only while kChartOrientation is positive.");
+
 inline VelocityChannels decomposeVelocity(const glm::vec3& velocity,
                                           const glm::vec3& u,
                                           const glm::vec3& v,
                                           const glm::vec3& up)
 {
-    const float     b      = glm::dot(velocity, v);
-    const glm::vec3 planar = velocity - b * v;
-    const float     s      = glm::dot(u, up);
-
-    OG_CHECK(s * s < 1.f,
-        "brawlerMovementSimulation::decomposeVelocity - the tangent frame is vertical "
-        "(dot(u, up) == 1), which Supported cannot classify: step 2 caps the walkable normal "
-        "at cosMaxSlope. The dual basis is degenerate there.");
-
     // ∴D-01  docs/BrawlerMovementSimulation-rationale.md
-    const float a = (glm::dot(planar, u) - glm::dot(planar, up) * s) / (1.f - s * s);
-    const float c =  glm::dot(planar, up) - a * s;
-    return VelocityChannels{ glm::vec2(a, b), c };
+    if (glm::abs(glm::dot(v, up)) <= kDualBasisFastPathTolerance)
+    {
+        const float     b      = glm::dot(velocity, v);
+        const glm::vec3 planar = velocity - b * v;
+        const float     s      = glm::dot(u, up);
+
+        OG_CHECK(s * s < 1.f,
+            "brawlerMovementSimulation::decomposeVelocity - the tangent frame is vertical "
+            "(dot(u, up) == 1), which Supported cannot classify: step 2 caps the walkable normal "
+            "at cosMaxSlope. The dual basis is degenerate there.");
+
+        const float a = (glm::dot(planar, u) - glm::dot(planar, up) * s) / (1.f - s * s);
+        const float c =  glm::dot(planar, up) - a * s;
+        return VelocityChannels{ glm::vec2(a, b), c };
+    }
+
+    const glm::vec3 vxUp = glm::cross(v, up);
+    const glm::vec3 upxU = glm::cross(up, u);
+    const glm::vec3 uxV  = glm::cross(u, v);
+    const float det = glm::dot(u, vxUp);
+
+    OG_CHECK(det > 0.f,
+        "brawlerMovementSimulation::decomposeVelocity - the dual solve's determinant "
+        "dot(u, cross(v, up)) is not positive. For buildTangentFrame's v = cross(n, u) it equals "
+        "dot(up, n), which is at least cosMaxSlope for every walkable normal and 1 for world up, "
+        "so the frame is not one buildTangentFrame made for an up-facing normal.");
+
+    return VelocityChannels{ glm::vec2(glm::dot(velocity, vxUp) / det, glm::dot(velocity, upxU) / det),
+                             glm::dot(velocity, uxV) / det };
 }
 
 // ⛔G-22  docs/BrawlerMovementSimulation-guards.md
