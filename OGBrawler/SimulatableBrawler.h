@@ -114,8 +114,8 @@ void SimulatableBrawler::integrate(
     const auto& movementBindings = m_physics.get<brawlerMovementSimulation::PhysicsDeclaration>().bindings;
 
     // [og-ground-aligned-attacks task 4] THE PER-TICK GROUND SAMPLE, taken before the machine from the
-    // wire-restored movement State, and handed to the machine and the guard. While
-    // brawlerGround::kGroundAlignedAttacks is false it is kUp and issues no query.
+    // wire-restored movement State, and handed to the machine and the guard. Off walkable
+    // ground it is kUp (og-ground-aligned-attacks task 14 retired the compile-time knob).
     const brawlerGround::GroundSample ground = brawlerMovementSimulation::sampleAttackGround(
         state.get<brawlerMovementSimulation::State>(), staticData.m_movementStaticData, movementBindings, queryAdapter);
 

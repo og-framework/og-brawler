@@ -227,8 +227,6 @@ void detectRadialHits(float deltaSeconds,
 			auto weaponHitIndicatorPosition = [&]() -> glm::vec3 {
 				constexpr glm::vec3 up = simFrame::kUp;
 				const glm::vec3 swingUp = glm::mat3(initialRotation) * up;
-				if (surfaceFrame::isFlat(swingUp))
-					return weaponHitIndicatorPositionIn(currentDirection, rootTranslation, hit.objectPosition);
 				const glm::vec3 local = weaponHitIndicatorPositionIn(
 					surfaceFrame::tiltFromSurface(swingUp, currentDirection),
 					surfaceFrame::tiltFromSurface(swingUp, rootTranslation),

@@ -2,9 +2,8 @@
 # `BrawlerGroundFrame.h` — rationale
 
 The narrative behind `BrawlerGroundFrame.h`: the brawler's per-tick ground sample, the one normal every
-attack consumer is handed, and the compile-time knob that decides whether it follows the ground at all.
-The header keeps its licence, its code, a `static_assert` and one `⛔G-nn` tag; everything that explains it
-lives here.
+attack consumer is handed. The header keeps its licence, its code and a `static_assert` (its one guard,
+G-01, retired with the knob in task 14, §3); everything that explains it lives here.
 
 **If this file and `BrawlerGroundFrame.h` disagree, the header is authoritative and this file is stale.**
 Fix this file; do not soften the header to match it.
@@ -36,10 +35,10 @@ Everything is in `namespace brawlerGround`.
 ## §2 `GroundSample`
 
 One field, `normal`, a unit world vector: the walkable ground's face normal under the brawler, or
-`simFrame::kUp` when there is none (airborne, a miss, a face steeper than the movement's walkable cap, or
-the knob off). Its default is `simFrame::kUp`, and a `static_assert` holds the default to `kUp`'s exact
-bits, `+0` zeros included: the default is what every consumer receives while the knob is off, and each
-consumer's flat path (behind `surfaceFrame::isFlat`) was written against exactly that up.
+`simFrame::kUp` when there is none (airborne, a miss, or a face steeper than the movement's walkable
+cap). Its default is `simFrame::kUp`, and a `static_assert` holds the default to `kUp`'s exact bits, `+0`
+zeros included: the default is what every consumer receives off walkable ground, and each consumer's flat
+path (behind `surfaceFrame::isFlat`) was written against exactly that up.
 
 The sample is **not state**. It is re-taken every tick from the wire-restored movement `State` (the body
 position) and static geometry, so a replayed tick sees the same sample as the authority's tick; the
@@ -55,27 +54,27 @@ alike and the quantities are not.
 
 ---
 
-## §3 `kGroundAlignedAttacks`
+## §3 The retired knob (tasks 4 to 14)
 
-A `constexpr bool`, `true` since og-ground-aligned-attacks task 10. It is the one switch for the whole
-feature, applied at the single normal source: `sampleAttackGround`'s default template argument is this
-constant (the movement's `detachesFromSupport`, `writesKnockbackVelocity` and `integrate` default to it
-too). With it `true` the sample is the walkable ground's face normal, and every consumer follows it off
-flat ground; on flat ground each consumer's flat path still runs today's expressions. With it `false`
-the sample is `kUp` and issues no query, so every consumer runs its flat path everywhere: that was the
-state while the consumers were built and tested (tasks 4 to 9b), when the slope and ramp ticks kept
-their values bit for bit; unit tests reach either path by calling `sampleAttackGround<true>` or by
-passing a tilted `GroundSample` directly.
+From task 4 to task 14 the header also held a compile-time `bool`, the one switch for the whole feature,
+applied at the single normal source: `sampleAttackGround` took a `bool` template parameter that defaulted
+to it (the movement's `detachesFromSupport`, `writesKnockbackVelocity` and `integrate` did too). Off, the
+sample was `kUp` and issued no query, so every consumer ran its flat path everywhere: that was the state
+while the consumers were built and tested (tasks 4 to 9b), when the slope and ramp ticks kept their
+values bit for bit. Task 10 turned it on, with the correction wire format version 9 -> 10 and both golden
+traces re-recorded. Per-consumer switches and a runtime console variable were considered and rejected
+(peers must agree on the value; a runtime value would need the wire token to carry it).
 
-Changing it is one edit with consequences outside this header: on a slope the radial initial conditions
-a peer predicts change, so the correction wire format version moves with it (9 -> 10 at the flip), and
-the golden traces are re-recorded. Per-consumer switches and a runtime console variable were considered
-and rejected (peers must agree on the value; a runtime value would need the wire token to carry it).
+Task 14 deleted it (OQ4 (a), ruled by the user after G3), with the template parameter and every off
+branch, keeping the on arms verbatim: the shipped build computed the on arms already, so the deletion
+changed no float (both goldens exact). `sampleAttackGround` is now a template on its query type only,
+and `detachesFromSupport` and `writesKnockbackVelocity` are plain `inline` functions. A test that wants a
+slope passes a tilted `GroundSample` directly or scripts the sweep the sample reads.
 
 ---
 
 ## Provenance
 
 Written with the header on 2026-10-28 (og-ground-aligned-attacks task 4); §3 updated for the flip
-(task 10). Nothing in this file depends
+(task 10) and rewritten as history when task 14 retired the knob. Nothing in this file depends
 on any document outside this submodule.

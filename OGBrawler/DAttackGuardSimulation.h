@@ -254,9 +254,9 @@ void integrate(float deltaSeconds,
 	// [og-ground-aligned-attacks task 6] The pose is built in the ground frame of this tick's
 	// sample: the aim is read as a local heading (the world aim taken into the frame, then
 	// flattened), the band/acos/cross below run on that heading exactly as before, and the
-	// rotation is tilted onto the ground last. A flat normal (always, while
-	// brawlerGround::kGroundAlignedAttacks is false) skips both steps: tiltFromSurface returns
-	// its input's bits and the tilt product is not taken, so today's expressions run verbatim.
+	// rotation is tilted onto the ground last. On a flat normal tiltFromSurface returns its
+	// input's bits (SurfaceFrame G-01), so the heading is the world aim's, and the tilt below
+	// multiplies by an exact identity.
 	const InitialConditions& initialConditions = deps.owned.get<InitialConditions>();
 	State& state = deps.owned.edit<State>();
 	const dAttackMachineSimulation::State& attackMachineSimulation = deps.external.get<dAttackMachineSimulation::State>();
@@ -333,12 +333,13 @@ void integrate(float deltaSeconds,
 	// special case.
 	glm::mat4 guardTransform = glm::rotate(glm::mat4(1.f), aimAngle, aimRotationAxis);
 	// [og-ground-aligned-attacks task 6] G(n)·A(h): the tilt is applied to the rotation
-	// before the translation goes in, so the translation is still never rotated. Only off
-	// flat ground, by the flat rule: a flat normal runs today's expressions verbatim, so
-	// the identity product is not taken. No unit test or golden distinguishes the fold;
-	// do not delete this gate on that basis.
-	if (!surfaceFrame::isFlat(ground.normal))
-		guardTransform = glm::mat4(surfaceFrame::tiltMatrix(ground.normal)) * guardTransform;
+	// before the translation goes in, so the translation is still never rotated.
+	// [task 14] Taken on every tick, flat ground included (user ruling 2026-11-01: "Add group
+	// 1 to task 14"): on a flat normal tiltMatrix is the exact identity, so the product
+	// changes no value; it may only turn a -0 into +0, and the pose is off the wire.
+	// Measured in task 14: no zero changed sign (the flat pose pin, 370 aims bit for bit, and a
+	// probe of 50,400 pose components on seven flat normals, 2,688 of them -0).
+	guardTransform = glm::mat4(surfaceFrame::tiltMatrix(ground.normal)) * guardTransform;
 	guardTransform[3] = glm::vec4(rootTranslation, 1.f);
 	physics.setBodyTransform(bindings.ownBodyId, guardTransform);
 

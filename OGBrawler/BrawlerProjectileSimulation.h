@@ -557,22 +557,16 @@ void integrate(float dt,
                 // C = charPos, r = innerCircleRadius). Pick the smaller positive root —
                 // the entry point. Fallback to the struck shape's position if the ray misses.
                 // [og-ground-aligned-attacks task 8] The guard's plane is the one perpendicular
-                // to detected.guardUp. A flat guard up runs the horizontal-plane picks exactly as
-                // before; any other up solves on the three points tilted into the guard's local
-                // frame (tiltFromSurface), whose planar picks are the guard's plane. t is the
-                // parameter along the 3-D ray either way, so the marker stays on the ray.
+                // to detected.guardUp: the three points are tilted into the guard's local frame
+                // (tiltFromSurface), whose planar picks are the guard's plane. t is the parameter
+                // along the 3-D ray, so the marker stays on the ray. [task 14] No flat branch: on a
+                // flat guard up tiltFromSurface returns its input's bits (SurfaceFrame G-01), so the
+                // horizontal-plane picks are today's (user ruling 2026-11-01, "Add group 1 to task 14").
                 glm::vec3 blockPos = detected.objectPosition;
                 bool foundIntersection = false;
-                const bool flatGuard = surfaceFrame::isFlat(detected.guardUp);
-                const glm::vec2 rayO = flatGuard
-                    ? simFrame::planar(slot.spawnPos)
-                    : simFrame::planar(surfaceFrame::tiltFromSurface(detected.guardUp, slot.spawnPos));
-                const glm::vec2 rayD = flatGuard
-                    ? simFrame::planar(slot.spawnDir)
-                    : simFrame::planar(surfaceFrame::tiltFromSurface(detected.guardUp, slot.spawnDir));
-                const glm::vec2 circC = flatGuard
-                    ? simFrame::planar(charPos)
-                    : simFrame::planar(surfaceFrame::tiltFromSurface(detected.guardUp, charPos));
+                const glm::vec2 rayO  = simFrame::planar(surfaceFrame::tiltFromSurface(detected.guardUp, slot.spawnPos));
+                const glm::vec2 rayD  = simFrame::planar(surfaceFrame::tiltFromSurface(detected.guardUp, slot.spawnDir));
+                const glm::vec2 circC = simFrame::planar(surfaceFrame::tiltFromSurface(detected.guardUp, charPos));
                 const glm::vec2 fromC = rayO - circC;
                 const float aQ = glm::dot(rayD, rayD);
                 const float bQ = 2.f * glm::dot(fromC, rayD);

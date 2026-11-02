@@ -71,10 +71,10 @@ pass before `integrate`.
 plane of the guard, whose up is `surfaceFrame::surfaceUpOf(guardTransform)`, the pose's image of
 `simFrame::kUp` (the ground normal on a slope, by the task 6 pose above). Two branches, then the one
 clamp, `glm::acos` and half-angle test:
-* **Flat** (`surfaceFrame::isFlat(guardUp)`, always while `brawlerGround::kGroundAlignedAttacks` is
-  `false`): `incoming = -spawnDir` as before, by the flat rule. The angle is the 3-D one, so a pitched
-  shot into a flat guard counts its pitch. No shot is pitched while the knob is off (every launch
-  direction is horizontal); after the flip a shot launched along a slope is (task 5, `G·h_L`), and
+* **Flat** (`surfaceFrame::isFlat(guardUp)`): `incoming = -spawnDir` as before, by the flat rule. The
+  angle is the 3-D one, so a pitched shot into a flat guard counts its pitch. No shot was pitched while
+  the initiative's knob was off (until the flip, task 10, every launch direction was horizontal; task 14
+  retired the knob); since the flip a shot launched along a slope is (task 5, `G·h_L`), and
   `GroundAlignedProjectileBlockTest.cpp` keeps one at 0.3 rad pitch outside the middle section of a flat
   guard that faces it.
 * **Slope:** `incoming` is projected onto the guard's plane (`incoming -= guardUp * dot(incoming,

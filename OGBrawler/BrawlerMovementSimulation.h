@@ -512,45 +512,25 @@ static_assert(kMinLaunchSine > 0.0221f,
     "launches.");
 
 // ⛔G-07  docs/BrawlerMovementSimulation-guards.md
-template <bool Aligned = brawlerGround::kGroundAlignedAttacks>
-bool detachesFromSupport(const State& state, const glm::vec3& up, const glm::vec3& face, bool committed)
+inline bool detachesFromSupport(const State& state, const glm::vec3& up, const glm::vec3& face, bool committed)
 {
-    if constexpr (Aligned)
+    if (!surfaceFrame::isFlat(face))
     {
-        if (!surfaceFrame::isFlat(face))
-        {
-            return committed && glm::dot(state.velocity, face) > kMinLaunchSine * glm::length(state.velocity);
-        }
-    }
-    else
-    {
-        (void)face;
+        return committed && glm::dot(state.velocity, face) > kMinLaunchSine * glm::length(state.velocity);
     }
     return committed && glm::dot(state.velocity, up) > 0.f;
 }
 
-template <bool Aligned = brawlerGround::kGroundAlignedAttacks>
-bool writesKnockbackVelocity(const brawlerInboundHit::DerivedState& inboundHit, const glm::vec3& face, bool walkable, bool committed)
+inline bool writesKnockbackVelocity(const brawlerInboundHit::DerivedState& inboundHit, const glm::vec3& face, bool walkable, bool committed)
 {
-    if constexpr (!Aligned)
+    const glm::vec3& d = inboundHit.hitDirectionWorld;
+    if (!(committed && inboundHit.wasHitThisTick) || d == glm::vec3(0.f))
     {
-        (void)inboundHit;
-        (void)face;
-        (void)walkable;
-        (void)committed;
         return false;
     }
-    else
-    {
-        const glm::vec3& d = inboundHit.hitDirectionWorld;
-        if (!(committed && inboundHit.wasHitThisTick) || d == glm::vec3(0.f))
-        {
-            return false;
-        }
-        const glm::vec3 g = walkable ? face : simFrame::kUp;
-        // ⛔G-27  docs/BrawlerMovementSimulation-guards.md
-        return !(surfaceFrame::isFlat(g) && simFrame::height(d) == 0.f);
-    }
+    const glm::vec3 g = walkable ? face : simFrame::kUp;
+    // ⛔G-27  docs/BrawlerMovementSimulation-guards.md
+    return !(surfaceFrame::isFlat(g) && simFrame::height(d) == 0.f);
 }
 
 struct GroundProbe
@@ -591,26 +571,15 @@ inline glm::vec3 attackGroundNormal(const SweepHit& hit, const StaticData& sd)
     return kWorldUp;
 }
 
-template <bool Aligned = brawlerGround::kGroundAlignedAttacks, typename Q>
+template <typename Q>
 brawlerGround::GroundSample sampleAttackGround(const State& state, const StaticData& sd, const RuntimeBindings& bindings, Q& query)
 {
-    if constexpr (!Aligned)
-    {
-        (void)state;
-        (void)sd;
-        (void)bindings;
-        (void)query;
-        return brawlerGround::GroundSample{};
-    }
-    else
-    {
-        // ⛔G-25  docs/BrawlerMovementSimulation-guards.md
-        const GroundProbe probe = probeGround(state, sd, bindings, query);
-        return brawlerGround::GroundSample{attackGroundNormal(probe.hit, sd)};
-    }
+    // ⛔G-25  docs/BrawlerMovementSimulation-guards.md
+    const GroundProbe probe = probeGround(state, sd, bindings, query);
+    return brawlerGround::GroundSample{attackGroundNormal(probe.hit, sd)};
 }
 
-template <bool Aligned = brawlerGround::kGroundAlignedAttacks, typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
+template <typename PhysicsBodyAdapterType, typename SpatialQueryAdapterType>
 void integrate(float deltaSeconds,
     const AllInput<PhysicsBodyAdapterType, SpatialQueryAdapterType>& input,
     const StaticData& sd,
@@ -695,17 +664,17 @@ void integrate(float deltaSeconds,
     const glm::vec3 face = attackGroundNormal(probe, sd);
 
     // ⛔G-26  docs/BrawlerMovementSimulation-guards.md
-    const bool knockbackWritten = writesKnockbackVelocity<Aligned>(inboundHit, face, walkable, committed);
+    const bool knockbackWritten = writesKnockbackVelocity(inboundHit, face, walkable, committed);
     if (knockbackWritten)
         state.velocity = inboundHit.hitDirectionWorld * inboundHit.knockbackSpeed;
 
-    const bool detached  = detachesFromSupport<Aligned>(state, up, face, committed);
+    const bool detached  = detachesFromSupport(state, up, face, committed);
 
     const SupportState support = (walkable && !detached)
         ? SupportState::Supported
         : SupportState::Unsupported;
 
-    const glm::vec3 n = (walkable && !(Aligned && detached && !surfaceFrame::isFlat(face))) ? probe.normal : up;
+    const glm::vec3 n = (walkable && !(detached && !surfaceFrame::isFlat(face))) ? probe.normal : up;
     glm::vec3 u(simFrame::kForward);
     glm::vec3 v(simFrame::kRight);
     buildTangentFrame(n, u, v);

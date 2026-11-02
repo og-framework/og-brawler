@@ -288,7 +288,7 @@ with no ground-plane projection is exactly the case where `hitDirectionXY` alrea
 **What breaks if the edit is made.** A vertical tangent (a horizontal-axis swing, G-05's case) writes
 a vertical `hitDirectionWorld` while `hitDirectionXY` holds the away-from-attacker fallback: the two
 directions of one hit disagree, and once the movement writes `hitDirectionWorld` times the speed into
-the velocity (og-ground-aligned-attacks task 9b, with the knob on), the target is launched straight up instead of pushed away. A zero tangent is caught either
+the velocity (og-ground-aligned-attacks task 9b), the target is launched straight up instead of pushed away. A zero tangent is caught either
 way; the planar test also keeps a NaN tangent on the fallback, as `normalisedXY` does (rationale §4.3).
 Not reachable with the shipped table: rows 0-3 swing in the attacker's ground plane, so on flat ground
 their tangent is horizontal (G-05's R0) and on a 30° plane its ground-plane length is at least cos 30° of its length.

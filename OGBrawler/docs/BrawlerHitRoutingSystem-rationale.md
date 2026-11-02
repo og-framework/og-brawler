@@ -107,9 +107,9 @@ machine enters `HitFlinch` from any state on `wasHitThisTick`, `GuardFlinch` fro
 `wasGuardBlockedThisTick`. The movement sub-simulation launches on `wasHitThisTick` with
 `hitDirectionXY * knockbackSpeed`. ⚠ The projectile-block transition is gone since
 og-attackstatetransition-cleanup task 4. Branches 2 and 3 also write the 3-D `hitDirectionWorld`
-(og-ground-aligned-attacks task 9, §4.4). The movement's hit-tick write reads it with the knob on
-(og-ground-aligned-attacks task 9b, `BrawlerMovementSimulation-rationale.md` §26.1); with the knob off
-nothing reads it.
+(og-ground-aligned-attacks task 9, §4.4). The movement's hit-tick write reads it
+(og-ground-aligned-attacks task 9b, `BrawlerMovementSimulation-rationale.md` §26.1). Until the flip,
+task 10, the shipped build had the knob off and nothing read it; task 14 retired the knob.
 
 ### 3.1 Branch 1 — the whole-slice reset (movement-sim task 27)
 
@@ -253,8 +253,9 @@ aim angle there falls back to the chart's forward, `(1, 0)` (`simFrame::kForward
 The og-ground-aligned-attacks design, §3.6 (user rulings OQ6 and OQ15, 2026-10-28):
 a knockback goes along the ATTACKER's swing tangent in 3-D, so a hit across a crease can launch the
 target. Routing resolves that direction beside `hitDirectionXY`; since task 9b the movement reads it
-with the knob on (`BrawlerMovementSimulation-rationale.md` §26.1). With the knob off nothing reads it,
-so task 9 was bit-identical by construction (both goldens exact).
+(`BrawlerMovementSimulation-rationale.md` §26.1). Until the flip, task 10, the shipped build had the
+knob off and nothing read it, so task 9 was bit-identical by construction (both goldens exact); task 14
+retired the knob.
 
 | source | `hitDirectionWorld` |
 |---|---|
@@ -264,8 +265,8 @@ so task 9 was bit-identical by construction (both goldens exact).
 
 * **The authored direction is in swing-frame coordinates**: `simFrame::kForward` is the attacker's aim
   and `simFrame::kUp` its ground normal, because `attackerAimRotation` is the rotation the radial IC
-  stores (off flat ground, behind `brawlerGround::kGroundAlignedAttacks`, the machine's tilt times its local
-  turn: og-ground-aligned-attacks task 5). It shares
+  stores (off flat ground, the machine's tilt times its local turn: og-ground-aligned-attacks task 5,
+  switched on by task 10's flip). It shares
   the empty-axis fallback `attackerAimXY` uses (§9), so a value-initialised IC gives the identity, not
   a NaN. A zero `authoredDirection` on an authored row fails an `OG_CHECK` whose message is the rule and
   falls back to the tangent. It is the overhead's "possibility to launch" seam (OQ6): the overhead row

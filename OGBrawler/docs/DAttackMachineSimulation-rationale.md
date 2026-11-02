@@ -1035,8 +1035,8 @@ aim rotation axis (the second bullet).
     the same operations in the same order as before task 5. Pinned by
     `GroundAlignedMachine.FlatSampleReproducesTodaysInitialConditions` (366 aims; angle, axis, spawn
     position and direction compared bit for bit against a copy of the pre-task-5 expressions, which also
-    passed against the pre-task-5 header) and by both brawler golden traces in exact mode. While
-    `brawlerGround::kGroundAlignedAttacks` is `false` the sample is always `kUp`.
+    passed against the pre-task-5 header) and by both brawler golden traces in exact mode. Until the
+    flip (task 10) the initiative's knob kept the sample at `kUp` everywhere; task 14 retired the knob.
 
 ---
 
@@ -1058,6 +1058,7 @@ which is `simFrame::kUp`, so they keep their flat behaviour whatever the ground.
 Both receivers use the sample since og-ground-aligned-attacks task 5 (task 4 added the parameter and
 ignored it): `setRadialSimulationInitialConditions` builds the swing frame and `launchHadouken` the launch
 in the ground frame, and a flat sample keeps the pre-task-5 expressions (§16, the ground-frame bullet).
-Until og-ground-aligned-attacks task 10 the knob `brawlerGround::kGroundAlignedAttacks` was `false`, so the
+Until og-ground-aligned-attacks task 10 the initiative's compile-time knob was off, so the
 sample was `kUp` in any case and no value the machine wrote changed; since the flip the sample is the
-walkable ground's face normal, and off flat ground the swing frame and the launch follow it.
+walkable ground's face normal, and off flat ground the swing frame and the launch follow it. Task 14
+deleted the knob.

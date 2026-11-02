@@ -344,8 +344,8 @@ two rigs whose engine handles differ byte for byte. Planting the per-process roo
   `setInitialConditions` and `applyTorque`, `getAttackSegment`, `brawlerHitDetection::System`, routing's
   `attackerAimRotation`, the radial visualization, and the UE `drawTrace` through `FQuat`), so none needed a
   change. The swing plane's normal is the rotated up, `glm::mat3(glm::rotate(…)) * simFrame::kUp`, which
-  is the ground normal: the turn keeps `kUp` and the tilt maps it to the normal. While
-  `brawlerGround::kGroundAlignedAttacks` is `false` the ground is always flat and the pair is unchanged.
+  is the ground normal: the turn keeps `kUp` and the tilt maps it to the normal. On flat ground the pair
+  is unchanged (until the flip, task 10, the initiative's knob kept every ground flat).
 * **`State`** is a plain aggregate (task 44). `hasHitGuard` stood between `currenSequenceId` and
   `bodyState` and rode the wire (1 B). Removing it (task 9) moved every later offset, so
   `correctionStateBuffer::kWireFormatVersion` went 3 -> 4. Task 27 appended `hitTargets` (3 B,
@@ -390,8 +390,7 @@ of the guard, whose up is `surfaceFrame::surfaceUpOf(guardTransform)`: the pose'
 (`DAttackGuardSimulation.h`), so on a slope that up is the ground normal. The predicate has two
 branches that compute `td` and `side`, then one shared decision block, so the G-03 gate stays at its
 single site and covers both branches.
-* **Flat** (`surfaceFrame::isFlat(guardUp)`, always while `brawlerGround::kGroundAlignedAttacks` is
-  `false`): today's expressions, by the flat rule — the overlap point takes the pivot's height with
+* **Flat** (`surfaceFrame::isFlat(guardUp)`): today's expressions, by the flat rule — the overlap point takes the pivot's height with
   `simFrame::withHeight`, the unclamped `std::acos` of the dot, and `side =
   simFrame::turnComponent(glm::cross(…))`. The only change from the inline form is where the cross
   product and its turn component are evaluated: before the gate, once, because the shared block
@@ -414,8 +413,8 @@ single site and covers both branches.
   transform the game thread reads (`input.getPhysicsReader().getBodyTransform(…)`). It is the only
   caller outside the sim (task 7 grep: the detector in `BrawlerHitDetectionSystem.h` and that
   visualization). It was not edited: the guard poses it reads are the ones the guard sub-simulation
-  writes, so after the knob flips the block-prediction display takes the slope branch on its own and
-  stays in step with the sim.
+  writes, so when the knob flipped (task 10) the block-prediction display took the slope branch on its
+  own, and it stays in step with the sim (task 14 retired the knob).
 
 ⛔ **Corrected at task 19** (§A, pristine lines 361-374 and 387):
 * **`attackerRoot` is the attacker's WEAPON-AXIS body position**, not "the attacker's own body

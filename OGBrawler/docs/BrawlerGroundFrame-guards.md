@@ -11,37 +11,29 @@ Fix this file; do not soften the header to match it.
 §R and its number is spent forever. A retired id may be **named** in prose or in a `static_assert`
 message; it may never again appear as a `⛔G-nn` **tag**.
 
-⛔ **Nothing in this file is a rationale.** Why the sample and the knob are shaped as they are lives in
+⛔ **Nothing in this file is a rationale.** Why the sample is shaped as it is lives in
 `BrawlerGroundFrame-rationale.md`. A guard is a prohibition plus the consequence of ignoring it.
 
----
-
-## G-01 — `kGroundAlignedAttacks` is flipped only together with the correction wire version
-
-**Tag site:** `BrawlerGroundFrame.h`, immediately above `inline constexpr bool kGroundAlignedAttacks = true;`.
-
-**The prohibition.** Do not change the value of `kGroundAlignedAttacks` on its own. Changing it changes
-what a peer predicts on sloped ground, so the same change must raise the correction wire format version
-(`kWireFormatVersion` in og-simulation's `CorrectionStateBufferCodec.h`) and re-record the golden
-traces. Do not turn it into a runtime value (a console variable, a `StaticData` field) either: the wire
-version cannot see a runtime value.
-
-**The consequence.** Two builds that differ only in this constant carry the same wire version, so they
-connect, and on any sloped ground they compute different radial initial conditions (the swing plane) for
-the same input. Every attack started on a slope then mispredicts and is corrected, with no refusal at
-login and no error anywhere; on flat ground both builds agree, so a flat test arena shows nothing.
-
-**What breaks if it moves.** In production the constant is read only in `BrawlerMovementSimulation.h`, as
-the default template argument of `brawlerMovementSimulation::sampleAttackGround`, `detachesFromSupport`,
-`writesKnockbackVelocity` and `integrate`; every attack consumer receives the sample from
-`sampleAttackGround`. A second switch elsewhere would let a consumer follow the ground while the sample
-stays `kUp`, or the reverse.
+The header has **no live guard** since og-ground-aligned-attacks task 14.
 
 ---
 
 ## §R Retired ids
 
-**None.**
+### G-01 — RETIRED by og-ground-aligned-attacks task 14 (2026-11-02)
+
+**Was:** "the knob is flipped only together with the correction wire version", on the header's
+compile-time `bool` that switched ground-aligned attacks on (tag site: immediately above that
+constant). The prohibition: never change the constant's value without raising the correction wire
+format version (`kWireFormatVersion` in og-simulation's `CorrectionStateBufferCodec.h`) and
+re-recording the golden traces, and never turn it into a runtime value; two builds that differed only
+in it connected and mispredicted every attack started on a slope.
+
+**Why retired.** Its subject is gone. Task 14 deleted the constant (OQ4 (a), ruled by the user
+2026-11-02 after G3) together with the `bool` template parameter that `sampleAttackGround`,
+`detachesFromSupport`, `writesKnockbackVelocity` and the movement `integrate` defaulted to it; their
+ground-aligned arms are the only code left. There is no value left to flip, so no build can differ from
+another in it. ⛔ The number 1 is spent.
 
 The default normal's bits are a `static_assert` in the header, not a guard (rationale §2).
 
@@ -50,5 +42,5 @@ The default normal's bits are a `static_assert` in the header, not a guard (rati
 ## Provenance
 
 G-01 was written with the header on 2026-10-28 (og-ground-aligned-attacks task 4); task 10 flipped the
-constant to `true`, with the correction wire version 9 -> 10. Nothing in this file
-depends on any document outside this submodule.
+constant to `true`, with the correction wire version 9 -> 10; task 14 deleted it and retired G-01.
+Nothing in this file depends on any document outside this submodule.

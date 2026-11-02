@@ -283,10 +283,9 @@ distinguishes that read from a correct one.
 ## G-07 — `detachesFromSupport` returning `false` is a statement about the tree
 
 **Tag site:** `BrawlerMovementSimulation.h`, immediately above
-`template <bool Aligned = brawlerGround::kGroundAlignedAttacks>` on
-`bool detachesFromSupport(const State& state, const glm::vec3& up, const glm::vec3& face, bool committed)`
-(the signature since og-ground-aligned-attacks task 13; before it, `(state, up, committed)`, and before
-task 27, `(state, up)`).
+`inline bool detachesFromSupport(const State& state, const glm::vec3& up, const glm::vec3& face, bool committed)`
+(the signature since og-ground-aligned-attacks task 13, a template on the initiative's compile-time knob
+until task 14 retired it; before task 13, `(state, up, committed)`, and before task 27, `(state, up)`).
 
 **Was must-never-move:** `T3-17`. **Taxonomy clause:** F4.
 
@@ -338,9 +337,10 @@ move with it (`n` is keyed on `walkable`, not on `support`), so the slide stays 
 the finding and its recommended fix — key the arm on the vertical CHANNEL, which is computable
 here because the frame does not depend on the detach decision — are routed to the lead in
 `impl/impl_notes_seam_27.md`. **Not changed unilaterally: the arm is the architect’s, ruled.**
-⭐ **[og-ground-aligned-attacks task 13]** The knob-on arm below answers this finding for a sloped
-face: it tests the velocity against the face, not against world up. With the knob off (shipped until
-the flip) the finding above still describes the build.
+⭐ **[og-ground-aligned-attacks task 13]** The slope arm below answers this finding for a sloped
+face: it tests the velocity against the face, not against world up. Until the flip (task 10) the
+initiative's compile-time knob kept that arm off and the finding above described the build; task 14
+retired the knob, so the slope arm is the only one off flat ground.
 
 ⚠ **THE `Jumping` HALF IS UNCHANGED AND STILL UNBUILT.** Task 76 landed
 `static_assert(!detail::kHasLaunched<DAttackState>, … "Was fence T3-17 (the Launched half).")`
@@ -364,14 +364,14 @@ vacuity ended.
 
 ⭐⭐ **REVISED BY og-ground-aligned-attacks TASK 13, 2026-10-28 — THE LIFT TEST IS SURFACE-RELATIVE
 ON A SLOPE (user ruling OQ6, 2026-10-28; old OQ7 (a)).** The site and the id are unchanged; the
-predicate is now a template on `Aligned` (default `brawlerGround::kGroundAlignedAttacks`) and takes the
+predicate takes the
 probe's face normal `face` (the hit's `surfaceNormal` when non-zero, else its `normal`: the face rule
 of `sampleAttackGround`; since og-ground-aligned-attacks task 13b it is `attackGroundNormal(probe, sd)`,
 which also gives `kWorldUp` for a miss or a face past the walkable cap, guard G-28). Two arms:
 
-- **Flat** (`!Aligned`, or `surfaceFrame::isFlat(face)`): `committed && glm::dot(state.velocity, up) > 0.f`,
+- **Flat** (`surfaceFrame::isFlat(face)`): `committed && glm::dot(state.velocity, up) > 0.f`,
   the task-27 arm, verbatim.
-- **Slope** (`Aligned` and a non-flat face): `committed && glm::dot(state.velocity, face) >
+- **Slope** (a non-flat face): `committed && glm::dot(state.velocity, face) >
   kMinLaunchSine * glm::length(state.velocity)`. A knockback whose direction leaves the target's
   ground by more than 2° detaches (a launch); one in the ground does not (a slide).
 
@@ -379,11 +379,11 @@ What this guard now forbids, in addition to the enumerator rule above:
 
 > ⛔ **DO NOT FOLD THE FLAT ARM INTO THE SLOPE ARM.** On a flat face the slope formula is not the
 > flat one: `> kMinLaunchSine · |v|` is a 2° cone, `> 0.f` is a half-space, so a knockback rising at
-> less than 2° on flat ground would stop detaching. Flat ground, and every build with the knob off,
-> must run `committed && glm::dot(state.velocity, up) > 0.f` exactly (the initiative's flat rule).
-> `GroundAlignedKnockback.FlatGroundPredicateKeepsTodaysAnswer` and
-> `GroundAlignedKnockback.FlatGroundIntegrateKeepsTodaysBits` pin both template arguments to
-> today's answer and bits on flat faces.
+> less than 2° on flat ground would stop detaching. Flat ground must run
+> `committed && glm::dot(state.velocity, up) > 0.f` exactly (the initiative's flat rule).
+> `GroundAlignedKnockback.FlatGroundPredicateKeepsTodaysAnswer` pins the predicate to that answer on
+> five flat faces (10,000 cases). Its integrate twin, which compared the knob-off and the knob-on
+> `integrate` on flat ground, went with the knob in task 14.
 >
 > ⛔ **DO NOT TEST THE SLOPE ARM AGAINST `up`.** An in-plane up-slope knockback on a 30° face carries
 > `0.5 · |v|` of world height, so a world-up test detaches every same-face up-slope shove (the hop
@@ -673,7 +673,7 @@ the zero it requires — and carries a control arm one tick further out that rea
 
 ## G-25 — The attack ground sample comes from its own sweep of the State it is given
 
-**Tag site:** `BrawlerMovementSimulation.h`, in `sampleAttackGround`'s aligned branch, immediately above
+**Tag site:** `BrawlerMovementSimulation.h`, in `sampleAttackGround`'s body, immediately above
 `const GroundProbe probe = probeGround(state, sd, bindings, query);`.
 
 **Added by:** og-ground-aligned-attacks task 4, 2026-10-28. Not part of task 68's conversion census.
@@ -689,8 +689,8 @@ replaying client, and so can the swing plane frozen from it into the radial init
 field): a correction per affected swing, with nothing failing locally. It is also the sweep's `normal`,
 where the sample wants the exact face normal when the adapter provides one.
 
-**What breaks if it moves.** The knob-off branch above it issues no query at all; this line is the only
-sweep the sample makes. `BrawlerGroundSample.AlignedPrefersTheExactFaceNormal` checks that the sample's
+**What breaks if it moves.** This line is the only sweep the sample makes (until task 14 a knob-off
+branch above it issued none). `BrawlerGroundSample.AlignedPrefersTheExactFaceNormal` checks that the sample's
 sweep is the movement probe's call, and the face selection.
 
 ---
@@ -698,7 +698,7 @@ sweep is the movement probe's call, and the face selection.
 ## G-26 — The hit-tick knockback write comes before the support classification
 
 **Tag site:** `BrawlerMovementSimulation.h`, in `integrate`'s step 2, immediately above
-`const bool knockbackWritten = writesKnockbackVelocity<Aligned>(inboundHit, face, walkable, committed);`.
+`const bool knockbackWritten = writesKnockbackVelocity(inboundHit, face, walkable, committed);`.
 
 **Added by:** og-ground-aligned-attacks task 9b, 2026-10-28 (user ruling OQ14). Not part of task 68's
 conversion census. Task 9b's rework 1 moved the flat rule out of this entry into guard G-27, whose
@@ -708,7 +708,7 @@ wrong edit is typed in the predicate, not here.
 
 > ⛔ **DO NOT MOVE THE WRITE BELOW THE SUPPORT CLASSIFICATION.** `state.velocity =
 > inboundHit.hitDirectionWorld * inboundHit.knockbackSpeed;` must run before
-> `detachesFromSupport<Aligned>(state, up, face, committed)` reads the velocity. Written after it, the
+> `detachesFromSupport(state, up, face, committed)` reads the velocity. Written after it, the
 > hit tick is classified with the pre-hit velocity: a direction that leaves the target's ground stays
 > `Supported` on its own hit tick, the frame keeps the probe normal, and the servo removes up to
 > `hoverMaxAccel · dt` (5 m/s) of the up channel. Seen failing in task 9b:
@@ -727,10 +727,11 @@ decomposition of the written velocity), every other hit tick today's line. The d
 
 ## G-27 — The hit-tick knockback write keeps the flat rule
 
-**Tag site:** `BrawlerMovementSimulation.h`, in `writesKnockbackVelocity`'s aligned branch, immediately
+**Tag site:** `BrawlerMovementSimulation.h`, in `writesKnockbackVelocity`'s body, immediately
 above `return !(surfaceFrame::isFlat(g) && simFrame::height(d) == 0.f);`. The predicate is
-`template <bool Aligned = brawlerGround::kGroundAlignedAttacks> bool
-writesKnockbackVelocity(const brawlerInboundHit::DerivedState& inboundHit, const glm::vec3& face, bool walkable, bool committed)`.
+`inline bool
+writesKnockbackVelocity(const brawlerInboundHit::DerivedState& inboundHit, const glm::vec3& face, bool walkable, bool committed)`
+(a template on the initiative's compile-time knob until task 14 retired it).
 
 **Added by:** og-ground-aligned-attacks task 9b's rework 1, 2026-10-28, split out of guard G-26 (review
 B1: the flat-rule edit is typed in this `return`, which carried no tag). The rule itself is task 9b's
@@ -745,14 +746,18 @@ B1: the flat-rule edit is typed in this `return`, which carried no tag). The rul
 > `d · speed` and drops the pre-hit up channel (a horizontal `d` has none): other bits, and a pre-hit
 > vertical velocity is lost. Seen failing in task 9b (`return true;` in place of the flat test),
 > already on a target at rest: `GroundAlignedKnockback.FlatTargetWithAHorizontalDirectionKeepsTodaysBits`
-> fails on tick 1 with `first differing field velocity`.
+> fails on tick 1 with `first differing field velocity`. Since task 14 that case's reference is the same
+> rig with its world direction zeroed (the zero-`d` `false` return), which is what the knob-off rig it
+> replaced computed on flat ground; the same poison was seen failing again on it in task 14
+> (`first differing field velocity` on tick 1; the horizontal section of
+> `GroundAlignedKnockback.UnwalkableExactFaceOverAWalkableSweepIsWorldUp` failed with it).
 
 **The consequence.** Every flat-ground knockback changes its bits after the flip, and a target hit
 with a non-zero vertical velocity (falling or rising) loses it on the hit tick.
 The flat golden and the flat-ground tests would have to absorb both.
 
-**What else this site carries.** The predicate's other `false` returns (the knob off, a tick that is
-not a committed hit tick, a zero `d`) are not the flat rule. The line above the tag picks `g`, the
+**What else this site carries.** The predicate's other `false` returns (a tick that is not a committed
+hit tick, a zero `d`) are not the flat rule. The line above the tag picks `g`, the
 plane the rule tests. `integrate`'s step 2 reads the predicate (guard G-26).
 
 ---
@@ -760,8 +765,8 @@ plane the rule tests. `integrate`'s step 2 reads the predicate (guard G-26).
 ## G-28 — The ground face comes from `attackGroundNormal`, in both readers
 
 **Tag site:** `BrawlerMovementSimulation.h`, in `integrate`'s step 2, immediately above
-`const glm::vec3 face = attackGroundNormal(probe, sd);`. The other reader is `sampleAttackGround`'s aligned
-branch, `return brawlerGround::GroundSample{attackGroundNormal(probe.hit, sd)};`, two lines under guard G-25's
+`const glm::vec3 face = attackGroundNormal(probe, sd);`. The other reader is `sampleAttackGround`'s
+`return brawlerGround::GroundSample{attackGroundNormal(probe.hit, sd)};`, two lines under guard G-25's
 tag.
 
 **Added by:** og-ground-aligned-attacks task 13b, 2026-10-28 (task 10's open point 2, confirmed by its review

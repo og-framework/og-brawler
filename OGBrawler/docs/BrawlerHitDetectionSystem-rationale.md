@@ -130,12 +130,16 @@ The two trailing comments on the branches of `t`, carried:
 arguments. `weaponHitIndicatorPosition` calls it. It reads the swing plane's up, `swingUp =
 glm::mat3(initialRotation) * simFrame::kUp` (the rotated up of the radial IC; on a slope the ground
 normal, `DAttackRadialSimulation-rationale.md` §5).
-* **Flat** (`surfaceFrame::isFlat(swingUp)`, always while `brawlerGround::kGroundAlignedAttacks` is
-  `false`): the solve runs on `currentDirection`, `rootTranslation` and `hit.objectPosition`, today's
-  expressions by the flat rule.
-* **Slope:** the same solve runs on `surfaceFrame::tiltFromSurface(swingUp, ·)` of the three, the swing
-  frame in which `swingUp` is `simFrame::kUp`, and its result is mapped back with
-  `surfaceFrame::tiltToSurface`. The marker is then on the opponent's inner circle in the swing's plane,
+The solve runs on `surfaceFrame::tiltFromSurface(swingUp, ·)` of `currentDirection`, `rootTranslation` and
+`hit.objectPosition`, the swing frame in which `swingUp` is `simFrame::kUp`, and its result is mapped back
+with `surfaceFrame::tiltToSurface`.
+* **Flat ground.** On a flat `swingUp` both tilts return their input's bits (og-simulation's
+  `SurfaceFrame.h`, its guard G-01), so the solve runs on the three points themselves and returns today's
+  marker. Until og-ground-aligned-attacks task 14 a flat `swingUp` took an early return into the solve on
+  the untilted points; task 14 dropped it (user ruling 2026-11-01: "Add group 1 to task 14"), because the
+  tilted path already gives the same bits there. `GroundAlignedMeleeBlockTest.cpp`'s flat marker case
+  compares the marker with the pre-task expression bit for bit (839 markers, 0 mismatches, before and after task 14).
+* **Slope.** The marker is then on the opponent's inner circle in the swing's plane,
   at the opponent's height along `swingUp`, as it is on flat ground along `simFrame::kUp`. The tilt is a
   rotation about the world origin, and the solve uses only differences and dot products, so rotating the
   points about the origin rather than about the attacker gives the same point up to rounding.

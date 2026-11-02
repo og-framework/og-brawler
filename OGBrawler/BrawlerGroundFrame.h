@@ -9,9 +9,6 @@
 
 namespace brawlerGround
 {
-    // ⛔G-01  docs/BrawlerGroundFrame-guards.md
-    inline constexpr bool kGroundAlignedAttacks = true;
-
     struct GroundSample
     {
         glm::vec3 normal = simFrame::kUp;
@@ -19,6 +16,6 @@ namespace brawlerGround
 
     static_assert(simFrameDetail::sameBits(GroundSample{}.normal, simFrame::kUp),
         "brawlerGround::GroundSample - a default sample's normal must have simFrame::kUp's bits "
-        "(+0 zeros): it is the sample every consumer receives while kGroundAlignedAttacks is false "
-        "and on unwalkable ground, and the up a consumer's flat path was written against.");
+        "(+0 zeros): it is the sample every consumer receives off walkable ground, and the up a "
+        "consumer's flat path was written against.");
 } // namespace brawlerGround

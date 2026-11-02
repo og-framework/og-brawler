@@ -225,9 +225,9 @@ normal runs the pre-initiative expressions verbatim, the 3-D angle between the g
 `-spawnDir`. Projecting on flat ground too is a gameplay change that needs its own user ruling.
 
 **What breaks if the edit is made.** Pitched shots into a flat guard change outcome: a shot outside
-the middle section only by its pitch becomes a block. No shot is pitched while
-`brawlerGround::kGroundAlignedAttacks` is `false`, but after the flip every shot launched along a slope
-is. Measured by poison (task 8, `if (true || !surfaceFrame::isFlat(guardUp))`):
+the middle section only by its pitch becomes a block. No shot was pitched while the initiative's
+compile-time knob was off (until the flip, task 10; task 14 retired the knob), but since the flip every
+shot launched along a slope is. Measured by poison (task 8, `if (true || !surfaceFrame::isFlat(guardUp))`):
 `GroundAlignedProjectileBlock.FlatGuardReproducesTodaysOutcomeAndMarkerBits` goes RED,
 `outcomeMismatches == 0` with expansion `504 == 0`, every one of its 504 shots pitched ±0.3 rad.
 
