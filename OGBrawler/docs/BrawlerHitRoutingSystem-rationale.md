@@ -390,8 +390,10 @@ bits as the literal it replaced.
 * **`attackerAimXY`** rotates `forward4`, `simFrame::kForward` with a zero w, by the attacker's
   initial aim, `attackerAimRotation` (extracted by og-ground-aligned-attacks task 9 so the authored
   direction of §4.4 shares it). When the stored axis is zero that rotation falls back to `aimFallbackAxis`, `(0, -1, 0)`, the
-  axis the machine also falls back to (`DAttackMachineSimulation-rationale.md` §16): the turn axis of
-  chart P, kept when og-sim-metres-yup task 26 made `simFrame::kTurnAxis` `+Y`. A `static_assert` after
+  same constant the machine turns about inside its near-pole band (`DAttackMachineSimulation-rationale.md` §16): the turn axis of
+  chart P, kept when og-sim-metres-yup task 26 made `simFrame::kTurnAxis` `+Y`. It is not always the stored
+  axis: since og-ground-aligned-attacks task 14b the machine stores the axis of its swing-frame round trip
+  on every ground, which is `(0, -1, 0)` inside the band but `+Y` on an exact ±forward aim. A `static_assert` after
   the declaration pins its bits (`simFrameDetail::sameBits` against `glm::vec3(0.f, -1.f, 0.f)`):
   `simFrame::kTurnAxis` there fails to compile (error C2338, measured by the task 26 rework). Both are
   `constexpr` locals, the constant-folding form for a vocabulary constant that enters arithmetic.
@@ -402,7 +404,8 @@ bits as the literal it replaced.
   `directionAwayFromAttacker` falls back to, and a knockback on that path goes the other way. A negated
   axis (`-simFrame::kUp`) has `-0` components where this one has `+0` (the signed-zero rule). With the
   shipped machine the branch is never taken with a non-zero angle: the machine writes `initialAimAngle`
-  and `initialAimRotationAxis` together, so a zero axis comes only from a value-initialised
+  and `initialAimRotationAxis` together, and `surfaceFrame::toAngleAxis` never returns a zero axis (when
+  its `s > 0.f` test fails it returns `simFrame::kUp`), so a zero axis comes only from a value-initialised
   `InitialConditions`, whose angle is also 0, and a rotation by 0 is the identity about either axis (up to
   the signs of zeros). The value becomes load-bearing the day anything stores an angle without its axis.
   Measured by poison (task 26, this axis re-pointed at `kTurnAxis` together with the machine's and the

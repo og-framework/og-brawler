@@ -52,18 +52,19 @@ either sign, so the swing can be reported as **blocked** on NaN.
 (A NaN from `normalize` of a zero vector propagates into `guardAxis` and `side` and returns `false` under
 both forms. Only the rounding NaN separates them.)
 
-**The slope branch is under the same gate** (og-ground-aligned-attacks task 7). Since that task the
-predicate computes `td` and `side` in one of two branches, flat or the guard's plane
-(`DAttackRadialSimulation-rationale.md` §7), and then runs one shared decision block, so this gate has a
-single site for both. The slope branch clamps the dot before `std::acos` and returns `false` on a zero
-projected direction before the gate, so for finite inputs the rounding NaN above arises only on the flat
-branch. Keep both
-branches feeding the one gate: a second, per-branch copy of the decision block is a second site this
-tag does not cover.
+**One branch since og-ground-aligned-attacks task 14b.** From task 7 the predicate computed `td` and
+`side` in one of two branches, flat or the guard's plane, and then ran one shared decision block, so this
+gate had a single site for both. Task 14b retired the flat branch (`DAttackRadialSimulation-rationale.md`
+§7), and with it the unclamped `std::acos` the paragraph above derives from. The remaining computation
+clamps the dot to [−1, 1] before `std::acos` and returns `false` on a zero projected direction before the
+gate. So for finite, non-degenerate inputs the rounding NaN above no longer reaches the gate [derived from
+the clamp]. The gate stays positive, so the fall-through holds again if an unclamped `td` comes back. Keep
+the one decision block: a second copy of it is a second site this tag does not cover.
 
-**What breaks if the edit is made.** Near-collinear guard contacts become blocks where the
-shipped predicate lets them through. The detector and the block-prediction visualization both
-change, and no test pins this case.
+**What breaks if the edit is made.** Since task 14b, nothing observable for finite inputs: the clamp
+alone keeps `td` finite. The edit removes the second of two defences. If the clamp is then dropped too,
+near-collinear guard contacts become blocks where the shipped predicate lets them through. The detector and
+the block-prediction visualization both change, and no test pins this case.
 
 **Score (§9.1): substitution on the tagged statement → `yes`.**
 

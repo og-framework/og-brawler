@@ -966,14 +966,19 @@ aim rotation axis (the second bullet).
   `simFrame::kTurnAxis` at any of the three, `-simFrame::kUp` here and `simFrame::kUp * -1.f` in the guard
   sub-simulation each fail to compile (error C2338).
 * **What a `+Y` or a negated fallback would break.** The lambda returns this axis when `|aimDot|` is
-  within `1e-4` of 1 (guard G-03's band), and the machine stores it, with `aimAngle`, as the radial's
-  `InitialConditions::initialAimRotationAxis`, a wire field. `glm::rotate(aimAngle, +Y)` is
+  within `1e-4` of 1 (guard G-03's band). Since og-ground-aligned-attacks task 14b the machine feeds it,
+  with `aimAngle`, through the swing-frame round trip (the ground-frame bullet below), and the round trip's
+  axis is the radial's `InitialConditions::initialAimRotationAxis`, a wire field. That axis is `(0, -1, 0)`
+  inside the band and `+Y` on an exact ±`kForward` aim, where `toAngleAxis` picks its own canonical axis
+  (the flat-rule bullet below). Until task 14b flat ground stored this axis itself. `glm::rotate(aimAngle, +Y)` is
   `glm::rotate(-aimAngle, -Y)`: a different swing pose for every `aimAngle` the band admits other than an
-  exact 0, and near the antiparallel pole `aimAngle` is about π, where `sin` is not 0 in float. The
-  stored axis itself changes sign whatever the angle, so the correction payload changes too. A negated
-  axis (`-simFrame::kUp`) has `-0` components where `withHeight(glm::vec3(0.f), -1.f)` has `+0`, so the
-  stored axis's bytes change on the wire. The guard sub-simulation's copy turns the guard body the same
-  way. Measured (task 26, a poison build with all three fallback axes re-pointed at `kTurnAxis`, restored
+  exact 0, and near the antiparallel pole `aimAngle` is about π, where `sin` is not 0 in float. Inside
+  the band the stored axis changes sign too [derived from `toAngleAxis`'s `w >= 0` rule; not re-measured
+  at task 14b], so the correction payload changes. A negated axis (`-simFrame::kUp`) has `-0` components
+  where `withHeight(glm::vec3(0.f), -1.f)` has `+0`. Before task 14b those bytes went onto the wire. Since
+  then they are an input to the round trip: a test-side copy of it (task 14b: 2001 in-band angles near 0
+  and near π, a runtime flat normal) gave the same angle and axis bits for both. The `static_assert` keeps
+  the input exact anyway. The guard sub-simulation's copy turns the guard body the same way. Measured (task 26, a poison build with all three fallback axes re-pointed at `kTurnAxis`, restored
   byte-identical): `DAttackAbs.MachineNearPoleAimTakesTheEpsilonBandBranch` fails (`turnComponent` +1
   where the band must give −1), and both sections of `DAttackGuard.NearPoleAimTakesTheEpsilonBandBranch`
   fail. The golden trace stays exact: its scenario never aims inside the band, so it cannot see this edit.
@@ -1012,9 +1017,9 @@ aim rotation axis (the second bullet).
     after it (the near-pole band of guard G-03, the `acos`, the cross product and `aimFallbackAxis`)
     are unchanged and run on the local heading, so the band and the fallback apply in the local frame.
     Their rotation `A` turns `kForward` onto the local heading about `±kUp`, or about the fallback axis
-    `(0, -1, 0)` inside the band, so `A` keeps `kUp`. On non-flat ground the stored pair is
-    `surfaceFrame::toAngleAxis(surfaceFrame::tiltMatrix(n) * glm::mat3(glm::rotate(glm::mat4(1.f), aimAngle, aimRotationAxis)))`,
-    the composite `G·A`: the rotated `kUp` is `n` (the swing plane is the ground plane) and the rotated
+    `(0, -1, 0)` inside the band, so `A` keeps `kUp`. The stored pair is
+    `surfaceFrame::toAngleAxis(surfaceFrame::tiltMatrix(n) * glm::mat3(glm::rotate(glm::mat4(1.f), aimAngle, aimRotationAxis)))`
+    on every ground since task 14b (on non-flat ground only, from task 5 until then), the composite `G·A`: the rotated `kUp` is `n` (the swing plane is the ground plane) and the rotated
     `kForward` is the projected aim. The order is the point: `A·G` tilts the ground frame and then turns
     it about world up, so the plane no longer contains the aim's projection and its normal is not `n`.
     Measured (task 5, a poison build with the product reversed, restored byte-identical): the 360-aim
@@ -1028,15 +1033,38 @@ aim rotation axis (the second bullet).
     which is `spawnHeightOffset` along `n`: the projectile starts that far from the capsule measured along
     the normal, at any heading. The spawn sum keeps its operand order (capsule, then the forward offset,
     then the height offset).
-  * **Flat ground keeps today's bits.** The radial write is selected by `surfaceFrame::isFlat(n)`: flat
-    writes `aimAngle` and `aimRotationAxis` themselves, never the composite (which would round them
-    through a quaternion). Both tilt helpers return their argument unchanged for a flat `n`
-    (`SurfaceFrame-guards.md` G-01), so with `n = kUp` the aim reads, the fallback and the spawn sum are
-    the same operations in the same order as before task 5. Pinned by
-    `GroundAlignedMachine.FlatSampleReproducesTodaysInitialConditions` (366 aims; angle, axis, spawn
-    position and direction compared bit for bit against a copy of the pre-task-5 expressions, which also
-    passed against the pre-task-5 header) and by both brawler golden traces in exact mode. Until the
-    flip (task 10) the initiative's knob kept the sample at `kUp` everywhere; task 14 retired the knob.
+  * **The flat rule: retired for the radial write at task 14b.** From task 5 to task 14b the radial write
+    was selected by `surfaceFrame::isFlat(n)`. Flat ground wrote `aimAngle` and `aimRotationAxis`
+    themselves, never the composite, which rounds them through a quaternion. That was the initiative's
+    proof device: a flat `n` ran the pre-task-5 expressions verbatim. The user ruled on 2026-11-02 to
+    fold it ("Accept the axis flip"; task 14b's part 1 measured the fold first), so every ground now
+    takes the composite:
+    * **What it changes on flat ground.** The stored pair goes through `toAngleAxis`. On the goldens'
+      flat swing starts that moved `initialAimAngle` by at most 2.38e-7 and the axis by at most 5.96e-8,
+      and no hit or block outcome changed.
+    * **The pole flip.** On an aim exactly along ±`kForward` the stored axis is `+Y` where the flat
+      branch stored the fallback `(0, -1, 0)`. At angle 0, `toAngleAxis`'s `s > 0.f` test fails and it returns
+      `simFrame::kUp`; at the float π the quaternion's `w` is negative, so it is negated. The rotation the pair encodes
+      is unchanged (0 at angle 0, 6.4e-8 at π).
+    * **Why it is acceptable.** Every consumer rebuilds `glm::rotate(angle, axis)` (the radial body, hit
+      detection, the routing, the visualization and the `up=` log), so none reads the axis's sign
+      alone. The slope path has always stored whatever `toAngleAxis` returns, and one path replaces two.
+      The wire bytes change, so the correction version went 11 → 12 (`CorrectionStateBufferCodec.h`).
+    * **Where the flat rule stays.** It is kept at the display site `drawsWorldAligned`
+      (`DAttackVisualizationUtils.h`, the user's ruling of the same day, "Keep 3c's flat test"): folding it
+      sends a vertical aim on flat ground through a `normalize` of zero, and vertical-aim display safety
+      is task 38. The movement's three flat sites go with the support law (tasks 33, 34 and 37), and the
+      projectile guard test's (`BrawlerProjectileHitDetection-guards.md` G-09) goes at task 20b.
+    * **The Hadouken launch** has no branch in this file. Both tilt helpers return their argument
+      unchanged for a flat `n` (`SurfaceFrame-guards.md` G-01), so with `n = kUp` its aim read, its fallback
+      and its spawn sum are still the same operations in the same order as before task 5.
+    * **The pins.** `GroundAlignedMachine.FlatSampleReproducesTodaysInitialConditions` (366 aims, rewritten
+      at task 14b) compares the swing's angle and axis bit for bit against a copy of the general expression
+      fed with the pre-task-5 turn. It also bounds the rotation's difference from that turn by 5e-7, checks
+      the two pole aims (`(0, -1, 0)` before, `+Y` stored, rotation within 1e-7), and compares the launch
+      bit for bit against the pre-task-5 expressions. With the flat branch put back on a probe copy it
+      fails (`swingMismatches == 0` → `231 == 0`, and both pole checks). Both brawler golden traces were
+      re-recorded at task 14b and pin it in exact mode.
 
 ---
 
@@ -1057,7 +1085,8 @@ which is `simFrame::kUp`, so they keep their flat behaviour whatever the ground.
 
 Both receivers use the sample since og-ground-aligned-attacks task 5 (task 4 added the parameter and
 ignored it): `setRadialSimulationInitialConditions` builds the swing frame and `launchHadouken` the launch
-in the ground frame, and a flat sample keeps the pre-task-5 expressions (§16, the ground-frame bullet).
+in the ground frame. A flat sample keeps the pre-task-5 launch expressions, and since task 14b the swing
+frame takes the general composite on flat ground too (§16, the ground-frame bullet).
 Until og-ground-aligned-attacks task 10 the initiative's compile-time knob was off, so the
 sample was `kUp` in any case and no value the machine wrote changed; since the flip the sample is the
 walkable ground's face normal, and off flat ground the swing frame and the launch follow it. Task 14

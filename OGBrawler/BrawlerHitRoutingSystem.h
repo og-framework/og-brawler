@@ -192,7 +192,7 @@ namespace brawlerHitRouting
                     .get<dAttackRadialSimulation::InitialConditions>();
             constexpr glm::vec3 aimFallbackAxis = simFrame::withHeight(glm::vec3(0.f), -1.f);
             static_assert(simFrameDetail::sameBits(aimFallbackAxis, glm::vec3(0.f, -1.f, 0.f)),
-                "aimFallbackAxis must stay (0,-1,0) with +0 zeros: it is the machine's near-pole fallback axis, used here when the stored initialAimRotationAxis is zero. "
+                "aimFallbackAxis must stay (0,-1,0) with +0 zeros: the same constant as the machine's near-pole turn axis (not the stored axis, which is toAngleAxis's), used here only when the stored initialAimRotationAxis is zero. "
                 "Not simFrame::kTurnAxis or kUp: they are +Y since og-sim-metres-yup task 26, and rotate(a, +Y) is rotate(-a, -Y), a mirrored fallback aim. "
                 "Not -simFrame::kUp or kUp * -1.f: their -0 zeros differ from the machine's axis. "
                 "Was the chart-P simFrame::kTurnAxis.");

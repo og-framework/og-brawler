@@ -336,16 +336,17 @@ two rigs whose engine handles differ byte for byte. Planting the per-process roo
   the machine wrote it as 0 and nothing read it. It was the composite's first slice, so the
   removal moved every later offset (`kWireFormatVersion` 5 -> 6). The slice is 20 B.
 * **`initialAimAngle` and `initialAimRotationAxis` are the whole swing-frame rotation** (an angle and an
-  axis for `glm::rotate`), not only a turn about up. On flat ground the machine writes a turn of
-  `simFrame::kForward` onto the flattened aim, about `±kUp` or the near-pole fallback axis. On non-flat
-  ground (og-ground-aligned-attacks task 5) it writes `surfaceFrame::toAngleAxis` of the composite of
-  the ground tilt and that turn (`DAttackMachineSimulation-rationale.md` §16), so the axis can point
-  anywhere. Every reader rebuilds the same `glm::rotate(angle, axis)` (this header's
+  axis for `glm::rotate`), not only a turn about up. The machine writes `surfaceFrame::toAngleAxis` of
+  the composite of the ground tilt and a turn of `simFrame::kForward` onto the local heading, about
+  `±kUp` or the near-pole fallback axis (`DAttackMachineSimulation-rationale.md` §16), so the axis can
+  point anywhere. It does so on every ground since og-ground-aligned-attacks task 14b. From task 5 until
+  then it did so on non-flat ground only, and flat ground wrote the turn itself. Every reader rebuilds the same `glm::rotate(angle, axis)` (this header's
   `setInitialConditions` and `applyTorque`, `getAttackSegment`, `brawlerHitDetection::System`, routing's
   `attackerAimRotation`, the radial visualization, and the UE `drawTrace` through `FQuat`), so none needed a
   change. The swing plane's normal is the rotated up, `glm::mat3(glm::rotate(…)) * simFrame::kUp`, which
   is the ground normal: the turn keeps `kUp` and the tilt maps it to the normal. On flat ground the pair
-  is unchanged (until the flip, task 10, the initiative's knob kept every ground flat).
+  encodes the turn's rotation up to rounding. Since task 14b its bits are the round trip's, and on an
+  exact ±`kForward` aim its axis is `+Y` where the turn's is `(0, -1, 0)`.
 * **`State`** is a plain aggregate (task 44). `hasHitGuard` stood between `currenSequenceId` and
   `bodyState` and rode the wire (1 B). Removing it (task 9) moved every later offset, so
   `correctionStateBuffer::kWireFormatVersion` went 3 -> 4. Task 27 appended `hitTargets` (3 B,
@@ -375,36 +376,53 @@ A pure function with no side effects. It is shared by the detector
 `activeAttackSequence`, from a pivot at `attackerRoot`, would be blocked by a guard body whose world
 transform is `guardTransform` (its forward is `simFrame::forwardColumn(guardTransform)`, §10) and
 whose query overlap position is
-`guardOverlapPosition` (`SpatialQueryHit::objectPosition` of the guard-category hit). On a flat
-guard the overlap point takes the pivot's height. `td` is the angle between the guard's forward and the
-direction from the guard to the attacker. Inside `shieldAngle = 0.25f` only sequence 4 is blocked.
+`guardOverlapPosition` (`SpatialQueryHit::objectPosition` of the guard-category hit). `td` is the angle
+between the guard's forward and the direction from the guard to the attacker, in the guard's plane.
+Inside `shieldAngle = 0.25f` only sequence 4 is blocked.
 Between that and `outerShieldAngle = pi/2`, the sign of `side` picks sequences {0, 2} (negative) or
-{1, 3} (positive). On a flat guard `side` is the cross product's component along the
-turn axis (`simFrame::turnComponent`, its y in the shipped frame). Under chart P, before og-sim-metres-yup task 26, the turn axis was −Y, the component
+{1, 3} (positive). `side` is the cross product's component along the guard's up. On a guard turned only
+about up that is its component along the turn axis (`simFrame::turnComponent`, its y in the shipped
+frame), which the flat branch read until task 14b. Under chart P, before og-sim-metres-yup task 26, the turn axis was −Y, the component
 was −y and the two comparisons were the other way round; the swap keeps every side.
 The positive outer gate is guard G-03.
 
-**The guard's plane (og-ground-aligned-attacks task 7, design §3.3).** The test runs in the plane
-of the guard, whose up is `surfaceFrame::surfaceUpOf(guardTransform)`: the pose's image of
-`simFrame::kUp`. Since task 6 the guard pose is the ground tilt times the aim turn
-(`DAttackGuardSimulation.h`), so on a slope that up is the ground normal. The predicate has two
-branches that compute `td` and `side`, then one shared decision block, so the G-03 gate stays at its
-single site and covers both branches.
-* **Flat** (`surfaceFrame::isFlat(guardUp)`): today's expressions, by the flat rule — the overlap point takes the pivot's height with
-  `simFrame::withHeight`, the unclamped `std::acos` of the dot, and `side =
-  simFrame::turnComponent(glm::cross(…))`. The only change from the inline form is where the cross
-  product and its turn component are evaluated: before the gate, once, because the shared block
-  reads `side`. The block reads it only inside the gate, as before.
-* **Slope:** the direction from the overlap point to the attacker's pivot is projected onto the
+**The guard's plane (og-ground-aligned-attacks task 7, design §3.3; the only branch since task 14b).**
+The test runs in the plane of the guard, whose up is `surfaceFrame::surfaceUpOf(guardTransform)`: the
+pose's image of `simFrame::kUp`. Since task 6 the guard pose is the ground tilt times the aim turn
+(`DAttackGuardSimulation.h`), so on a slope that up is the ground normal. The predicate computes `td` and
+`side` once, then runs one decision block, so the G-03 gate has a single site.
+* **The projection:** the direction from the overlap point to the attacker's pivot is projected onto the
   guard's plane (`d -= guardUp * dot(d, guardUp)`). A zero projection (the attacker straight above
   or below the guard along its up) returns `false`: the attack lands. Otherwise the dot is clamped
-  to [−1, 1] before `std::acos`, so rounding cannot make `td` NaN on this branch, and `side` is the
+  to [−1, 1] before `std::acos`, so rounding cannot make `td` NaN, and `side` is the
   component of `glm::cross(nd, guardForward)` along `guardUp`. Both vectors lie in the guard's plane, so
   the cross product lies along `guardUp`. Its turn component therefore has the same sign as `side`
   (the up component of a walkable normal is at least `cosMaxSlope`, cos 45° as authored), so
   `turnComponent` would pick the same sides; `dot(…, guardUp)` is the component the plane defines. With
-  `turnComponent` on this branch every case of `GroundAlignedMeleeBlockTest.cpp` still passes (task 7),
+  `turnComponent` there every case of `GroundAlignedMeleeBlockTest.cpp` still passed (task 7),
   so that test does not tell the two apart.
+* **The flat rule: retired here at task 14b.** From task 7 to task 14b a flat guard up
+  (`surfaceFrame::isFlat(guardUp)`) took today's expressions, by the initiative's flat rule. The overlap
+  point took the pivot's height with `simFrame::withHeight`, `td` was the unclamped `std::acos` of the dot,
+  and `side` was `simFrame::turnComponent(glm::cross(…))`. The user ruled on 2026-11-02 to fold it (after
+  task 14b's part 1 measured the fold), so every guard takes the projection:
+  * **No flat outcome changed** in part 1's measurement. That covered the 225,031 flat calls of the
+    `GroundAlignedMeleeBlock` rigs, the goldens' 4 + 6 flat guard tests, PlatformEdge's 8 and 32,400
+    head-on overheads. `td` was bit-equal on the rigs' calls and `side` within 5.96e-8, and neither golden
+    changed a value. Both goldens' re-recordings at task 14b equal the 2a-only ones value for value.
+  * **It removes a NaN.** On a head-on hit the flat branch's unclamped `acos` of a dot that rounded above
+    1 was NaN (4 of the slope golden's 6 flat calls), and the projection clamps it.
+  * **Where the two differ.** A guard inside `isFlat`'s tolerance can still be tilted, by up to about
+    1e-6 rad. With the attacker nearly straight above it, the height flatten ignores that tilt and the
+    projection does not. `GroundAlignedMeleeBlock.AGuardTiltedInsideTheFlatToleranceBlocksInItsOwnPlane`
+    pins the projection's outcome for guards tilted 8e-7 rad toward and away from an attacker 2 m above
+    them and 1e-6 m in front or behind. The height flatten gives the opposite outcome in both (the test
+    computes it with its copy, `todaysWouldGuardBlock`). With the flat branch put back on a probe copy the
+    test fails: `CHECK_FALSE( planeInFront )` gives `!true` and `CHECK( planeBehind )` gives `false`.
+  * **Where the flat rule stays.** It is kept at the display site `drawsWorldAligned`
+    (`DAttackVisualizationUtils.h`, the user's ruling of the same day, "Keep 3c's flat test"): folding it
+    sends a vertical aim on flat ground through a `normalize` of zero, and vertical-aim display safety is
+    task 38.
 * **Why the plane, not the height.** Rotating a flat configuration by the ground tilt gives the same
   answer on the slope (the conjugation identity). The height flatten does not: an overhead from straight
   down-slope into a guard that faces down-slope makes `td` = 30° by the world-height expressions, outside
@@ -414,7 +432,8 @@ single site and covers both branches.
   caller outside the sim (task 7 grep: the detector in `BrawlerHitDetectionSystem.h` and that
   visualization). It was not edited: the guard poses it reads are the ones the guard sub-simulation
   writes, so when the knob flipped (task 10) the block-prediction display took the slope branch on its
-  own, and it stays in step with the sim (task 14 retired the knob).
+  own, and it stays in step with the sim (task 14 retired the knob; since task 14b the projection is the
+  only branch, for both callers).
 
 ⛔ **Corrected at task 19** (§A, pristine lines 361-374 and 387):
 * **`attackerRoot` is the attacker's WEAPON-AXIS body position**, not "the attacker's own body
@@ -542,17 +561,19 @@ bullet). They also stay right when the frame changes.
   forward is the transform's column at the forward index, with the forward axis's sign. That was
   column 0 in the Z-up frame; it is column 2 negated in the Y-up frame.
 * **`wouldGuardBlock` reads the guard's up with `surfaceFrame::surfaceUpOf(guardTransform)`**, the
-  transform's column at the up index with the up axis's sign (og-ground-aligned-attacks task 7). It picks
-  the branch (§7): flat, or the guard's plane.
-* **On a flat guard the overlap point takes the pivot's height** through `simFrame::withHeight` and
-  `simFrame::height`. On the slope branch the direction is projected onto the guard's plane instead.
-* **On a flat guard the side test reads `simFrame::turnComponent(guardAxis)`.** On the slope branch it
-  is the component along the guard's up (§7). `guardAxis` is a cross product,
+  transform's column at the up index with the up axis's sign (og-ground-aligned-attacks task 7). The test
+  projects into that up's plane (§7). From task 7 until task 14b it also picked the branch: flat, or the
+  guard's plane.
+* **Until task 14b, on a flat guard the overlap point took the pivot's height** through
+  `simFrame::withHeight` and `simFrame::height`. Since then every guard projects the direction onto its
+  plane (§7).
+* **Until task 14b, on a flat guard the side test read `simFrame::turnComponent(guardAxis)`.** Since then
+  every guard reads the component along its up (§7). `guardAxis` was a cross product,
   a pseudovector. Its component along the turn axis has the same sign in every frame for one planar
   chart; og-sim-metres-yup task 26's chart change negated the turn axis, so it negated the component
   and swapped the two comparisons with it (§7). Its `z` was
-  that component only in the Z-up frame. With `.z` left in a Y-up build, `guardAxis` lies along
-  Y and its z is a signed zero, so neither side test passes and no side swing is blocked.
+  that component only in the Z-up frame. With `.z` left in a Y-up build, `guardAxis` lay along
+  Y and its z was a signed zero, so neither side test passed and no side swing was blocked.
 * **`setInitialConditions` writes the initial angular velocity as
   `turnAxis * activeAttackSequence.getInitialVelocity()`, with `turnAxis` the turn axis.** A negative scale would give
   the axis's two zero components a `-0`, where the replaced literal `(0, 0, v)` had `+0`. That never

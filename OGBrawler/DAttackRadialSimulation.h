@@ -276,28 +276,13 @@ inline bool wouldGuardBlock(
 	const glm::vec3 guardUp = surfaceFrame::surfaceUpOf(guardTransform);
 	const float shieldAngle      = 0.25f;
 	const float outerShieldAngle = glm::pi<float>() * 0.5;
-	float td;
-	float side;
-	if (surfaceFrame::isFlat(guardUp))
-	{
-		glm::vec3 collidingPosition = guardOverlapPosition;
-		collidingPosition = simFrame::withHeight(collidingPosition, simFrame::height(attackerRoot));
-		const glm::vec3 collisionDirection = attackerRoot - collidingPosition;
-		const glm::vec3 normalizedCollisionDirection = glm::normalize(collisionDirection);
-		td = std::acos(glm::dot(normalizedCollisionDirection, guardForward));
-		const glm::vec3 guardAxis = glm::cross(normalizedCollisionDirection, guardForward);
-		side = simFrame::turnComponent(guardAxis);
-	}
-	else
-	{
-		glm::vec3 collisionDirection = attackerRoot - guardOverlapPosition;
-		collisionDirection -= guardUp * glm::dot(collisionDirection, guardUp);
-		if (glm::dot(collisionDirection, collisionDirection) <= 0.f)
-			return false;
-		const glm::vec3 normalizedCollisionDirection = glm::normalize(collisionDirection);
-		td = std::acos(glm::clamp(glm::dot(normalizedCollisionDirection, guardForward), -1.f, 1.f));
-		side = glm::dot(glm::cross(normalizedCollisionDirection, guardForward), guardUp);
-	}
+	glm::vec3 collisionDirection = attackerRoot - guardOverlapPosition;
+	collisionDirection -= guardUp * glm::dot(collisionDirection, guardUp);
+	if (glm::dot(collisionDirection, collisionDirection) <= 0.f)
+		return false;
+	const glm::vec3 normalizedCollisionDirection = glm::normalize(collisionDirection);
+	const float td = std::acos(glm::clamp(glm::dot(normalizedCollisionDirection, guardForward), -1.f, 1.f));
+	const float side = glm::dot(glm::cross(normalizedCollisionDirection, guardForward), guardUp);
 	// ⛔G-03  docs/DAttackRadialSimulation-guards.md
 	if (td < outerShieldAngle)
 	{

@@ -229,9 +229,9 @@ void setRadialSimulationInitialConditions(float deltaTime,
 	constexpr glm::vec3 defaultForward = simFrame::kForward;
 	constexpr glm::vec3 aimFallbackAxis = simFrame::withHeight(glm::vec3(0.f), -1.f);
 	static_assert(simFrameDetail::sameBits(aimFallbackAxis, glm::vec3(0.f, -1.f, 0.f)),
-	    "aimFallbackAxis must stay (0,-1,0) with +0 zeros: it is the axis the radial's InitialConditions::initialAimRotationAxis, a wire field, takes inside the near-pole band. "
-	    "Not simFrame::kTurnAxis or kUp: they are +Y since og-sim-metres-yup task 26, and rotate(a, +Y) is rotate(-a, -Y), a mirrored swing pose and a sign-flipped stored axis. "
-	    "Not -simFrame::kUp or kUp * -1.f: their -0 zeros change the stored axis's bytes. "
+	    "aimFallbackAxis must stay (0,-1,0) with +0 zeros: it is the turn axis inside the near-pole band, fed to the toAngleAxis round trip whose axis is the radial's InitialConditions::initialAimRotationAxis, a wire field (-Y in the band, +Y exactly on the poles since og-ground-aligned-attacks task 14b). "
+	    "Not simFrame::kTurnAxis or kUp: they are +Y since og-sim-metres-yup task 26, and rotate(a, +Y) is rotate(-a, -Y), a mirrored swing pose and, inside the band, a sign-flipped stored axis. "
+	    "Not -simFrame::kUp or kUp * -1.f: their -0 zeros are other input bits to the round trip (a test-side copy at og-ground-aligned-attacks task 14b gave the same output for both; this assert keeps the input exact rather than relying on that). "
 	    "Was the chart-P simFrame::kTurnAxis.");
 	const float aimDot = glm::dot(aimDirection, defaultForward);
 	const float aimAngle = glm::acos(aimDot);
@@ -244,18 +244,10 @@ void setRadialSimulationInitialConditions(float deltaTime,
 			return glm::normalize(glm::cross(defaultForward, aimDirection));
 	}();
 
-	if (surfaceFrame::isFlat(ground.normal))
-	{
-		attackIntialConditions.initialAimAngle = aimAngle;
-		attackIntialConditions.initialAimRotationAxis = aimRotationAxis;
-	}
-	else
-	{
-		const surfaceFrame::AngleAxis swingFrame = surfaceFrame::toAngleAxis(surfaceFrame::tiltMatrix(ground.normal)
-			* glm::mat3(glm::rotate(glm::mat4(1.f), aimAngle, aimRotationAxis)));
-		attackIntialConditions.initialAimAngle = swingFrame.angle;
-		attackIntialConditions.initialAimRotationAxis = swingFrame.axis;
-	}
+	const surfaceFrame::AngleAxis swingFrame = surfaceFrame::toAngleAxis(surfaceFrame::tiltMatrix(ground.normal)
+		* glm::mat3(glm::rotate(glm::mat4(1.f), aimAngle, aimRotationAxis)));
+	attackIntialConditions.initialAimAngle = swingFrame.angle;
+	attackIntialConditions.initialAimRotationAxis = swingFrame.axis;
 }
 }
 
