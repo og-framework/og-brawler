@@ -228,8 +228,9 @@ reached with a half-initialised fallback.
   about local Z, the aim rotation axis is ±Z (`dAttackMachineSimulation::setRadialSimulationInitialConditions`;
   in the frame's terms both are vertical: the rows turn about `simFrame::kTurnAxis` and the aim axis is
   ± it, `aimFallbackAxis` `(0, -1, 0)` inside the near-pole band, §9),
-  so their tangent is a horizontal unit vector (the annulus gate keeps the hit's in-plane radius above
-  the 0.9 m inner radius). Row 4, the only local-Y sequence, is a Stun, and its direction is discarded.
+  so their tangent is a horizontal unit vector (the detector normalises the centre's in-plane direction, and
+  skips a centre that has none: `BrawlerHitDetectionSystem-guards.md` G-20; until og-ground-aligned-attacks task 20
+  the annulus gate kept that radius above the 0.9 m inner radius). Row 4, the only local-Y sequence, is a Stun, and its direction is discarded.
   The fallback is reached today only by a planted vertical tangent
   (`HitRouting.KnockbackDirectionIsTheSwingTangentWithFallback`, section 3, whose own comment says
   the geometry is not reachable through the shipped table) or a NaN tangent (§4.3). A re-tune of row 4

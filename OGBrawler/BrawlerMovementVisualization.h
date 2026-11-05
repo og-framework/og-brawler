@@ -371,7 +371,11 @@ void visualize(const Input<RendererFunctorType>& input,
     //
     //          dot(u, up) = sin(theta)          -- 0 flat, 0.5 at 30 degrees, 0.707 at the 45 cap
     //
-    // `v = cross(n, u)` is horizontal and IS perpendicular to both; `u` is not. Task 57 had to
+    // `v = cross(n, u)` is horizontal, and IS perpendicular to both, only when `n` leans toward
+    // +-Z (flat ground and every +-Z face): `u` is built from `kForward`, so a normal with a
+    // sideways (X) part tilts `v` too (dot(v, up) = 0.5 on a 30 degree face rising along X), and
+    // `decomposeVelocity` solves the full 3x3 there (og-ground-aligned-attacks task 30). On a
+    // +-Z face `u` is the one that is not perpendicular. Task 57 had to
     // add a DUAL-BASIS decomposition (`decomposeVelocity`) because plain dot products against
     // this frame double-count, and the two halves of that were live defects: a fall leaked into
     // the tangential channel and DIVERGED to 1.5e3 m/s on a slope landing, and a walk leaked
@@ -435,8 +439,9 @@ void visualize(const Input<RendererFunctorType>& input,
     // ⚠ TWO ASSUMPTIONS, STATED SO A READER CAN SEE WHEN TO DISTRUST THE NUMBER:
     //   1. the contact is on the probe's lower HEMISPHERE. A graze on the cylinder wall or a
     //      ledge lip is not, and this reads high or low by the difference.
-    //   2. `n` is the surface the probe actually hit. True while `Supported`; on a blocked but
-    //      NON-walkable tick `derivedState.surfaceNormal` is the `up` fallback, so the
+    //   2. the normal used (`contactN` below, since task 33) is the surface the probe actually
+    //      hit. True on every walkable tick; on a blocked but NON-walkable tick
+    //      `derivedState.contactNormal` is the `up` fallback, so the
     //      correction term evaluates to zero against a face that is not flat.
     //   In both cases the servo is off or the classification is `Unsupported` anyway, so the
     //   error marker is decorative there rather than load-bearing. ⭐ The clean fix is a
@@ -446,8 +451,17 @@ void visualize(const Input<RendererFunctorType>& input,
     // ⭐ AND WHEN THE SWEEP FOUND NOTHING, THERE IS NOTHING TO RECONSTRUCT: step 2 uses
     // `probeLength` itself as the clearance in that case, so this branch is EXACT, not a
     // fallback estimate.
+    //
+    // ⭐ [og-ground-aligned-attacks task 33] THE CONTACT NORMAL, NOT THE FRAME. The derivation
+    // above needs the direction from the impact point to the probe's hemisphere centre, which
+    // is the sweep's own (GJK) normal. `derivedState.contactNormal` is exactly that when the
+    // hit was walkable and `up` otherwise. Under the Legacy support law it equals `n` except on
+    // a detached tick on a slope (where the frame falls back to `up`); under SupportLaw::V2 the
+    // frame `n` is the exact face, the centre probe's face or `up` (a Lip), none of which is the
+    // contact direction at a rim. The rays above and below keep drawing `n`, the frame.
+    const glm::vec3 contactN = derivedState.contactNormal;
     const glm::vec3 probeTipAtContact =
-        derivedState.lastProbePoint + (radius - brawlerMovementSimulation::kProbeShrink) * (n - up);
+        derivedState.lastProbePoint + (radius - brawlerMovementSimulation::kProbeShrink) * (contactN - up);
     const float clearance = probeReported
         ? glm::dot(bodyBottom - probeTipAtContact, up)
         : probeLength;

@@ -6,6 +6,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "OGSimulation/SpatialQueryResult.h"
@@ -62,14 +63,11 @@ inline bool projectileGuardBlocks(const glm::mat4& guardTransform, const glm::ve
 
 	const glm::vec3 guardUp = surfaceFrame::surfaceUpOf(guardTransform);
 	glm::vec3 incoming = -spawnDir;
-	// ⛔G-09  docs/BrawlerProjectileHitDetection-guards.md
-	if (!surfaceFrame::isFlat(guardUp))
-	{
-		incoming -= guardUp * glm::dot(incoming, guardUp);
-		if (glm::dot(incoming, incoming) <= 0.f)
-			return false;
-		incoming = glm::normalize(incoming);
-	}
+	incoming -= guardUp * glm::dot(incoming, guardUp);
+	// ⛔G-12  docs/BrawlerProjectileHitDetection-guards.md
+	if (glm::dot(incoming, incoming) <= 0.f)
+		return false;
+	incoming = glm::normalize(incoming);
 	const float d     = glm::clamp(glm::dot(guardForward, incoming), -1.f, 1.f);
 	const float angle = glm::acos(d);
 	return angle <= guardMiddleSectionHalfAngle;
@@ -80,6 +78,20 @@ inline float elapsedSecondsFromSpawn(const brawlerProjectileSimulation::Projecti
 {
 	// ⛔G-08  docs/BrawlerProjectileHitDetection-guards.md
 	return tick < slot.spawnTick ? 0.f : brawlerProjectileSimulation::elapsedSecondsAt(slot, deltaSeconds, tick);
+}
+
+// ∴D-03  docs/BrawlerProjectileHitDetection-rationale.md
+inline std::optional<SpatialQueryHit> guardEntryOf(const SpatialQueryReport& report, const SpatialQueryHit& first)
+{
+	if (first.objectCategories.contains(collisionCategory::projectile))
+		return std::nullopt;
+	for (const SpatialQueryHit& entry : report)
+	{
+		// ⛔G-11  docs/BrawlerProjectileHitDetection-guards.md
+		if (entry.rootBodyId == first.rootBodyId && entry.objectCategories.contains(collisionCategory::guard))
+			return entry;
+	}
+	return std::nullopt;
 }
 
 // ∴D-02  docs/BrawlerProjectileHitDetection-rationale.md
@@ -105,8 +117,9 @@ void detectProjectileHits(float deltaSeconds, std::uint32_t tick,
 	};
 	struct Contact
 	{
-		SlotRef         at;
-		SpatialQueryHit first;
+		SlotRef                        at;
+		SpatialQueryHit                first;
+		std::optional<SpatialQueryHit> guard;
 	};
 	std::vector<SlotRef> inFlight;
 	std::vector<Contact> contacts;
@@ -138,8 +151,8 @@ void detectProjectileHits(float deltaSeconds, std::uint32_t tick,
 			{
 				if (hit.bodyId == bindings.parentBodyId)
 					continue;
-				contacts.push_back({ { s, i }, hit });
-				// ⛔G-03  docs/BrawlerProjectileHitDetection-guards.md
+				contacts.push_back({ { s, i }, hit, guardEntryOf(report, hit) });
+				// ⛔G-10  docs/BrawlerProjectileHitDetection-guards.md
 				break;
 			}
 		}
@@ -174,9 +187,9 @@ void detectProjectileHits(float deltaSeconds, std::uint32_t tick,
 		const ProjectileSlot& slot = shooters[contact.at.shooter].state->slots[contact.at.slot];
 		bool blocked = false;
 		glm::vec3 targetRootPosition(0.f);
-		if (hit.objectCategories.contains(collisionCategory::guard))
+		if (contact.guard.has_value())
 		{
-			const glm::mat4 guardTransform = physics.getBodyTransform(hit.bodyId);
+			const glm::mat4 guardTransform = physics.getBodyTransform(contact.guard->bodyId);
 			targetRootPosition = glm::vec3(guardTransform[3]);
 			detection.guardUp = surfaceFrame::surfaceUpOf(guardTransform);
 			// ⛔G-06  docs/BrawlerProjectileHitDetection-guards.md

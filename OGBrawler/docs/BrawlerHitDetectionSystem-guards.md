@@ -118,7 +118,9 @@ of it. Pinned before `integrate` by
 
 ## G-02 — The projection onto the swing plane uses the SIGNED axial distance
 
-**Tag site:** `BrawlerHitDetectionSystem.h`, on `const float signedDistanceAlongRotationAxis = glm::dot(...)`.
+**Tag site:** `BrawlerHitDetectionSystem.h`, on `const float z = glm::dot(d, axis);` in `capsuleOverlapsAttackBand`
+(since og-ground-aligned-attacks task 20; before it, on `const float signedDistanceAlongRotationAxis = glm::dot(...)` in
+`detectRadialHits`).
 
 **The fence, verbatim:**
 
@@ -141,11 +143,22 @@ of it. Pinned before `integrate` by
 **Still pinned** by `DAttackRadial.MirroredHitsAreTheSameDistanceFromTheSwingAxis`, which since
 task 9 drives this header's `detectRadialHits` after the radial's `integrate`.
 
+⚠ **R0, og-ground-aligned-attacks task 20 (2026-11-03): the site moved.** The radius gate this fence
+protects is no longer computed in `detectRadialHits`. `capsuleOverlapsAttackBand` measures each sample
+point `q` of the target's capsule segment against the band, and its `z` is the signed axial distance
+the fence asks for: `rho = glm::length(d - z * axis)` is the on-plane distance that gates both ends of
+the annulus, so `z` is the line this edit would be typed on. The mirrored-hits case still pins it: it
+now hands the detector a point capsule (radius 1e-6 m, no segment), so the band test reduces to the old
+point test and the bisection still reads the on-plane distance (minus 1e-6 m). The signed dot that
+stayed in `detectRadialHits` feeds only the centre's on-plane direction, and is G-19.
+
 ---
 
 ## G-03 — `glm::abs`, never unqualified `abs`, and the magnitude feeds the half-thickness gate only
 
-**Tag site:** `BrawlerHitDetectionSystem.h`, on `const float lengthAlongRotationAxis = glm::abs(...)`.
+**Tag site:** `BrawlerHitDetectionSystem.h`, on `const float dZ = glm::max(glm::abs(z) - halfThickness, 0.f);` in
+`capsuleOverlapsAttackBand` (since og-ground-aligned-attacks task 20; before it, on
+`const float lengthAlongRotationAxis = glm::abs(...)` in `detectRadialHits`).
 
 **The fence, verbatim:**
 
@@ -178,6 +191,14 @@ task 9 drives this header's `detectRadialHits` after the radial's `integrate`.
 whose include set is much richer than the radial header's (it includes `SimulatableBrawler.h`).
 `DAttackAbsQualificationTest.cpp` says so at its include of this header. The prohibition is
 unchanged and the qualified call makes the include set irrelevant.
+
+⚠ **R0, og-ground-aligned-attacks task 20 (2026-11-03): the site moved.** `lengthAlongRotationAxis` is
+gone. The half-thickness gate is now `dZ`, the distance from a sample point's `|z|` to the band's
+half thickness, in `capsuleOverlapsAttackBand`, and the `glm::abs` moved with it. "The half-thickness
+gate below" is now that line, and its magnitude still feeds nothing else: the projection uses the signed
+`z` (G-02). `DAttackAbs.RadialAxisDistanceKeepsItsFraction` and
+`DAttackRadial.SwingPlaneHalfThicknessGateStaysUnsigned` still pin it: both now hand the detector a
+point capsule (radius 1e-6 m, no segment), so their millimetre margins are unchanged.
 
 ---
 
@@ -245,6 +266,12 @@ sequence 1 mirrors it (w > 0). The sequence axis, `simFrame::kTurnAxis`, became 
 `cross(axis, r)` and `w` both changed sign and the direction of travel did not:
 `DAttackRadial.SwingTangentFollowsTheSwingDirection` checks the same world tangents as before.
 
+⚠ **R0, og-ground-aligned-attacks task 20 (2026-11-03).** "The annulus test" is now
+`capsuleOverlapsAttackBand`, which tests the target's capsule segment, not the hit point. The tangent
+is still taken from the hit's own `objectPosition` (the capsule centre), projected the way the report
+loop projects it for the segment pick (G-19), so it is the direction of travel at the centre's radius,
+which since task 20 may lie inside the inner radius or beyond the outer one.
+
 ---
 
 ## G-06 — A hit on the rotation axis gets the ZERO tangent, never `normalize()`'s NaN
@@ -262,6 +289,12 @@ sequence 1 mirrors it (w > 0). The sequence axis, `simFrame::kTurnAxis`, became 
 
 **What breaks if the edit is made.** `DAttackHit::swingTangent`'s declaration promises the field
 is never a NaN, and its one reader (routing branch 2) relies on that promise.
+
+⚠ **R0, og-ground-aligned-attacks task 20 (2026-11-03).** The report loop now skips every hit whose
+centre has no on-plane direction (G-20), and its projection is the same expression as this lambda's on
+the same `objectPosition`, so a registered hit no longer reaches this branch [derived from the two
+expressions; not run]. The branch stays as the tangent's own defence: it is the only guard here if
+the loop's gate or projection ever changes.
 
 ⚠ **R0, 2026-09-23, read from `BrawlerHitRoutingSystem.h`.** Routing would survive a NaN today,
 because of how its comparison is written, and the fence is what keeps that comparison's direction
@@ -532,6 +565,66 @@ would go RED, because its peer B registers the target first (derived, not run). 
 that the key fits in the 1-byte id.
 
 **Score (§9.1):** substitution on the tagged token → `yes`.
+
+---
+
+## G-19 — The centre's on-plane direction is projected with the SIGNED axial distance too
+
+**Tag site:** `BrawlerHitDetectionSystem.h`, on `const float signedDistanceAlongRotationAxis = glm::dot(...)` in
+`detectRadialHits` (og-ground-aligned-attacks task 20; this was G-02's site until then).
+
+**The prohibition.** `hitDirectionOnRotationPlane` removes the centre's axial component with the
+signed dot. ⛔ Do not take `glm::abs` of it, and do not reuse a magnitude from the band test here. The
+same mistake G-02 records for the radius gate applies to the direction: for a centre below the swing
+plane, `hitDirection - |z| * axis` doubles the axial component instead of removing it.
+
+**What breaks if the edit is made.** The direction keeps an axial part for every centre below the
+plane. `glm::normalize` then gives a vector out of the swing plane, `getAttackSegment` reads a skewed
+angle, and a below-plane target can be matched to the wrong segment: missed while the swing is over
+it, or hit by a segment that has not reached it. The band test itself is unaffected (it has its own
+signed `z`, G-02) [derived; not run].
+
+⚠ **Not pinned by a test since task 20.** The tests that pinned the signed projection
+(`DAttackRadial.MirroredHitsAreTheSameDistanceFromTheSwingAxis` and its neighbours) use a sequence
+whose one segment spans more than a full turn, so every direction picks the same segment and this
+line cannot change their outcome. They pin G-02.
+
+**Score (§9.1):** substitution on the tagged token → `yes`.
+
+---
+
+## G-20 — A centre with no on-plane direction is NOT a hit
+
+**Tag site:** `BrawlerHitDetectionSystem.h`, on `if (glm::dot(hitDirectionOnRotationPlane, hitDirectionOnRotationPlane) <= 0.f) continue;`
+in `detectRadialHits`, after the band test and before `glm::normalize`.
+
+**The prohibition.** A report hit whose centre lies on the swing axis is skipped. ⛔ Do not remove the
+gate, do not move it after the `glm::normalize`, and do not replace it with a fallback direction.
+The segment pick needs a direction in the swing plane, and a centre on the axis has none, so there
+is no segment it can belong to.
+
+**Why it is reachable now.** Until og-ground-aligned-attacks task 20 the gate was the point test's
+`hitDistance > innerRadius`, which kept every registered centre at least 0.9 m off the axis. The
+capsule test admits a capsule whose segment overlaps the band while its centre sits on the axis. With
+the shipped values (inner radius 0.9 m, half thickness 0.35 m, capsule radius 0.42 m, segment half
+length h = 0.54 m) that needs the overhead's horizontal axis. A sample `s` above or below a centre on
+the axis is `|s| sin θ` from it, for an axis θ from vertical:
+- a vertical axis (θ = 0) keeps every sample on it, 0.9 m inside the inner radius;
+- a side swing on the 30° slope (θ = 30°) reaches 0.27 m from it, 0.63 m from the band;
+- the overhead (θ = 90°) reaches 0.54 m, 0.36 m from the band, which is less than 0.42 m. Its centre's
+  axial distance must then be under 0.35 + sqrt(0.42² − 0.36²) = 0.566 m, so the target overlaps the
+  attacker's own body. The case is degenerate, but reachable.
+
+**What breaks if the edit is made.** `glm::normalize` of the zero vector is a NaN direction, which
+`getAttackSegment` reads as an angle. Pinned by `BrawlerAttackBand: a centre on the swing axis is no
+hit and makes no NaN` in `BrawlerAttackBandTest.cpp`: an overhead swing with the target's centre on
+its axis, whose capsule the band test admits. Measured by poison (task 20, the gate deleted, the test
+target rebuilt and run, restored): the NaN direction matched the swing's current segment, so the
+detector registered the hit on all 10 arms (5 points along the axis, guard down and up: `1 == 0`, and
+with the guard up it was not blocked either). The hit's tangent stayed finite only because
+`swingTangentAt` returns zero for the same centre (G-06).
+
+**Score (§9.1):** deletion of the tagged statement → `yes`.
 
 ---
 

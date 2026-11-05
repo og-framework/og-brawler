@@ -18,7 +18,7 @@ const std::vector<ControlModeEntry>& controlModeEntries()
 		{ &gameMapping::BlockLook, ControlModeKind::CameraLook, kSchemeUnusedByThisKind,
 			"Camera look", "Camera look (solo camera)",
 			{
-				"OFF: the camera holds still and the mouse cursor aims.",
+				"OFF: the camera returns to its default angle; the cursor aims.",
 			},
 			{
 				"ON: the cursor hides; mouse and aim stick turn the camera.",

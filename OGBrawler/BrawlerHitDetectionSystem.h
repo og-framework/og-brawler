@@ -40,10 +40,63 @@ OGSIM_OPTIMIZE_OFF
 namespace brawlerHitDetection
 {
 
+struct TargetCapsule
+{
+	float radius;
+	float halfHeight;
+};
+
+inline constexpr int kCapsuleBandSamples = 17;
+static_assert(kCapsuleBandSamples % 2 == 1 && kCapsuleBandSamples >= 3,
+	"brawlerHitDetection::kCapsuleBandSamples must be odd and at least 3: the middle sample is the capsule centre "
+	"(every hit of the pre-task-20 point test stays a hit) and the first and last are the segment's endpoints. "
+	"Replaces a guard entry for the sample-count rule (og-ground-aligned-attacks task 20).");
+
+constexpr float capsuleBandSampleFraction(int k)
+{
+	return static_cast<float>(2 * k) / static_cast<float>(kCapsuleBandSamples - 1) - 1.f;
+}
+static_assert(capsuleBandSampleFraction(kCapsuleBandSamples / 2) == 0.f
+		&& capsuleBandSampleFraction(0) == -1.f
+		&& capsuleBandSampleFraction(kCapsuleBandSamples - 1) == 1.f,
+	"brawlerHitDetection::capsuleBandSampleFraction must put the middle sample exactly on the capsule centre and the "
+	"first and last exactly on the segment's endpoints. Replaces a guard entry for the centre-sample rule "
+	"(og-ground-aligned-attacks task 20).");
+
+// ∴D-07  docs/BrawlerHitDetectionSystem-rationale.md
+inline bool capsuleOverlapsAttackBand(const glm::vec3& pivot, const glm::vec3& axis, const DAttackCircle& circle,
+	const glm::vec3& centre, const TargetCapsule& capsule)
+{
+	const float h = capsule.halfHeight - capsule.radius;
+	OG_CHECK(h >= 0.f,
+		"brawlerHitDetection::capsuleOverlapsAttackBand - the capsule's halfHeight is smaller than its radius. "
+		"halfHeight is the TOTAL half height including the caps (the CapsuleGeometry convention).");
+	const float innerRadius = circle.getInnerRadius();
+	const float outerRadius = circle.getOuterRadius();
+	const float halfThickness = circle.getHalfThickness();
+	const float radiusSquared = capsule.radius * capsule.radius;
+	for (int k = 0; k < kCapsuleBandSamples; ++k)
+	{
+		const float s = h * capsuleBandSampleFraction(k);
+		const glm::vec3 q = simFrame::withHeight(centre, simFrame::height(centre) + s);
+		const glm::vec3 d = q - pivot;
+		// ⛔G-02  docs/BrawlerHitDetectionSystem-guards.md
+		const float z = glm::dot(d, axis);
+		const float rho = glm::length(d - z * axis);
+		const float dRho = glm::max(glm::max(innerRadius - rho, rho - outerRadius), 0.f);
+		// ⛔G-03  docs/BrawlerHitDetectionSystem-guards.md
+		const float dZ = glm::max(glm::abs(z) - halfThickness, 0.f);
+		if (dRho * dRho + dZ * dZ < radiusSquared)
+			return true;
+	}
+	return false;
+}
+
 // ∴D-01  docs/BrawlerHitDetectionSystem-rationale.md
 template <typename PhysicsReaderType, typename SpatialQueryAdapterType, typename TargetIdResolverType>
 void detectRadialHits(float deltaSeconds,
 	const dAttackRadialSimulation::StaticData& staticData,
+	const TargetCapsule& targetCapsule,
 	const dAttackRadialSimulation::InitialConditions& initialConditions,
 	const dAttackRadialSimulation::State& state,
 	const dAttackRadialSimulation::RuntimeBindings& bindings,
@@ -123,19 +176,16 @@ void detectRadialHits(float deltaSeconds,
 
 		const glm::vec3 hitDirection = hit.objectPosition - rootTranslation;
 
-		// ⛔G-02  docs/BrawlerHitDetectionSystem-guards.md
+		// ⛔G-19  docs/BrawlerHitDetectionSystem-guards.md
 		const float signedDistanceAlongRotationAxis = glm::dot(hitDirection, worldSequenceRotationAxis);
-
-		// ⛔G-03  docs/BrawlerHitDetectionSystem-guards.md
-		const float lengthAlongRotationAxis = glm::abs(signedDistanceAlongRotationAxis);
 		const glm::vec3 hitDirectionOnRotationPlane = hitDirection - signedDistanceAlongRotationAxis * worldSequenceRotationAxis;
-		const float hitDistance = glm::length(hitDirectionOnRotationPlane);
 
-		const bool hitIsInCircle = hitDistance > staticData.getAttackCircle().getInnerRadius() &&
-			hitDistance < staticData.getAttackCircle().getOuterRadius() &&
-			lengthAlongRotationAxis < staticData.getAttackCircle().getHalfThickness();
+		if (!capsuleOverlapsAttackBand(rootTranslation, worldSequenceRotationAxis, staticData.getAttackCircle(),
+				hit.objectPosition, targetCapsule))
+			continue;
 
-		if (!hitIsInCircle)
+		// ⛔G-20  docs/BrawlerHitDetectionSystem-guards.md
+		if (glm::dot(hitDirectionOnRotationPlane, hitDirectionOnRotationPlane) <= 0.f)
 			continue;
 
 		const glm::vec3 normalizedHitDirection = glm::normalize(hitDirectionOnRotationPlane);
@@ -262,6 +312,7 @@ void detectRadialHits(float deltaSeconds,
 	const auto& state = allState.getState();
 	detectRadialHits(deltaSeconds,
 		staticData.m_attackSimulationStaticData,
+		TargetCapsule{ staticData.m_movementStaticData.capsuleRadius, staticData.m_movementStaticData.capsuleHalfHeight },
 		state.get<dAttackRadialSimulation::InitialConditions>(),
 		state.get<dAttackRadialSimulation::State>(),
 		attacker.getPhysicsComposite().get<dAttackRadialSimulation::PhysicsDeclaration>().bindings,

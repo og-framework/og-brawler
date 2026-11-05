@@ -1054,7 +1054,7 @@ aim rotation axis (the second bullet).
       (`DAttackVisualizationUtils.h`, the user's ruling of the same day, "Keep 3c's flat test"): folding it
       sends a vertical aim on flat ground through a `normalize` of zero, and vertical-aim display safety
       is task 38. The movement's three flat sites go with the support law (tasks 33, 34 and 37), and the
-      projectile guard test's (`BrawlerProjectileHitDetection-guards.md` G-09) goes at task 20b.
+      projectile guard test's (`BrawlerProjectileHitDetection-guards.md` G-09) went at task 20b (OQ17 (b); G-09 retired).
     * **The Hadouken launch** has no branch in this file. Both tilt helpers return their argument
       unchanged for a flat `n` (`SurfaceFrame-guards.md` G-01), so with `n = kUp` its aim read, its fallback
       and its spawn sum are still the same operations in the same order as before task 5.

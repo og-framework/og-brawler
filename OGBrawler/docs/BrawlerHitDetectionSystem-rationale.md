@@ -363,3 +363,75 @@ whose up is `simFrame::kUp`, and `surfaceFrame::tiltToSurface` carries the resul
 returns `simFrame::kForward`) and the swing tangent (`swingTangentAt`, a cross product with the world
 sequence axis, signed by the authored angular velocity) are frame-covariant formula code and need no
 edit.
+
+---
+
+## 11. A melee swing hits when the band overlaps the target's capsule (og-ground-aligned-attacks task 20) ∴D-07
+
+**The request.** The user, 2026-10-31: "If the radial attack overlaps the capsule, it should hit", at
+creases and on same-normal ground at different heights. Until task 20 the detector tested ONE POINT
+against the attack band: the report hit's `objectPosition`, which is the target root's position, the
+centre of its movement capsule (Jolt's query adapter reports the root body's position for every slot
+hit). The band is the solid of revolution about the swing axis through the attacker's radial body
+(its root plus 0.3 m world up): inner radius 0.9 m < ρ < outer radius 3.0 m, |z| < half thickness
+0.35 m. So a side swing on level ground reached a target only when the target's root was between
+−0.05 m and +0.65 m relative to the attacker's root. A target one step up or down, or standing on the
+other face of a crease, was missed while the weapon plainly passed through its capsule.
+
+**The query does not change.** The radial's overlap runs its last volume, a 6 m sphere
+(`outerRadius * 2.f`), with the `bodyAndGuard` mask; the movement capsule's `character` category is
+fenced out of that mask by a `static_assert` in `CollisionCategoryConstants.h`. So each target in reach
+reports its radial weapon sphere (`body`, 0.3 m) and, while the guard is up, its guard sphere
+(`guard`, 0.4 m), both centred 0.3 m above its root and both carrying the same `objectPosition`. The
+capsule is tested analytically from that position.
+
+**The test, `capsuleOverlapsAttackBand`.** For the target capsule's segment (world up through the centre,
+half length `h = halfHeight - radius`; the root is rotation-locked, so the capsule stays upright) it
+takes `kCapsuleBandSamples` = 17 points `q`, at `s = h * capsuleBandSampleFraction(k)` from the centre,
+and for each the exact distance from `q` to the band's cross-section rectangle in (ρ, z):
+`dRho = max(max(inner − ρ, ρ − outer), 0)`, `dZ = max(|z| − halfThickness, 0)`. It returns true at the
+first sample with `dRho² + dZ² < radius²`.
+- Every true return is a real overlap: the band is a solid of revolution about the axis, so the
+  distance from `q` to the band is the distance from (ρ, z) to the rectangle.
+- The only error is between samples. The segment's distance to the band can dip below the samples'
+  between two of them by at most the spacing's half, so a miss is at most `h / (N − 1)` = 0.034 m. It
+  happens only when the segment is tilted against the band: a slope swing, or the overhead's vertical
+  plane.
+- An upright capsule against a world-horizontal swing (every side swing on flat ground) is exact. ρ is
+  constant along the segment, so `dRho` is too, and z is linear in s. `dZ` is 0 on the part of the
+  segment inside the band's thickness and grows away from it. That part either contains an endpoint
+  (a sample), or lies inside the segment and is 0.7 m long, more than the 0.0675 m sample spacing, so
+  it holds a sample too. If no point of the segment is inside, the smallest `dZ` is at an endpoint.
+- Sample `(N − 1) / 2` is exactly the centre (`capsuleBandSampleFraction` gives 0 there; a
+  `static_assert` pins it, and the endpoints at ∓1), and `h * 0 + height = height`. A centre that passes
+  the old three comparisons gives `dRho = dZ = 0 < radius²`, so **every hit of the point test is still a
+  hit**. `BrawlerAttackBand: every centre the point test admits is admitted` checks it on a grid.
+
+On a flat side swing the reach becomes: relative height of the target's root in (−1.01, +1.61) m
+(pivot 0.3 m, half thickness 0.35 m plus radius 0.42 m plus h 0.54 m either way), and the centre's
+on-plane distance in (0.48, 3.42) m.
+
+**Broadphase sufficiency.** A capsule that overlaps the band has a point within
+`sqrt(outer² + halfThickness²)` = 3.020 m of the pivot, so its centre is within 3.020 + 0.42 + 0.54 m and
+its weapon sphere's centre within 0.3 m more: 4.28 m. The query reports the weapon sphere when its
+centre is within 6 m + 0.3 m. So the report holds every target the band test can admit, with 2 m to
+spare; the band test needs no wider query. `BrawlerAttackBandTest.cpp` checks the inequality on the
+shipped values.
+
+**What stays.** The centre's on-plane direction still picks the segment (`hitDirectionOnRotationPlane`,
+signed, G-19); the new zero gate (G-20) skips a centre with none, which the old inner-radius gate made
+unreachable. The hit position, `swingTangentAt`, `wouldGuardBlock`, the markers and the per-root
+grouping are unchanged. Full-body guarding is the old rule and stays: a root's guard entry (present iff
+the guard is up) decides through `wouldGuardBlock` with that root's `objectPosition`. Both of a root's
+entries carry the same centre, so they get the same band answer and no lookup is needed.
+
+**The capsule.** `TargetCapsule` holds `radius` and `halfHeight`, where `halfHeight` is the TOTAL half
+height including the caps (the CapsuleGeometry convention; Jolt builds its cylinder from
+`halfHeight - radius`). The per-character overload builds it from the attacker's
+`m_movementStaticData`: every brawler shares one StaticData, so the attacker's copy describes every
+target. The slice overload takes it as an argument, after the radial StaticData. The rigs that test
+other properties of the old point test (the `glm::abs` and signed-projection cases) pass a point capsule
+(radius 1e-6 m, `halfHeight` equal to it, so h = 0) and keep their margins.
+
+**Wire.** The layout did not move, but two builds disagree on which swings hit, so the correction
+version went 12 → 13 (`c13.r3.b3`).

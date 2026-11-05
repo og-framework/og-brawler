@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- lint-external-ref: GroundAlignedProjectileBlock.FlatGuardReproducesTodaysOutcomeAndMarkerBits -- RETIRED case name: og-ground-aligned-attacks task 20b re-stated that case as FlatGuardBlocksInItsPlaneAndKeepsTodaysMarkerBits; it is named only in retired G-09's poison record, kept as it stood. It must NOT resolve -->
 # `BrawlerProjectileHitDetection.h` — guards
 
 Every prohibition for the projectile hit detector. Each entry has an **opaque, stable id**; in the
@@ -75,29 +76,6 @@ longer turns the NoSlot case RED (re-measured).
 
 ---
 
-## G-03 — The FIRST non-parent entry of the report decides the slot, preserved as-is
-
-**Tag site:** `BrawlerProjectileHitDetection.h`, on the `break;` after `contacts.push_back(...)`.
-
-**The fence, verbatim** (the loop header it closed, and the filter above it):
-
-<!-- BrawlerProjectileSimulation.h lines 463-463 at feee368 -->
-```
-        // Overlap query at the derived position — find first non-parent hit.
-```
-
-**The prohibition.** ⛔ Do not delete the `break` and do not make the pass pick a "best" entry.
-A report can list the target's guard and its body; whichever comes first decides between a
-block and a hit, exactly as it did inside `integrate`. It is a quirk, and task 17 moved it
-unchanged: a move that also changed behaviour could not be verified as a move.
-
-**What breaks if the edit is made.** Every later entry also becomes a contact for the same slot,
-and the last one processed wins, so a guard listed before the body stops blocking. Measured by
-poison (task 17): `HitDetection.Projectile.TheTickAfterTheStunExitBlocksInBothOrders` and the
-two re-homed projectile-block cases in `BrawlerHitDetectionBehaviourTest.cpp` go RED.
-
----
-
 ## G-04 — A cancel ends BOTH slots of the pair
 
 **Tag site:** `BrawlerProjectileHitDetection.h`, on the `if` that marks the in-flight slot whose
@@ -145,7 +123,7 @@ report also names the target" half.
 classification loop.
 
 **The prohibition.** ⛔ Do not delete this skip. A slot the pair cancelled may still have a
-character as its OWN first entry (G-03); classifying it would overwrite the cancel with a hit or
+character as its OWN first entry (G-10); classifying it would overwrite the cancel with a hit or
 a block, and route it, in the same pass.
 
 **What breaks if the edit is made.** Measured by poison (task 17): the partner's cancel is
@@ -169,11 +147,15 @@ section, silently, in a task that was meant to change only where detection runs.
 poison (task 17): widening the angle to four times the middle section turns
 `BrawlerProjectile.DamageOnGuardSide` (a guard pi/4 off the shot) from a hit into a block.
 
-**The guard's-plane branch is the projectile's own too** (og-ground-aligned-attacks task 8). Since that
-task `projectileGuardBlocks` projects the incoming direction onto the guard's plane when the guard's up
-is not flat (`BrawlerProjectileHitDetection-rationale.md` §1), and both branches end in the same clamp,
-`glm::acos` and half-angle test. This prohibition covers both: neither branch is replaced by
-`wouldGuardBlock`, and the half-angle argument stays.
+**The guard's-plane projection is the projectile's own too** (og-ground-aligned-attacks tasks 8 and
+20b). Since task 8 `projectileGuardBlocks` projects the incoming direction onto the guard's plane, and
+since task 20b (OQ17 (b)) it does so for every guard, a flat one included
+(`BrawlerProjectileHitDetection-rationale.md` §1); the clamp, `glm::acos` and half-angle test follow the
+projection. This prohibition covers the projection too: it is not replaced by `wouldGuardBlock`, and the
+half-angle argument stays. Re-measured at task 20b with the same poison (four times the middle section):
+`BrawlerProjectile.DamageOnGuardSide` goes from a hit to a block, `REQUIRE( state.slots[0].endReason == 2u )`
+with expansion `4 == 2`. Task 20b turned that case's shot pi/4 to the guard's side in the horizontal plane:
+its old shot was pitched pi/4, and since OQ17 (b) a facing guard blocks a pitched shot.
 
 ---
 
@@ -214,25 +196,107 @@ still sample the same closed-form point (∴D-02).
 
 ---
 
-## G-09 — A flat guard keeps the 3-D angle; the projection runs only off flat
+## G-10 — One contact per slot: the FIRST non-parent entry, with the struck character's guard entry
 
-**Tag site:** `BrawlerProjectileHitDetection.h`, on `if (!surfaceFrame::isFlat(guardUp))` in
-`projectileGuardBlocks`.
+**Tag site:** `BrawlerProjectileHitDetection.h`, on the `break;` after
+`contacts.push_back({ { s, i }, hit, guardEntryOf(report, hit) });` in the first loop.
 
-**The prohibition.** ⛔ Do not drop this gate so that every guard projects the incoming direction,
-and do not move the flat case into the projection. The flat rule of og-ground-aligned-attacks: a flat
-normal runs the pre-initiative expressions verbatim, the 3-D angle between the guard's forward and
-`-spawnDir`. Projecting on flat ground too is a gameplay change that needs its own user ruling.
+**The prohibition.** ⛔ Do not delete the `break`, and do not make the pass keep a contact per entry or
+pick a "best" entry. A slot has one contact, the first non-parent entry of its report: it says which
+character the shot struck, or which projectile cancels it, and the cancel pass (G-04, G-05) reads only
+that. Whether the struck character blocks is not that entry's category. The contact carries the same
+report's guard entry for that character (`guardEntryOf`, ∴D-03), and the classification reads only that.
+This replaces G-03 (retired, §R), whose rule was that the first entry's category decided.
 
-**What breaks if the edit is made.** Pitched shots into a flat guard change outcome: a shot outside
-the middle section only by its pitch becomes a block. No shot was pitched while the initiative's
-compile-time knob was off (until the flip, task 10; task 14 retired the knob), but since the flip every
-shot launched along a slope is. Measured by poison (task 8, `if (true || !surfaceFrame::isFlat(guardUp))`):
-`GroundAlignedProjectileBlock.FlatGuardReproducesTodaysOutcomeAndMarkerBits` goes RED,
-`outcomeMismatches == 0` with expansion `504 == 0`, every one of its 504 shots pitched ±0.3 rad.
+**What breaks if the edit is made.** Every later entry also becomes a contact for the same slot, and
+the last one processed writes the outcome. A projectile listed after the target cancels a shot that
+struck the target, and another character's guard listed after the target blocks it in that character's
+name. Measured by poison (task 20b, the `break` deleted):
+`HitDetection.Projectile.AProjectileListedAfterTheTargetDoesNotCancel` goes RED (`3 == 2` and `3 == 4`:
+both shots cancelled), and `HitDetection.Projectile.NoGuardEntryOfTheStruckCharacterIsAHit` goes RED
+(`4 == 2`, struck root `7 == 4`: the other character's guard blocked the shot). G-03's task-17 pin,
+`HitDetection.Projectile.TheTickAfterTheStunExitBlocksInBothOrders`, stays green under this poison since
+task 20b: its report lists the guard, then the body, and either contact blocks.
+
+---
+
+## G-11 — The guard entry is the STRUCK character's: match the root
+
+**Tag site:** `BrawlerProjectileHitDetection.h`, in `guardEntryOf`, on the `if` that tests
+`entry.rootBodyId == first.rootBodyId` together with the `guard` category.
+
+**The prohibition.** ⛔ Do not drop the root test, and do not take the report's first guard entry
+whoever owns it. A report can name more than one character, and only the guard of the character the
+first entry names may block the shot.
+
+**What breaks if the edit is made.** A shot that struck one character is blocked by a neighbour's
+facing guard listed later in the same report. The slot still names the struck character
+(`struckRootBodyId` is the first entry's root), so it ends `BlockedByGuard` against a character whose
+own guard played no part. Measured by poison (task 20b, the root test removed):
+`HitDetection.Projectile.NoGuardEntryOfTheStruckCharacterIsAHit` goes RED on the
+`[body, otherGuard]` report, `CHECK( r.outcome == SlotOutcome::Hit )` with expansion `4 == 2`.
+
+---
+
+## G-12 — A zero projection is NOT blocked: keep the explicit return
+
+**Tag site:** `BrawlerProjectileHitDetection.h`, in `projectileGuardBlocks`, on
+`if (glm::dot(incoming, incoming) <= 0.f)` (`return false;`) after the projection.
+
+**The prohibition.** ⛔ Do not delete this return on the ground that the angle test says "not
+blocked" for a degenerate shot anyway. A shot along the guard's up projects to the zero vector, and
+`glm::normalize` of it is not a direction; what the clamp, `glm::acos` and the comparison then make of
+it is the compiler's floating-point model, not a rule.
+
+**What breaks if the edit is made.** Measured by poison (task 20b, the return deleted):
+`GroundAlignedProjectileBlock.AShotAlongAFlatGuardsUpIsAHitNotANaN` goes RED. Its
+`projectileGuardBlocks(guard, ±guardUp, pi)` returns `true` for both signs (`CHECK_FALSE( predicate )`
+fails, `predicateAtHalfAnglePi=1`): the degenerate shot came out blocked. With the shipped half angle
+(0.25 rad) the same shot still came out a hit in that build, so the outcome rested on the compiler.
+Since task 20b every guard runs the projection, so a vertical shot onto a flat guard reaches this
+return; before it only a tilted guard could, and task 8 measured the deletion inert there.
 
 ---
 
 ## §R — Retired ids
 
-*(None.)*
+### G-03 — RETIRED by og-ground-aligned-attacks task 20b (2026-11-03)
+
+**Was:** "The FIRST non-parent entry of the report decides the slot, preserved as-is", on the `break;`
+after `contacts.push_back(...)`. The prohibition: do not delete the `break` and do not make the pass
+pick a "best" entry; a report can list the target's guard and its body, and whichever comes first
+decides between a block and a hit, "a quirk" that og-netcode-v2-field-defects task 17 moved unchanged
+so that the move could be verified as a move. The fence it carried, verbatim (the loop header it
+closed, and the filter above it):
+
+<!-- BrawlerProjectileSimulation.h lines 463-463 at feee368 -->
+```
+        // Overlap query at the derived position — find first non-parent hit.
+```
+
+**Why retired.** Its rule changed (full-body guarding, the user 2026-10-31; Backlog task 20b). The
+`break` stays, but the first entry no longer decides between a block and a hit: the struck character's
+guard entry does, wherever the report lists it. In Jolt the target's weapon `body` entry sorts before
+its guard entry (declaration index 0 before 1 under `peerStableOrderOf`;
+`BrawlerProjectileHitDetection-rationale.md` §6), so under G-03 a shot that reached both spheres on
+one tick hit through a raised, facing guard. The `break` is now **G-10**, the root match **G-11**. G-03's
+task-17 poison record (deleting the `break` turned `TheTickAfterTheStunExitBlocksInBothOrders` RED) no
+longer holds: re-measured at task 20b, that case stays green (G-10). ⛔ The number 3 is spent.
+
+### G-09 — RETIRED by og-ground-aligned-attacks task 20b (2026-11-03)
+
+**Was:** "A flat guard keeps the 3-D angle; the projection runs only off flat", on
+`if (!surfaceFrame::isFlat(guardUp))` in `projectileGuardBlocks`. The prohibition: do not drop the gate
+so that every guard projects the incoming direction, and do not move the flat case into the
+projection; by the initiative's flat rule a flat normal ran the pre-initiative 3-D angle, and
+projecting on flat ground too was a gameplay change that needed its own user ruling. Measured by
+poison (task 8, `if (true || !surfaceFrame::isFlat(guardUp))`):
+`GroundAlignedProjectileBlock.FlatGuardReproducesTodaysOutcomeAndMarkerBits` went RED,
+`outcomeMismatches == 0` with expansion `504 == 0`, every one of its 504 shots pitched ±0.3 rad.
+
+**Why retired.** That ruling came: OQ17 (b), the user 2026-11-01 ("yes go ahead with b"). The gate is
+deleted and every guard projects the shot onto its own plane, so a shot pitched along a slope is
+blocked head-on by a facing guard on flat ground. The zero projection a flat guard can now reach is
+**G-12**. The task-8 case is re-stated as
+`GroundAlignedProjectileBlock.FlatGuardBlocksInItsPlaneAndKeepsTodaysMarkerBits`: its 504 pitched shots
+now block (`blockedOnlyInThePlane`). ⛔ The number 9 is spent.

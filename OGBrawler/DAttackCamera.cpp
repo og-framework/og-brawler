@@ -46,7 +46,28 @@ OrbitCameraState integrate(float deltaSeconds, const OrbitCameraInput& input,
 	OrbitCameraState next = state;
 	next.holdoffSeconds = std::max(0.f, state.holdoffSeconds - deltaSeconds);
 	if (!input.lookHeld)
+	{
+		const float returnStepDeg = std::max(0.f, settings.returnDegPerSec) * deltaSeconds;
+		next.frameUp = rotateUpToward(state.frameUp, kCameraUp, returnStepDeg);
+		next.pitchDeg = clampPitchDeg(
+			stepToward(state.pitchDeg, clampPitchDeg(input.targetPitchDeg, settings), returnStepDeg), settings);
+		const SlopeDwell dwell = slopeDwellStep(SlopeDwell{ state.slopeDwellSeconds, state.slopeDwellYawDeg }, input.targetUp,
+			deltaSeconds);
+		next.slopeDwellSeconds = dwell.seconds;
+		next.slopeDwellYawDeg = dwell.yawDeg;
+		next.slopeYawRateDegPerSec = 0.f;
+		if (turnsUpSlope(input.targetUp) && slopeDwellElapsed(dwell.seconds, settings.slopeYawDwellSeconds))
+		{
+			const SlopeYawTurn turn =
+				slopeYawEase(state.yawDeg, dwell.yawDeg, state.slopeYawRateDegPerSec, deltaSeconds, settings);
+			next.yawDeg = turn.yawDeg;
+			next.slopeYawRateDegPerSec = turn.rateDegPerSec;
+		}
 		return next;
+	}
+
+	next.slopeDwellSeconds = 0.f;
+	next.slopeYawRateDegPerSec = 0.f;
 
 	const LookDelta mouse = mouseLook(input.mouseUnits, settings);
 	const LookDelta stick = stickLook(input.stick, deltaSeconds, settings);
@@ -81,6 +102,8 @@ OrbitCameraState integrate(float deltaSeconds, const OrbitCameraInput& input,
 	// ∴D-02  docs/DAttackCamera-rationale.md
 	const float pull = (target - beforeWindow) * fraction + playerInWindow * (playerKeptShare - 1.f);
 	next.pitchDeg = clampPitchDeg(beforeWindow + playerInWindow + std::clamp(pull, -cap, cap), settings);
+	next.frameUp = rotateUpToward(state.frameUp, input.targetUp,
+		std::min(angleBetweenDeg(state.frameUp, input.targetUp) * fraction, cap));
 	return next;
 }
 } // namespace dAttackCameraBehaviour

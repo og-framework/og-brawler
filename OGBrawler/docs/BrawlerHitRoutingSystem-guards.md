@@ -207,7 +207,8 @@ NaN. That NaN becomes the slice's `hitDirectionXY`, and the movement sub-simulat
 into the knockback velocity. ⚠ **R0, task 29: not reachable with the shipped table.** The tangent's
 ground-plane projection is degenerate only for a swing whose world axis is not vertical. Sequences 0-3, the
 Knockback rows, rotate about the turn axis, and the machine's aim rotation axis is ±`simFrame::kTurnAxis`, so their
-tangent is horizontal and at least the inner radius long. The only horizontal-axis sequence, 4
+tangent is a horizontal unit vector (the detector skips a hit whose centre has no in-plane direction,
+`BrawlerHitDetectionSystem-guards.md` G-20). The only horizontal-axis sequence, 4
 (forward/overhead), is a Stun, and `resolveHitReaction` discards a Stun's direction. The fence
 becomes load-bearing the day row 4 is re-tuned to a Knockback, which is a one-line data edit
 (rationale §4.2). `HitRouting.KnockbackDirectionIsTheSwingTangentWithFallback` drives the fallback

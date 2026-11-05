@@ -54,7 +54,9 @@ task 74 removed it — was settled as **T12 of
 
 **UE side.** `UOGBrawlerInputCollectionComponent` owns everything that has to touch the engine or
 the frame: the Enhanced Input subsystem read, the camera-forward and mouse-aim caches
-(`m_camForwardCache`, `m_mouseAimCache`) and the mouse-aim line-plane intersection. It exposes
+(`m_camForwardCache`, `m_mouseAimCache`) and the mouse-aim line-plane intersection (the deprojection
+and the plane; the intersection arithmetic itself is the engine-free `AimPlane.h` since
+og-ground-aligned-attacks task 12, `AimPlane-rationale.md`). It exposes
 three accessors — `buildAimDirection`, `getMoveStick` and `buildMoveDirectionWorld` — and nothing
 else of that machinery escapes into this header.
 

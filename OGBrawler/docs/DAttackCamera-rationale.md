@@ -30,22 +30,35 @@ Nothing here is simulation state. The camera never reaches the wire; it is local
 
 ## 2. State, input and output
 
-* **State** (`OrbitCameraState`): `yawDeg` is the world yaw in the host's yaw convention (the Unreal host
+* **State** (`OrbitCameraState`): `yawDeg` is the yaw in the host's yaw convention (the Unreal host
   uses it as the rotator yaw, so a larger yaw looks further right). `pitchDeg` is degrees **below** the
   horizon, so the iso camera's Unreal pitch of −60° is 60 here. `holdoffSeconds` is the vertical hold-off
   timer (§4 rule 4). It stays 0 unless the host switches the hold-off on (`verticalHoldoffSeconds` > 0, §13). Three explicit scalars: there is no quaternion and no Euler decomposition, so the
-  gimbal flip at ±90° cannot happen and the sign of the pitch is a plain negation.
+  gimbal flip at ±90° cannot happen and the sign of the pitch is a plain negation. `frameUp` (og-ground-aligned-attacks
+  task 21) is the up of the ground the camera follows, a unit vector in the host's Z-up camera space (`kCameraUp`,
+  world up, by default). While it is world up, the yaw is the world yaw and the pitch is below the world horizon, as
+  before task 21. On a followed slope the yaw is still the world yaw, and the pitch is measured below the ground's line
+  along the view (§19, task 21b; task 21 orbited the camera about `frameUp`, §18). `slopeDwellSeconds` and
+  `slopeDwellYawDeg` (og-ground-aligned-attacks task 21d) are how long, with look mode off, the up-slope heading has been
+  steady and the heading that dwell started on (§20). `slopeYawRateDegPerSec` (task 21e) is the speed of that turn up
+  the slope, 0 or above, and 0 whenever the turn is not running (§20). They are display state only, like the rest.
 * **Input** (`OrbitCameraInput`): `lookHeld` (look mode is on; the Unreal host passes its BlockLook state, a toggle on 5 / gamepad Y since
   og-attackstatetransition-cleanup task 12, a held button before), `mouseUnits` (the Look action's
   value summed over the frame, §3), `stick` (the look stick, x right and y up, as the host routes it) and
-  `targetPitchDeg` (the pitch the pull aims for; the Unreal host passes the iso pitch).
-* **Output:** the state. The host writes the boom as `FRotator(-pitchDeg, yawDeg, 0)`, its length as
+  `targetPitchDeg` (the pitch the pull aims for; the Unreal host passes the iso pitch) and `targetUp` (the frame up
+  the pull aims for, §18; the Unreal host passes `cameraTargetUp` of the ground under its character; with look mode
+  off it also decides whether the camera turns to face up a slope, §20).
+* **Output:** the state. The host writes the boom as `FRotator(-view.pitchDeg, view.yawDeg, 0)` with
+  `view = worldView(state, settings)`, which is `{yawDeg, pitchDeg}` unchanged while `frameUp` is world up and on a
+  slope keeps the yaw and moves the pitch by the ground's rise along the view, clamped (§19), its length as
   `boomLength(pitchDeg, targetPitchDeg, settings)` and the camera's field of view as
   `horizontalFovDeg(fovAtPitch(pitchDeg, targetPitchDeg, settings), settings.fovAxis, aspect)` (§14, §17).
 * **Seeding:** `seedFromUERotation(uePitchDegrees, ueYawDegrees, settings)` gives yaw = the Unreal yaw (wrapped) and
   pitch = −the Unreal pitch, clamped into the limits, with no hold-off. `pitchDegFromUEPitchDegrees`
   is the same conversion for the target. Both clamp, so the state's pitch is always inside the limits.
-  A default-constructed state is (0, 0, 0) and is meant to be overwritten by a seed.
+  The seed's `frameUp` is world up, so a seed (and the host's re-seed when it returns from the iso camera) starts
+  level. A default-constructed state is (0, 0, 0, world up, 0, 0, 0) and is meant to be overwritten by a seed; a seed's
+  dwell and turn speed are 0, so a re-seeded camera waits for a steady slope again and its turn starts from rest.
 
 ## 3. Signs
 
@@ -70,8 +83,11 @@ Nothing here is simulation state. The camera never reaches the wire; it is local
 
 ## 4. The rules, in the order `integrate` applies them
 
-1. **Nothing moves unless `lookHeld`.** The hold-off timer still counts down while look mode is
-   off (it measures time since the last deliberate vertical look, not time spent looking), so a
+1. **No look input unless `lookHeld`.** With look mode off the mouse and the stick are ignored and the yaw does not
+   change, except on a followed slope of 15° or more that has held steady for the dwell, where it turns, eased, to
+   face up the slope as it was when the dwell started (§20, tasks 21c, 21d and 21e). Since og-ground-aligned-attacks task 21 the camera then returns, over time, to world up and the target pitch
+   (§18); before it, nothing moved at all (`returnDegPerSec` 0 still gives that camera). The hold-off timer still counts
+   down while look mode is off (it measures time since the last deliberate vertical look, not time spent looking), so a
    pause longer than the hold-off never delays the next pull.
 2. **Player look.** Mouse: `Δ = units × mouseDegreesPerUnit × mouseSens`, no dt, no deadzone, no
    normalization. `mouseLook` takes no frame time on purpose: a mouse report is already a distance.
@@ -100,7 +116,10 @@ Nothing here is simulation state. The camera never reaches the wire; it is local
    up. When the player also tilts in the same frame, the player's step and the pull are solved together
    (§7.1), so the camera settles where the player's tilt and the pull balance, at any frame rate.
 7. **No pull without look input.** The pull scales with the yaw step, so with no yaw there is no pull.
-   There is no idle spring-back: the camera never moves on its own (a user decision, 2026-10-04).
+   There is no idle spring-back in look mode: the camera never moves on its own while look mode is on (a user decision,
+   2026-10-04). The pull also moves `frameUp` toward `targetUp`, by the same law (§18). Turning look mode off is the one
+   time the camera moves without look input: it returns to world up and the target pitch (rule 1, §18), and on a
+   followed slope of 15° or more, once it has held steady for the dwell, it turns, eased, to face up the slope (§20).
 
 The target is clamped into the limits, so the pull can never push the pitch out of them.
 
@@ -210,6 +229,12 @@ settings, `boomLength` gives the old function's bits (`DAttackCameraFramingTest.
 | `kBoomLengthAtTargetPitch` / `kBoomLengthAtHorizon` | 2500 / 550 | §8 (task 18, the user's tuned boom; task 15 had 1200 / 550, before it 900 / 400) |
 | `kFovDeg` / `kFovAxis` | 40 / shorter axis | §17 (task 18, the user's tuned value, at the target pitch); task 15 had 58.72, the old 90° horizontal on 16:9 (§14) |
 | `kFovDegAtHorizon` | 58 | §17 (task 18, the user's request): the field of view at the horizon |
+| `kReturnDegPerSec` | 90 | §18 (task 21): with look mode off, the camera returns to world up and the target pitch at this angular rate |
+| `kCameraFollowMaxSlopeDeg` / `kCameraFollowSlopeEpsilonDeg` | 30 / 0.1 | §18 (task 21, the user's ruling): the camera follows ground up to 30° + 0.1° from world up |
+| `kSlopePitchMinDeg` / `kSlopePitchMaxDeg` | 35 / 75 | §19 (task 21b, the user's G7 ruling "Full tilt, clamped"): on a followed slope the ground's rise along the view moves the world pitch no further than these |
+| `kSlopeYawMinSlopeDeg` / `kSlopeYawSlopeEpsilonDeg` / `kSlopeYawDegPerSec` | 15 / 0.001 / 90 | §20 (task 21c, the user's request and rulings): with look mode off, a followed slope of 15° or more turns the camera to face up it, at this rate |
+| `kSlopeYawDwellSeconds` / `kSlopeYawDwellToleranceDeg` / `kSlopeYawDwellEpsilonSeconds` | 0.2 / 10 / 1e-4 | §20 (task 21d, the user's G7 twitch report): the turn starts only after the up-slope heading has held within 10° for 0.2 s; the 1e-4 s absorbs the float sum's error |
+| `kSlopeYawEaseSeconds` / `kSlopeYawAccelDegPerSec2` / `kSlopeYawArriveDeg` | 0.3 / 360 / 0.01 | §20 (task 21e, the user's G7 re-check): the turn speeds up from rest at 360°/s² to at most `kSlopeYawDegPerSec`, slows over the last of the gap with a 0.3 s time constant, and takes the goal exactly within 0.01° |
 
 The look values are the camera research of og-attackstatetransition-cleanup (2026-10-04). The pull values
 are task 10's (2026-10-05, §13). The Unreal host exposes the four pull values as console variables, so they
@@ -455,3 +480,273 @@ view is framed from 2500 cm at 40° by default (`DAttackCameraMatchSoloTest.cpp`
 `kBoomLengthAtHorizon` unchanged at 550 (the user has not decided it yet). On 16:9 the shorter-axis 40°
 renders 65.8° horizontal and 58° renders 89.2°. With the 60° iso target and the default 10° minimum pitch
 the solo camera is at least 1/6 of the way to the target, so its field of view there is 55.0°.
+
+## 18. Look mode orbits in the ground's frame (og-ground-aligned-attacks task 21, 2026-11-03)
+
+**The user request** (2026-11-01): "the mode where the camera is rotated corrects it's 60 degree angle against the
+slope normal ... up to a 30 degree slope, if the character falls onto the 60 degree slope it should not correct towards
+the slope normal, instead keep correcting towards the world up vector. If the camera mode is disabled the camera should
+be corrected back to a 60 degree angle." The mode is look mode (`lookHeld`). The rulings (AskUserQuestion, 2026-11-01;
+the backlog task accepted as written 2026-11-03): orbit about the normal, a cut-off at 30° + 0.1° as compile-time
+constants, only the yaw-driven pull corrects in look mode, world up while airborne, and a time-based return when look
+mode is turned off. Display only: nothing here reaches the simulation or the wire.
+
+**The frame** (`OrbitCameraState::frameUp`). `frameUp` is the up of the ground the camera follows. It moves only by the
+look-mode pull and the look-mode-off return, below. What the host renders from it is `worldView`, task 21b's rule since
+2026-11-03 (§19). `boomLength` and `fovAtPitch` keep their code and read the state's pitch.
+
+**Task 21's world view, replaced by task 21b (§19).** Task 21 orbited the camera about `frameUp`. Its `worldView` built
+the local view direction from the yaw and the pitch about Z-up, tilted it by the minimal rotation from Z-up to `frameUp`
+(og-simulation's trig-free Rodrigues form, `surfaceFrame::tiltToSurface`, re-typed for the camera's Z-up space), and read
+a roll-0 yaw and pitch back from the tilted view, the pitch clamped into [1°, 89°]. On the 30° face at the 60° target that
+gave world pitch 30° up-slope, 48.59° along the contour (with the world yaw bent 40.9° toward up-slope), and down-slope a
+straight-down view drawn at 89°, whose yaw needed a fallback (guard G-02, retired). Turning through the down-slope
+heading passed the camera over the top of the character, and its yaw swung through 180° there. The user's G7 report
+(2026-11-03): "looking up the slope the camera seems to correct to 30 degrees instead of 60 … when I turn the camera to
+look down the slope it quickly rotates over to the other side"; "it felt like the camera almost hit 90 degrees as I
+looked along the slope, when I expected it to have the same angle as when standing on flat ground".
+
+**The target up** (`cameraTargetUp(groundUp, supported)`). The host passes the ground's up under its character
+(Unreal space) and whether the movement is supported. The answer is:
+
+* world up (`kCameraUp`) when unsupported (airborne): the user's "keep correcting towards the world up vector";
+* world up when the ground's up is not a usable direction (zero length, not finite) or is flat (`isCameraUpFlat`
+  after normalizing). The flat case returns world up exactly, so a 1-ULP-short face normal on flat ground (the G3
+  capture's `up=(0,0.99999994,0)`) leaves the camera on today's branch;
+* world up when the ground tilts more than `kCameraFollowMaxSlopeDeg + kCameraFollowSlopeEpsilonDeg` (30° + 0.1°)
+  from world up: `!(up.z >= cos(30.1°))`, so a non-finite z falls to world up too. The cosine is computed at run time
+  (`cameraFollowMinUpDot`: `std::cos` is not `constexpr` on this toolchain); the two degrees are `constexpr`s, as ruled;
+* otherwise the normalized ground up.
+
+**Why 0.1°.** The user: "Aim for an epsilon that always covers our exact 30 degree slope, all geometry in the game should
+follow this limitation and use slopes between 0 and 30 degrees". The G3 capture (2026-11-02, 158 tilted swing starts on
+the level's 30° face) measured the face at 30° + [−1.32e-5°, +6.4e-6°], so 30.1° is 0.0999936° above the largest
+measured angle: about 7,600 times the largest measured deviation. A 30.09° normal follows and a 30.11° one does not
+(`DAttackCameraSlopeFrameTest.cpp`).
+
+**The correction in look mode: only the yaw-driven pull.** On a frame with a pull (§4 rules 5 and 6, §7), `frameUp`
+turns toward `targetUp` along the great circle by `min(angle × fraction, cap)`: the pitch's own `fraction` (the same
+exponent, with the same weight and pull window) and its own cap, `pullMaxDegPerSec × the window`, as an angle in
+degrees (`rotateUpToward`, `angleBetweenDeg`). So the frame up and the pitch close the same share of their gaps on
+every frame: after 60° of yaw both have 0.0498 of their gap left (`exp(−3)`), within 1e-4 of each other at 30 to
+240 fps. With the mouse still, with a pitch-only input, during a hold-off and at a dominance weight of 0 nothing
+re-tilts. Under the airborne rule this means a camera whose character leaves the ground turns toward world up only
+while the player turns it, as the lead told the user before dispatch.
+
+**Look mode off: the return** (`returnDegPerSec`, `kReturnDegPerSec` 90°/s; the Unreal host's og.cam.returnDegPerSec).
+`integrate` no longer returns at once when look mode is off. It ignores the look input, keeps the yaw (since task 21c it turns the yaw up a followed slope of 15° or more,
+§20), and moves
+`frameUp` toward world up (`rotateUpToward`) and the pitch toward the target pitch (`stepToward`), each by at most
+`returnDegPerSec × dt` per frame, each snapping to its goal when it is within one step. Both are reached after
+`ceil(angle / (returnDegPerSec × dt))` frames, at 30 to 240 fps, and then they are exactly world up and the target, so
+`worldView` is back on its flat branch: the frozen camera before task 21, at world up and 60°. A rate of 0 or below
+gives that frozen camera from the start.
+
+## 19. On a slope the pitch follows the ground's rise along the view, clamped; the yaw is the player's (og-ground-aligned-attacks task 21b, 2026-11-03)
+
+**The ruling.** At G7 the user approved "Full tilt, clamped" (and "Before the commit"), after the report quoted in §18.
+Display only: nothing reaches the simulation or the wire, and the shared iso camera is untouched. The target up, the
+30.1° cut-off, the look-mode pull of `frameUp` and the look-mode-off return are task 21's, unchanged (§18).
+
+**The rule** (`worldView(state, settings)`, its slope branch). With `p` the state's pitch, `ψ` its yaw,
+`h = (cos ψ, sin ψ, 0)` the view heading and `n = frameUp`:
+
+* the world yaw is `ψ`, the player's heading, at every heading. The slope never turns the camera, so nothing swings or
+  flips;
+* `rise = atan(−dot(n, h) / n.z)`, in degrees, is the ground's rise along the view heading: the angle of the ground's
+  line in the vertical plane through the view. It is +30° looking up a 30° face, 0 along the contour and −30° looking
+  down it. `n.z` is positive for every followed frame (the cut-off's `static_assert`);
+* the world pitch is `clamp(p − rise, min(p, lo), max(p, hi))`, then the hard clamp [1°, 89°], with `lo` and `hi` from
+  `slopePitchLimits` (the Unreal host's og.cam.slopePitchMin and og.cam.slopePitchMax; defaults `kSlopePitchMinDeg` 35°
+  and `kSlopePitchMaxDeg` 75°).
+
+So `p` is the pitch below the ground's line along the view: the camera keeps its angle to the ground it looks along, as
+far as the limits allow. On the 30° face at p = 60° the world pitch is 35° up-slope (30° unclamped), 60° along the
+contour (the flat angle, the user's expectation) and 75° down-slope (90° unclamped, drawn at the hard 89°). On a 12°
+face it is 48°, 60° and 72°, inside the limits. A slope rising along Unreal Y gives the same numbers
+(`DAttackCameraSlopeFrameTest.cpp`).
+
+**Why `min(p, lo)` and `max(p, hi)`** (guard G-03). A pitch the player set outside [lo, hi], such as 20° or 80° inside
+the player's own 10° to 80° limits, is itself a bound of the clamp, so where the rise is zero the slope branch returns
+`p`, as the flat branch does. The clamp only limits how far the rise moves the pitch: at 20° the pitch stays 20°
+looking up-slope (the rise would lower it, and it is already below 35°) and rises to 50° looking down-slope. Easing
+`frameUp` from world up to the 30° face in 100 steps moves the pitch monotonically from `p`, at most 0.3° a step. A
+clamp to [lo, hi] alone would pop a 20° camera to 35° on the first tilted frame.
+
+**The limits are ordered** (`slopePitchLimits`). The maximum is clamped into the hard limits [1°, 89°] and the minimum
+into [1°, maximum], so a minimum above the maximum takes the maximum (50 over 40 gives 40 to 40). The slope clamp's own
+bounds are ordered whatever the limits are, because `min(p, lo) ≤ p ≤ max(p, hi)`. A `static_assert` holds the
+defaults inside the hard limits, in order.
+
+**No swing.** Turning through 360° in 0.5° steps at p = 60° on the 30° face, every world yaw step equals the input
+step, bit for bit, and the pitch changes by at most `0.5° × tan 30°` (0.2887°) a step, with the defaults and unclamped:
+the rise changes fastest along the contour, at `tan` of the face's angle per unit of yaw. Task 21's tilted yaw fails
+this sweep: all 720 steps differ, the largest by 90.2°.
+
+**Flat is unchanged.** While `frameUp` is world up (`isCameraUpFlat`), `worldView` returns the state verbatim: the
+camera before task 21, bit for bit. At an exact world up the formula would also give `p` and `ψ` (the rise is 0). Just
+past the flat tolerance (a 2e-6 rad tilt) the slope branch is within 1.1e-4° of the flat one.
+
+**The host's other readers.** The camera-relative move basis and the aim fallbacks read the rendered camera's forward
+flattened to the ground, which is the world yaw. On a slope in look mode they now follow the player's heading, without
+task 21's bend toward the fall line. The mouse aim deprojects the cursor through the rendered camera and is only read
+with look mode off, so on a slope it sees this rule only while the camera returns to world up (or for as long as it
+holds still at a return rate of 0), and it follows whatever is drawn. Boom length and field of view still read `p`.
+
+**Removed with task 21's view:** the tilt helper and the near-vertical threshold with its `static_assert` (nothing else
+called them), and guard G-02 (retired).
+
+## 20. Look mode off on a slope: the camera turns to face up the slope (og-ground-aligned-attacks task 21c, 2026-11-04)
+
+**The request and the rulings.** The user at G7 (2026-11-04): "Could we make it so that the locked camera also aligns
+with the slope normal? When the character is standing on a slope that is between 15 and 30 + epsilon it rotates to the
+slope normal so that it always looks exactly up the slope". The rulings (AskUserQuestion): look mode off ("when look
+mode is off, the camera should correct itself to a 60 degree angle, and when it is standing on a slope it should align
+itself along the slope normal, on a 30 degree slope the camera should be perfectly aligned with the slope normal"); the
+pitch stays 60° everywhere ("Always 60°, face up"); on leaving the slope the heading stays where it is; the turn rate is
+90°/s, tunable; the task lands before the commit. Display only: nothing reaches the simulation or the wire, and the
+shared iso camera is untouched.
+
+**The rule** (task 21c's constant-rate step, `slopeYawStep`; since task 21d it is gated by the dwell, and since task
+21e `integrate` turns through `slopeYawEase` toward the dwell's heading, eased, both below. At an ease of 0 and an
+acceleration of 0 `slopeYawEase` takes this step's yaw bit for bit, and the tests keep `slopeYawStep` as its
+reference). With
+`u = input.targetUp`, which is
+`cameraTargetUp`'s answer (§18: world up, or the normalized ground up of a supported slope up to 30° + 0.1°):
+
+* the camera turns when `turnsUpSlope(u)`: the slope angle `acos(u.z)` in degrees, plus `kSlopeYawSlopeEpsilonDeg`
+  (0.001°), is at least `kSlopeYawMinSlopeDeg` (15°). World up has angle 0, so flat ground, the air and ground past the
+  cut-off never turn it. A non-finite `z` fails the comparison and holds the yaw;
+* the goal is `upSlopeYawDeg(u)`, `atan2(−u.y, −u.x)` in degrees and wrapped: the heading opposite the normal's
+  horizontal part, which points down the slope, so the goal looks up it;
+* the yaw moves toward the goal along the shorter arc (the gap wrapped into [−180°, 180°]) by at most
+  `max(0, slopeYawDegPerSec) × dt` per frame, and the result is wrapped as the player's yaw is (`wrapYawDeg`). Within
+  one step it takes the goal, so it arrives after `ceil(gap / (rate × dt))` frames and then holds the goal bit for bit;
+* otherwise the yaw is returned unchanged, bit for bit: below 15°, on flat ground, in the air, past 30.1°, and at a rate
+  of 0 or below. Nothing turns it back, so when the character leaves the slope the heading stays (the ruling).
+
+The pitch and `frameUp` keep their look-mode-off return (§18): they reach the target pitch and world up, so `worldView`
+is on its flat branch and the camera is drawn at the goal yaw and the 60° target. Look mode on is untouched: the turn
+sits only in the look-mode-off branch, and in look mode the yaw moves only with the player's input (§19).
+
+**The dwell: the turn starts only on a steady slope (task 21d, 2026-11-04).** The user's G7 report: "a small camera
+twitch when there is only one local brawler and mouse look is off, when I cross a flat to slope crease and when I walk
+off the slope edge". With og.cam.slopeYawDegPerSec 0, "The twitch is gone", so the turn above caused it. The target up
+is read from the guard body's up, which is posed to each tick's ground face, so at a crease or a rim the target can
+change from tick to tick: the face, flat ground, the air, or an edge contact whose up-slope heading points elsewhere.
+Without the dwell every slope tick turned the yaw by rate × dt (1.5° at 60 fps) toward that tick's goal. The state
+carries `slopeDwellSeconds` and `slopeDwellYawDeg`, and each look-mode-off frame `slopeDwellStep` updates them:
+
+* on a turning slope (`turnsUpSlope(u)`), with a dwell running (`slopeDwellSeconds` > 0) and this frame's goal within
+  `kSlopeYawDwellToleranceDeg` (10°) of `slopeDwellYawDeg` (the gap wrapped into [−180°, 180°]), the dwell adds `dt`;
+* on any other turning-slope frame it restarts: `slopeDwellSeconds = dt` and `slopeDwellYawDeg` = this frame's goal;
+* off a turning slope `slopeDwellSeconds` returns to 0. `slopeDwellYawDeg` is kept, and is read only while a dwell runs.
+
+The yaw turns only on a turning slope where `slopeDwellElapsed` holds: `slopeDwellSeconds + kSlopeYawDwellEpsilonSeconds` (1e-4 s) is at
+least `max(0, slopeYawDwellSeconds)`, which is `kSlopeYawDwellSeconds` (0.2 s) by default and the console variable
+og.cam.slopeYawDwellSec in the host. The pitch and `frameUp` return as before, every frame. Look mode on sets
+`slopeDwellSeconds` to 0, so after look mode the dwell starts again; the look-mode-on yaw, pitch and frame up do not
+read the dwell.
+
+* **The first turning frame.** On a steady slope, frame `f` (counted from 1) holds the float sum of `f` frame times, and
+  the first turning frame is the first `f` whose sum plus 1e-4 s is at least 0.2 s. That is frame `ceil(0.2 / dt)`:
+  6, 12, 29 and 48 at 30, 60, 144 and 240 fps. The yaw keeps its bits for the `ceil(0.2 / dt) − 1` frames before it and
+  then turns. With the easing off (task 21e, below) it takes 21c's steps, so it arrives `ceil(0.2 / dt) − 1` frames
+  after 21c's `ceil(gap / (rate × dt))`; with the default easing it arrives after the turning times measured below.
+* **Why a tolerance on the time.** At 240 fps the float sum of 48 frame times is 0.19999997, below the float 0.2, so a
+  plain `>=` would start the turn on frame 49. The 1e-4 s is far above that error and below one frame at 1000 fps. At
+  the tested rates it never starts a turn early: the frame before the turning one is at least 0.0042 s short (240 fps,
+  whose 47 frames sum to 0.1958 s).
+* **What a flicker does.** A target that alternates slope and flat ground (every tick, or in 2-tick runs) never keeps a
+  dwell past 2 frames (0.067 s at 30 fps), so the yaw never moves. A goal that alternates with one 40° off, as an edge
+  contact's can, restarts the dwell every tick, so from the first such tick the yaw holds; it turns again on the
+  `ceil(0.2 / dt)`-th frame of a steady target. A goal alternating with one 9.9° off keeps the dwell running and turns
+  on schedule; 10.1° off restarts it every tick. A target that stays on each face for longer than the dwell still turns
+  toward each in turn: the dwell removes tick-to-tick flicker, not a slow alternation.
+* **A dwell of 0 is task 21c** (with an ease of 0 and an acceleration of 0, task 21e). At 0 or below the comparison
+  holds on every frame. Off a turning slope the yaw keeps its bits, as `slopeYawStep` keeps them. On one, the speed is
+  the rate and the step is `slopeYawStep`'s, so the yaw is 21c's bit for bit wherever each turning frame's goal is the
+  dwell's heading: on a steady slope, and wherever consecutive turning goals differ by more than 10° or have a
+  non-turning frame between them (each restarts the dwell). A goal within 10° of a running dwell's heading is where
+  task 21e differs on purpose (below). The cost of the default dwell is that the camera waits 0.2 s on a new slope
+  before it starts to turn.
+
+**The anchored goal and the easing (task 21e, 2026-11-04).** The user's G7 re-check, look mode off, one local brawler,
+with og.cam.slopeYawDwellSec 2: "crossing the crease from flat to slope it twitches to a slightly new angle after 2
+seconds, crossing the same crease from slope to flat it twitches instantly as I cross the crease"; with
+og.cam.slopeYawDegPerSec 0, "the slope > flat twitch is gone". The crease is between the sloped box and the flat arc
+platforms, whose collision is a hand-fitted convex hull. Two causes:
+
+* **slope to flat:** once the dwell had elapsed, a tick whose goal lay within 10° of the dwell's heading kept the turn
+  running, and 21c's step aimed at that tick's goal. The hull's edge facets give a few ticks of a slope target whose
+  up-slope heading is a few degrees off, so the yaw stepped 1.5° (at 60 fps) toward each and back;
+* **flat to slope:** after the dwell, a small leftover offset (from earlier look-mode orbiting) was closed at a constant
+  90°/s, which reads as a snap.
+
+**The goal is the dwell's heading.** The turn aims at `slopeDwellYawDeg`, the heading the dwell started on, never at
+the tick's. A tick within 10° of it continues the dwell and leaves the goal where it is; one more than 10° off restarts
+the dwell, which stops the turn (task 21d). So a goal flickering within the tolerance changes nothing the turn does:
+the yaw and the speed are bit-identical to the steady slope's.
+
+**The easing.** `slopeYawEase(yaw, goal, rate, dt, settings)` reads the state's speed `slopeYawRateDegPerSec`. With
+`e` the goal − yaw gap wrapped into [−180°, 180°] and `maxRateDegPerSec` = `max(0, slopeYawDegPerSec)`:
+
+* at a `maxRateDegPerSec` of 0 the yaw keeps its bits and the speed is 0;
+* within `kSlopeYawArriveDeg` (0.01°) of the goal the yaw takes the goal exactly and the speed is 0, so the arrival is
+  bit-stable;
+* otherwise the target speed is `min(maxRateDegPerSec, |e| × (1 − exp(−dt / τ)) / dt)`, with τ =
+  `max(0, slopeYawEaseSeconds)` (`kSlopeYawEaseSeconds`, 0.3 s; the host's og.cam.slopeYawEaseSec), or
+  `maxRateDegPerSec` at τ = 0. The speed is
+  `min(target, rate + accel × dt)`, with accel = `max(0, slopeYawAccelDegPerSec2)` (`kSlopeYawAccelDegPerSec2`,
+  360°/s²; og.cam.slopeYawAccelDegPerSec2), or the target at an accel of 0. `std::max(0, NaN)` is 0, so a NaN setting
+  counts as 0;
+* the yaw moves `speed × dt` toward the goal by the shorter arc and is wrapped. A step that reaches the goal takes it
+  exactly, with a speed of 0.
+
+Whenever the turn does not run (look mode on, off a turning slope, or before the dwell has elapsed) the speed is set to
+0 and the yaw keeps its bits, so every turn starts from rest.
+
+* **Why `1 − exp(−dt / τ)` and not `|e| / τ`.** Both are the same law: a speed proportional to the gap, with time
+  constant τ. `|e| / τ × dt` is its explicit Euler step. At 30 fps that closes 11.1 % of the gap per frame against the
+  law's 10.5 %, so a 30 fps turn arrives early. From 91.9° off it turned in 3.100 s at 30 fps and 3.204 s at 240 fps,
+  6.75 ms over the "one frame plus 2 %" budget. A sweep of start gaps from 0.5° to 180° in 0.1° steps fails 412 of
+  them (3.2° to 121.9°). The factor `−expm1(−dt / τ) / dt` closes exactly the law's share of the gap each frame and
+  passes the whole sweep (worst margin 3.8 ms). It is below `1 / τ`, so the speed stays below `|e| / τ` and the step
+  below the gap (no overshoot), and it tends to `1 / τ` as dt goes to 0.
+* **What it does.** From rest the speed rises by at most 360 × dt per frame, so from 5° off the first step moves at
+  360 × dt degrees per second (12 at 30 fps, 1.5 at 240 fps), not 90. The speed caps at 90°/s, and over roughly the last
+  27° (90 × 0.3) it falls with the gap. Measured turning times, from the first turning frame to the arrival, at 30, 60,
+  144 and 240 fps: from 5° off 1.933, 1.900, 1.896 and 1.892 s; from 30° 2.567, 2.533, 2.528 and 2.525 s; from 91.9°
+  3.267, 3.233, 3.222 and 3.221 s; from 180° 4.233, 4.217, 4.201 and 4.200 s. The yaw approaches the goal
+  monotonically and arrives exactly.
+* **Why the snap.** The eased speed falls with the gap, so without the snap the yaw would never reach the goal. 0.01°
+  is invisible, and it is below one frame's step of the default rate at 1000 fps (0.09°), so with the easing off the
+  turn takes the goal on 21c's frame (a `static_assert` holds it).
+* **The cost.** A long turn takes longer to settle: 4.2 s from 180° off against 21c's 2.0 s, in exchange for no visible
+  start or stop. og.cam.slopeYawEaseSec 0 with og.cam.slopeYawAccelDegPerSec2 0 gives task 21d's constant-rate turn
+  back, still aimed at the dwell's heading.
+
+**The sign, on the level's face.** The G3 capture's measured swing ups (og-simulation axes) are Unreal
+(−0.49999997, 0, 0.866025448) and (−0.5, −1.49e-8, 0.866025388): the face rises along Unreal +X. The goal is
+`atan2(−u.y, −u.x)` = 0° (−0° for the first, whose y is 0; 1.7e-6° for the second), heading +X, up the face, where
+task 21b's rise along the view is +30°. At the 60° pitch the view direction is (cos 60° cos ψ, cos 60° sin ψ, −sin 60°)
+= (0.5, 0, −0.866): −n, the camera looking straight down the normal, as ruled. The test measures the view against −n
+within 1e-4 on five faces. A reversed sign turns the camera to face down the slope: view (−0.5, 0, −0.866), rise −30°,
+1.0 off −n.
+
+**Why the target up, not `frameUp`.** With look mode off `frameUp` returns to world up within a third of a second on
+the 30° face, while a 180° turn at 90°/s takes two seconds (4.2 s with task 21e's easing). A turn read from `frameUp` would stop once the frame was
+below 15°. The target up is the ground under the character, so it holds for as long as the character stands there.
+
+**Why a tolerance on the threshold.** A face built at exactly 15° measures 14.9999762° in float after normalizing,
+2.4e-5° short, so a plain `>=` would leave a 15° face out against the ruling that exactly 15° counts. The 0.001°
+tolerance is 40 times that and far below the cut-off's 0.1°: a 14.9995° face turns and a 14.998° one does not. The
+level's slopes are 0°, 30° and 60°, so the threshold needs no hysteresis.
+
+**The host's readers.** Camera-relative movement and the aim fallbacks read the rendered camera's yaw (§19), so while
+the camera turns, a held move direction turns with it, for up to about 4.4 s (the 0.2 s dwell, then up to 4.2 s of
+eased turn). With look mode off that is the movement
+keys and left stick in Camera-relative (7) and Aim follows move (9), the gamepad move-stick fallback in Aim-relative (8)
+and Aim-relative, swapped sticks (0), and the aim stick in all four (camera-relative, or in Aim follows move relative to
+the camera-relative walk). The mouse aim deprojects the cursor through
+the rendered camera, so the world point under a still cursor moves while the camera turns.

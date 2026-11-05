@@ -65,27 +65,42 @@ sections; this one length-guards the forward and clamps the dot product. User ru
 move it unchanged, and unify the two in Backlog task 22 (guards G-06). The pins are
 `BrawlerProjectile.BlockOnGuardFront`, `DamageOnGuardBack`, `DamageOnGuardSide` and
 `BlockIndicatorAtInnerCircle`, whose assertions did not change; only their helper now runs this
-pass before `integrate`.
+pass before `integrate`. *(og-ground-aligned-attacks task 20b: `DamageOnGuardSide`'s shot was pitched pi/4
+in the vertical plane, in the Z-up frame it was written in and in the Y-up one. Since OQ17 (b) below a
+facing guard blocks a pitched shot, so the case now turns its shot pi/4 to the guard's side in the
+horizontal plane; its assertions did not change.)*
 
-**The guard's plane (og-ground-aligned-attacks task 8, design §3.3).** The angle is measured in the
-plane of the guard, whose up is `surfaceFrame::surfaceUpOf(guardTransform)`, the pose's image of
-`simFrame::kUp` (the ground normal on a slope, by the task 6 pose above). Two branches, then the one
-clamp, `glm::acos` and half-angle test:
-* **Flat** (`surfaceFrame::isFlat(guardUp)`): `incoming = -spawnDir` as before, by the flat rule. The
-  angle is the 3-D one, so a pitched shot into a flat guard counts its pitch. No shot was pitched while
-  the initiative's knob was off (until the flip, task 10, every launch direction was horizontal; task 14
-  retired the knob); since the flip a shot launched along a slope is (task 5, `G·h_L`), and
-  `GroundAlignedProjectileBlockTest.cpp` keeps one at 0.3 rad pitch outside the middle section of a flat
-  guard that faces it.
-* **Slope:** `incoming` is projected onto the guard's plane (`incoming -= guardUp * dot(incoming,
-  guardUp)`). A zero projection (a shot along the guard's up) returns `false`: the shot lands. Otherwise
-  the projection is normalized and the shared clamp/`glm::acos`/half-angle test runs on it. Without the
-  zero check the normalize divides zero by zero and the test still says "not blocked" (task 8 measured
-  it inert); the explicit `return false` keeps that answer from resting on how NaN compares.
+**The guard's plane (og-ground-aligned-attacks task 8, design §3.3; every guard since task 20b, OQ17
+(b)).** The angle is measured in the plane of the guard, whose up is
+`surfaceFrame::surfaceUpOf(guardTransform)`, the pose's image of `simFrame::kUp` (the ground normal on
+a slope, by the task 6 pose above). `incoming = -spawnDir` is projected onto that plane
+(`incoming -= guardUp * dot(incoming, guardUp)`). A zero projection (a shot along the guard's up)
+returns `false`: the shot lands. Otherwise the projection is normalized, and the clamp, `glm::acos` and
+half-angle test run on it.
 * **Why the plane.** Rotating a flat configuration by the ground tilt gives the same outcome on the slope
   (the conjugation identity, 2000 seeded shots). The 3-D angle does not: a shooter on flat ground firing
   head-on into a guard on the 30° plane meets it at 30°, outside the 0.25 rad middle section, and could
   never be blocked; in the guard's plane the angle is about 0 and it is blocked.
+* **One branch since task 20b.** Task 8 kept a flat branch: a flat guard used `-spawnDir` and the 3-D
+  angle, by the initiative's flat rule, so a pitched shot into a flat guard counted its pitch. No shot was
+  pitched while the initiative's knob was off; since the flip (task 10) a shot launched along a slope is
+  (task 5, `G·h_L`). So a shooter on the 30° plane firing down at a defender on the flat foot met a facing
+  guard at 30° and could never be blocked head-on, the mirror of the case above (design §11 OQ17). The
+  user ruled OQ17 (b) on 2026-11-01 ("yes go ahead with b"): the flat gate (guard G-09, retired) is gone
+  and the projection runs for every guard. A horizontal shot into a flat guard gets the same decision as
+  before; its direction can move in the last bits (a unit vector is normalized again), which could flip a
+  block only exactly at the 0.25 rad edge.
+* **The zero projection.** Before task 20b only a tilted guard could reach it, and task 8 measured the
+  explicit return inert there. Since task 20b a vertical shot onto a flat guard reaches it too, and the
+  return is load-bearing (guards G-12): with it deleted, `projectileGuardBlocks(guard, ±guardUp, pi)`
+  returned `true` in the test build.
+* **The pins** (`GroundAlignedProjectileBlockTest.cpp`, task 20b): a shot pitched ±30° (an along-slope
+  launch) into a facing flat guard blocks, 16 of 16, where the 3-D angle (at least 0.5235984 rad) never
+  did; the same shots into a flat guard turned 0.3 rad away are hits, 32 of 32, and at 0.2 rad blocks; a
+  shot along a flat guard's up is a hit with no marker, and the predicate says "not blocked" even with a
+  half angle of pi. Task 8's flat grid is re-stated as `FlatGuardBlocksInItsPlaneAndKeepsTodaysMarkerBits`:
+  its outcome oracle is today's predicate on the shot's horizontal direction, all 1260 shots block (the 504
+  pitched ±0.3 rad ones only in the plane), and every block marker keeps today's bits.
 
 `projectileGuardBlocks` has no caller outside this pass (task 8 grep over `Source/` and `Plugins/`).
 
@@ -121,13 +136,15 @@ pre-task tree:
    resim NoSlot row can hold a slot from a later one) and not expired by `integrate` on it (G-02).
    Each slot's volumes are parented to its closed-form position on the STEP's tick
    (`brawlerProjectileSimulation::closedFormPosition`, the function `integrate` snaps the body
-   with), and the first non-parent entry of its report is kept (G-03). Nothing is written in this
-   loop except the slot's own volume parents, so no query sees another slot's outcome.
+   with), and the first non-parent entry of its report is kept (G-10), together with the same report's
+   guard entry for the character that entry names (§6, G-11). Nothing is written in this loop except the
+   slot's own volume parents, so no query sees another slot's outcome.
 2. **Cancel.** Every slot whose first entry is a projectile ends `CancelledByProjectile`, and so
    does the in-flight slot whose own body that entry names (G-04). The pair is cancelled if EITHER
    query saw the other, a union, so the walk order cannot matter.
-3. **Classify** every contact that was not cancelled (G-05): a guard entry is a block when
-   `projectileGuardBlocks` says so, anything else is a hit.
+3. **Classify** every contact that was not cancelled (G-05): a contact that carries the struck
+   character's guard entry is a block when `projectileGuardBlocks` says so for that guard's body (§6),
+   anything else is a hit.
 
 The detector walks the shooters in the sorted order the system hands it, but no step above reads
 anything an earlier shooter wrote, so the outcome is the same in any order. The sort
@@ -274,3 +291,68 @@ the `BrawlerProjectile.*` cases pin it. The carried history of the removed field
 
 The per-slot footprint is 37 -> 33 B, the composite 338 -> 326 B, and
 `correctionStateBuffer::kWireFormatVersion` 4 -> 5 (the slots sit in the middle of the composite).
+
+---
+
+## 6. Full-body guarding: the struck character's guard decides ∴D-03
+
+**The request.** The user, 2026-10-31: full-body guarding for melee and projectiles (Backlog task 20b).
+Until task 20b the slot's first non-parent entry decided: a guard entry ran the guard test, anything else
+was a hit (the retired guard G-03, which called it a quirk and kept it through task 17's move).
+
+**Why the order lost blocks.** A brawler offers a shot two shapes: the weapon sphere (0.3 m, category
+`body`) on the radial's body and the guard sphere (0.4 m, `guard`) on the guard's body, enabled while
+the guard is up. Both bodies sit at the parent's position plus `simFrame::kUp * 0.3f` (each
+sub-simulation's `attachmentOffset`), so the spheres are concentric. The Jolt adapter sorts a report by
+`peerStableOrderOf` (`JoltSpatialQueryAdapter.cpp`): the candidate's `JoltQueryHitKey` (`isStatic`,
+`simulatableId`, `declarationIndex`, `shapeIndex`, …) first, then −penetration. The two shapes share the
+character's `simulatableId`, and `joltTickWorldHost::slotTemplateOf` numbers the declarations in the
+physics composite's order, where `dAttackRadialSimulation::PhysicsDeclaration` comes before
+`dAttackGuardSimulation::PhysicsDeclaration` (`SimulatableBrawler.h`). So whenever a report holds both,
+the weapon's `body` entry is first, and the shot hit through a raised, facing guard. The guard shell is
+0.1 m thick and a shot flies at 8 m/s, so at any tick rate below 80 Hz it moves further than the shell per
+tick and can reach both spheres on its first overlapping tick.
+
+**The rule.**
+* **The `break` stays** (guards G-10): one contact per slot, the first non-parent entry. It says which
+  character the shot struck, or which projectile cancels the slot, and the cancel pass (G-04, G-05) reads
+  only that.
+* **The guard entry.** When that entry is not a projectile, `guardEntryOf` also records the report's
+  first entry with the same `rootBodyId` and the `guard` category (G-11). It can be the first entry
+  itself. It rides on the contact as an `std::optional<SpatialQueryHit>`.
+* **Classification.** A cancelled slot is skipped (G-05). A contact with a guard entry runs today's guard
+  branch on that entry's body: `getBodyTransform`, `guardUp`, `targetRootPosition` and
+  `projectileGuardBlocks`. Anything else is a hit.
+* **What stays the first entry's.** `struckRootBodyId` and `objectPosition`. The guard entry has the same
+  root by construction, and the two spheres are concentric, so in Jolt the two entries carry the same
+  `objectPosition`; `integrate` reads it only as the marker's fallback when the ray misses the inner circle.
+* **A projectile first records no guard entry.** The entry would never be read: the cancel pass marks the
+  slot first and G-05 skips it. Task 20b measured the early return inert for that reason. It keeps a
+  contact's guard entry always the guard of a struck character.
+
+**What changed in play.** A shot whose report holds the struck character's guard is decided by that guard
+wherever the adapter lists it, so a head-on Hadouken into a raised guard is blocked on a tick where it
+reaches both spheres too. Neither golden scenario has such a tick. A temporary probe printed every
+classified contact: there are 2 in each scenario (flat ticks 466 and 527, slope ticks 1080 and 1260),
+none of them a `body` entry first with a guard entry behind it, and every shot horizontal relative to its
+guard (`dot(spawnDir, guardUp) = 0`), so neither rule of task 20b moves them. Both goldens are exact.
+
+**What did not change.** The projectile's hurtbox is still the two spheres; projectiles get no capsule
+test (the user's request was the melee band, task 20, `BrawlerHitDetectionSystem-rationale.md` §11). It
+is an open question for G4.
+
+**The pins** (`BrawlerProjectileHitDetectionTest.cpp`, task 20b). Each runs a scripted report through
+the single-shooter pass, in both entry orders where there are two:
+* `HitDetection.Projectile.AFacingGuardBlocksWhicheverEntryIsListedFirst`: a block either way, with
+  `targetRootPosition` the guard's. Before task 20b the body-first report was a hit (`2 == 4`).
+* `HitDetection.Projectile.AGuardFacingAwayIsAHitInBothOrders`.
+* `HitDetection.Projectile.NoGuardEntryOfTheStruckCharacterIsAHit`: a hit even with another character's
+  facing guard listed behind the target's body (G-11's pin).
+* `HitDetection.Projectile.AProjectileEntryFirstCancelsInBothOrders`.
+* `HitDetection.Projectile.AProjectileListedAfterTheTargetDoesNotCancel` (G-10's pin).
+
+The rig turns the weapon body away from the shot and points the other character's guard at it, so a
+predicate that read either body instead of the struck character's guard would change the outcome.
+
+**The wire.** Together with §1's plane rule this changes which shots are blocked without moving a byte,
+so the correction version went 13 → 14 (`CorrectionStateBufferCodec.h`).

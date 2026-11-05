@@ -76,8 +76,12 @@ it, so the live count is `11 + this list`:
 | `G-26` | og-ground-aligned-attacks task 9b | step 2’s hit-tick knockback write — before the classification |
 | `G-27` | og-ground-aligned-attacks task 9b, rework 1 | `writesKnockbackVelocity`’s flat-rule `return` — the flat rule kept |
 | `G-28` | og-ground-aligned-attacks task 13b | step 2’s `face` — the one ground rule, shared with the attack sample |
+| `G-29` | og-ground-aligned-attacks task 33 | `estimateSupportV2`’s face-contact branch — the centre probe is swept only on an edge contact |
+| `G-30` | og-ground-aligned-attacks task 34 | `classifySupportV2`’s `previous` — the hysteresis reads the restored `State::flags`, never `DerivedState` |
+| `G-31` | og-ground-aligned-attacks task 34 | `classifySupportV2`’s separation row — no velocity test detaches a body below its hover |
+| `G-32` | og-ground-aligned-attacks task 35 | `redirectsIntoFace`’s `return` — a landing, a `Lip` and a body above its hover are never redirected, except on a hit tick above the hover, and `previous` comes from `State::flags` |
 
-**Live guards today: 18.**
+**Live guards today: 22.**
 
 ---
 
@@ -367,7 +371,8 @@ ON A SLOPE (user ruling OQ6, 2026-10-28; old OQ7 (a)).** The site and the id are
 predicate takes the
 probe's face normal `face` (the hit's `surfaceNormal` when non-zero, else its `normal`: the face rule
 of `sampleAttackGround`; since og-ground-aligned-attacks task 13b it is `attackGroundNormal(probe, sd)`,
-which also gives `kWorldUp` for a miss or a face past the walkable cap, guard G-28). Two arms:
+which also gives `kWorldUp` for a miss or a face past the walkable cap, guard G-28; since task 32 it is
+`GroundSupport::faceNormal`, and `classifySupport` makes the call). Two arms:
 
 - **Flat** (`surfaceFrame::isFlat(face)`): `committed && glm::dot(state.velocity, up) > 0.f`,
   the task-27 arm, verbatim.
@@ -466,7 +471,8 @@ is where the tag now sits. The `rideHeight·cosθ` arithmetic the fence follows 
 ## G-10 — The two forbidden one-sided-servo variants, both written before being caught
 
 **Tag site:** `BrawlerMovementSimulation.h`, immediately above
-`const float e = sd.rideHeight - clearance;` in step 4’s supported arm.
+`const float e = sd.rideHeight - ground.probe.clearance;` in step 4’s supported arm (`clearance` was a local of
+step 2 until og-ground-aligned-attacks task 32; the site did not move).
 
 **Was must-never-move:** `T3-23`. **Taxonomy clause:** F2 + F1a.
 
@@ -502,8 +508,11 @@ named it, and the quotation is verbatim.
 
 ## G-11 — Step 4 has no geometry of its own — the detach decision is step 2’s
 
-**Tag site:** `BrawlerMovementSimulation.h`, immediately above `if (support != SupportState::Unsupported)`
-in step 4. ⚠ **Moved up one declaration** — see the note.
+**Tag site:** `BrawlerMovementSimulation.h`, immediately above `if (decision.support != SupportState::Unsupported)`
+in step 4. ⚠ **Moved up one declaration** — see the note. Since og-ground-aligned-attacks task 32 the branch
+reads `SupportDecision::support`, which step 2's `classifySupport(state, ground, committed)` returns; the site did
+not move, and the decision is still step 2's. Since og-ground-aligned-attacks task 34 `SupportLaw::V2` takes the
+decision from `classifySupportV2` instead (`BrawlerMovementSimulation-rationale.md` §34), still in step 2.
 
 **Was must-never-move:** `T3-24`. **Taxonomy clause:** F1d + F5a.
 
@@ -520,7 +529,7 @@ pre-conversion file):**
 
 ⚠ **THIS IS THE ONE TAG THAT IS NOT WHERE ITS FENCE SAT, and the move is deliberate.** The
 fence stood *inside* step 4’s supported arm, so the first code line at or after it is
-`const float e = sd.rideHeight - clearance;` — which is also **G-10’s** site. Two tags on
+`const float e = sd.rideHeight - ground.probe.clearance;` (`- clearance` until task 32) — which is also **G-10’s** site. Two tags on
 one declaration is the single biggest source of UNCERTAIN in this phase’s reader tests, so the
 tag was moved up to the branch whose condition **reads `support`** — the declaration this
 fence is actually about.
@@ -674,12 +683,16 @@ the zero it requires — and carries a control arm one tick further out that rea
 ## G-25 — The attack ground sample comes from its own sweep of the State it is given
 
 **Tag site:** `BrawlerMovementSimulation.h`, in `sampleAttackGround`'s body, immediately above
-`const GroundProbe probe = probeGround(state, sd, bindings, query);`.
+`return brawlerGround::GroundSample{estimateSupport(state, sd, bindings, query).faceNormal};`. Until
+og-ground-aligned-attacks task 32 the body called `probeGround` itself, under the same tag; since then its one
+sweep is the one `estimateSupport` makes, the movement's own support estimate. Under `SupportLaw::V2`
+(og-ground-aligned-attacks task 33) an edge contact makes `estimateSupport` sweep the centre probe too, from the
+same pose (guard G-29), so the sample then makes the same two sweeps the movement makes.
 
 **Added by:** og-ground-aligned-attacks task 4, 2026-10-28. Not part of task 68's conversion census.
 
 **The prohibition.** Do not replace this sweep with a value the movement already computed: not
-`DerivedState::surfaceNormal`, not a normal cached from an earlier tick. The sample must be a sweep from
+`DerivedState::surfaceNormal`, not `DerivedState::contactNormal` (task 33), not a normal cached from an earlier tick. The sample must be a sweep from
 the `State` it is given.
 
 **The consequence.** `DerivedState` is off-wire scratch written during the movement step and not restored
@@ -689,7 +702,7 @@ replaying client, and so can the swing plane frozen from it into the radial init
 field): a correction per affected swing, with nothing failing locally. It is also the sweep's `normal`,
 where the sample wants the exact face normal when the adapter provides one.
 
-**What breaks if it moves.** This line is the only sweep the sample makes (until task 14 a knob-off
+**What breaks if it moves.** This line makes the only sweep the sample makes (until task 14 a knob-off
 branch above it issued none). `BrawlerGroundSample.AlignedPrefersTheExactFaceNormal` checks that the sample's
 sweep is the movement probe's call, and the face selection.
 
@@ -698,7 +711,9 @@ sweep is the movement probe's call, and the face selection.
 ## G-26 — The hit-tick knockback write comes before the support classification
 
 **Tag site:** `BrawlerMovementSimulation.h`, in `integrate`'s step 2, immediately above
-`const bool knockbackWritten = writesKnockbackVelocity(inboundHit, face, walkable, committed);`.
+`const bool knockbackWritten = writesKnockbackVelocity(inboundHit, ground.faceNormal, ground.eligible, committed);`
+(`face` and `walkable` until og-ground-aligned-attacks task 32 put step 2's ground in a `GroundSupport`; the site
+did not move: it is between `estimateSupport` and `classifySupport`).
 
 **Added by:** og-ground-aligned-attacks task 9b, 2026-10-28 (user ruling OQ14). Not part of task 68's
 conversion census. Task 9b's rework 1 moved the flat rule out of this entry into guard G-27, whose
@@ -708,7 +723,8 @@ wrong edit is typed in the predicate, not here.
 
 > ⛔ **DO NOT MOVE THE WRITE BELOW THE SUPPORT CLASSIFICATION.** `state.velocity =
 > inboundHit.hitDirectionWorld * inboundHit.knockbackSpeed;` must run before
-> `detachesFromSupport(state, up, face, committed)` reads the velocity. Written after it, the
+> `classifySupport(state, ground, committed)`, whose `detachesFromSupport` call reads the velocity. Written
+> after it, the
 > hit tick is classified with the pre-hit velocity: a direction that leaves the target's ground stays
 > `Supported` on its own hit tick, the frame keeps the probe normal, and the servo removes up to
 > `hoverMaxAccel · dt` (5 m/s) of the up channel. Seen failing in task 9b:
@@ -722,6 +738,11 @@ does not happen on the hit tick.
 arm) reads the same `knockbackWritten` local: a written tick takes `velocityUV = currentUV` (the
 decomposition of the written velocity), every other hit tick today's line. The derivation is in
 `BrawlerMovementSimulation-rationale.md` §26.
+
+**Under `SupportLaw::V2`** (og-ground-aligned-attacks task 34) the same local takes
+`writesKnockbackVelocityV2(inboundHit, committed)`, which has no flat rule, and the classification is
+`classifySupportV2`, which reads the written velocity and the predicate's value. The order is the same rule: the
+write before the classification. Every V2 hit tick takes `velocityUV = currentUV` (§34).
 
 ---
 
@@ -760,21 +781,32 @@ The flat golden and the flat-ground tests would have to absorb both.
 hit tick, a zero `d`) are not the flat rule. The line above the tag picks `g`, the
 plane the rule tests. `integrate`'s step 2 reads the predicate (guard G-26).
 
+**The law it belongs to.** Since og-ground-aligned-attacks task 34 this predicate is
+`SupportLaw::Legacy`'s only (the shipped law until task 36). `SupportLaw::V2` writes through `writesKnockbackVelocityV2`, which has no flat rule
+by design (`BrawlerMovementSimulation-rationale.md` §34): the prohibition above stands for Legacy until the
+initiative's task 37 retires it.
+
 ---
 
 ## G-28 — The ground face comes from `attackGroundNormal`, in both readers
 
-**Tag site:** `BrawlerMovementSimulation.h`, in `integrate`'s step 2, immediately above
-`const glm::vec3 face = attackGroundNormal(probe, sd);`. The other reader is `sampleAttackGround`'s
-`return brawlerGround::GroundSample{attackGroundNormal(probe.hit, sd)};`, two lines under guard G-25's
-tag.
+**Tag site:** `BrawlerMovementSimulation.h`, in `estimateSupport`'s body, immediately above
+`const glm::vec3 faceNormal = attackGroundNormal(probe.hit, sd);`. Since og-ground-aligned-attacks task 32 both
+readers take that one call's value, `GroundSupport::faceNormal`: `integrate`'s step 2 as `ground.faceNormal`, and
+`sampleAttackGround` as `estimateSupport(state, sd, bindings, query).faceNormal` under guard G-25's tag. Until
+task 32 the tag stood in `integrate`'s step 2 above `face`'s own call, and `sampleAttackGround` made a second
+call to the helper. Since og-ground-aligned-attacks task 33 the tag stands in `estimateSupport`'s Legacy arm, below
+the `SupportLaw::V2` return: under V2 both readers take the face of `estimateSupportV2` instead
+(`BrawlerMovementSimulation-rationale.md` §33), which is again one value for both readers. The prohibition below is
+the Legacy law's, which shipped until og-ground-aligned-attacks task 36 (rationale §36).
 
 **Added by:** og-ground-aligned-attacks task 13b, 2026-10-28 (task 10's open point 2, confirmed by its review
 as L1). Not part of task 68's conversion census.
 
 **The prohibition.**
 
-> ⛔ **DO NOT RE-DERIVE THE GROUND FACE.** Step 2's `face` and the attack ground sample are one value,
+> ⛔ **DO NOT RE-DERIVE THE GROUND FACE.** Step 2's face (`GroundSupport::faceNormal`) and the attack ground
+> sample are one value,
 > `inline glm::vec3 attackGroundNormal(const SweepHit& hit, const StaticData& sd)`: the hit's `surfaceNormal`
 > when it is non-zero, else its `normal`, kept only when the hit is blocked and
 > `glm::dot(face, kWorldUp) >= sd.cosMaxSlope`, else `kWorldUp`. Do not compute either reader's face from the
@@ -797,6 +829,182 @@ entering the ground.
 with the helper and with the pre-task expression, bit for bit, on 1049 scripted hits. The slope golden trace's
 measurement (`groundOf` in `BrawlerJoltSlopeGoldenTraceTest.cpp`) classifies each knockback against the same
 helper.
+
+---
+
+## G-29 — The centre probe is swept only on an edge contact
+
+**Tag site:** `BrawlerMovementSimulation.h`, in `estimateSupportV2`'s body, immediately above
+`if (contact.faceContact)`, the branch that returns the capsule probe's own exact face (or `None`) before the centre
+probe's sweep, `query.sweep(bindings.queryVolumeIds[1], probePose, -up * probeLength)`, further down. The unblocked
+return above it also comes before that sweep.
+
+**Added by:** og-ground-aligned-attacks task 33, 2026-11-03 (support law v2; the task's spec: "The centre volume is swept
+only on an edge contact"). Not part of task 68's conversion census.
+
+**The prohibition.**
+
+> ⛔ **DO NOT CONSULT THE CENTRE PROBE ON A FACE CONTACT, AND DO NOT MOVE ITS SWEEP ABOVE THIS BRANCH.** A contact
+> whose exact face is within `kEdgeContactCos` (2°) of the sweep's GJK normal, or one whose adapter reports no exact
+> face, is the face the capsule probe's clearance is measured to, so it is the frame
+> (`BrawlerMovementSimulation-rationale.md` §33, the derivation of why the frame must be the face). The centre probe
+> answers only where the capsule's contact is an edge.
+
+**The consequence.**
+- At a concave crease the capsule's first contact with the rising face comes while the centre is still over the flat
+  face: measured in `SupportEstimate.ConcaveCreaseTakesTheRisingFaceFromItsFirstContact`, 0.105 m before the crease
+  line. A centre that decided there would give the flat face as the frame while the clearance is measured to the
+  rising face, and the servo would no longer act on the gap.
+- An adapter or mock that gives no `surfaceNormal` (zero) never makes an edge contact, so it gets the Legacy estimate.
+  With the sweep moved up it would sweep a second volume on every tick, and its estimate could take the centre's
+  face.
+- Every face tick would pay a second sweep per character.
+
+**What breaks if it moves.** These cases count the centre's sweeps:
+`SupportEstimate.FaceInteriorIsTheExactFaceWithNoCentreSweep` (none in 732 face-interior sweeps on Jolt),
+`GroundAlignedKnockback.V2EqualsLegacyOnEveryPlaneWithoutAnExactEdge` (none on any scripted plane without an exact
+face) and `BrawlerGroundSample.V2SampleIsTheEstimatesFaceNormal` (one sweep on a face contact, two on an edge).
+
+---
+
+## G-30 — The hysteresis reads the restored `State::flags`, never `DerivedState`
+
+**Tag site:** `BrawlerMovementSimulation.h`, in `classifySupportV2`'s body, immediately above
+`const SupportState previous = static_cast<SupportState>((state.flags & kFlagSupportMask) >> kFlagSupportShift);`.
+
+**Added by:** og-ground-aligned-attacks task 34, 2026-11-03 (support law v2; the task's spec: "`previous` is
+`(state.flags & kFlagSupportMask) >> kFlagSupportShift`; never `DerivedState::lastSupportState`"). Not part of task
+68's conversion census.
+
+**The prohibition.**
+
+> ⛔ **DO NOT TAKE `previous` FROM `DerivedState::lastSupportState`, OR FROM ANY OTHER OFF-WIRE COPY.** V2's
+> hysteresis row (`committed && previous == Unsupported && clearance > rideHeight`) decides this tick from last
+> tick's SupportState. The separation row does not read `previous`: it is reached only when the hysteresis row did
+> not fire. That value must be the one in `State::flags` bits 1–2, which ride the
+> wire and the rollback snapshot (`SIM_MEMBER(S, flags)`). `DerivedState` is off-wire scratch that a rollback does
+> not restore: after a restore it holds the value of the last tick that ran, not of the restored tick.
+
+**The consequence.** On a resimulation the classification would read the support of a tick from the discarded
+future. An airborne knockback that the replayed tick should keep `Unsupported` (row 2) could re-attach, or a
+supported one could fall into row 2, so the replay diverges from the original run and the correction never
+converges. A single-world rig cannot show it, because there both values always agree (the support-law scorecard
+counts `supportSourceMismatches=0`).
+
+**What breaks if it moves.** `GroundAlignedKnockback.V2HysteresisReadsTheRestoredFlagsNotDerivedState` sets the
+two to opposite values and requires the decision to follow `flags`, both ways round.
+
+---
+
+## G-31 — No velocity test detaches a body below its hover
+
+**Tag site:** `BrawlerMovementSimulation.h`, in `classifySupportV2`'s body, immediately above the separation row
+`else if (committed && clearance >= sd.rideHeight`, whose condition goes on to
+`glm::dot(state.velocity, n) > glm::max(kMinLaunchSine * glm::length(state.velocity), kMinSeparationSpeed)`.
+
+**Added by:** og-ground-aligned-attacks task 34, 2026-11-03 (support law v2, design rule "below its hover a body is
+never detached by velocity"; it takes in the initiative's task 24). Not part of task 68's conversion census.
+
+**The prohibition.**
+
+> ⛔ **DO NOT DROP `clearance >= sd.rideHeight` FROM THE SEPARATION ROW, AND DO NOT ADD ANOTHER VELOCITY TEST THAT
+> CAN DETACH A SUPPORTED BODY BELOW ITS HOVER.** Below `rideHeight` the servo lifts a supported body, so an upward
+> velocity there is the servo's own correction, not a launch. Only the launch row (a written hit tick, decided by
+> the direction) and the end of the ground (`kind == None`) may detach a body there.
+
+**The consequence.** The servo's recovery lift detaches the body it is lifting. Seen failing in task 34 (the term
+deleted, everything else kept): the support-law scorecard's crease rig, run under V2, hops at the entering crease
+again: `[SupportLaw.crease.departures] law=v2 convexDepartures=22 worstBallisticErrMps=0.0000 gravityStepMps=0.1633
+concaveHops=18`, with `[SupportLaw.scorecard] law=v2 rig=crease runs=56 flips=37 hops=40 apexMaxM=5.0532
+slideEndTicks=30` (with the term: 0 concave hops, 17 flips, 22 hops, 12 slide-end ticks). The flat rig stays at 0
+flips with or without the term: there the separation floor and the cone are larger than the servo's lift.
+
+**What breaks if it moves.** `SupportLawScorecard.CreaseCrossingsUnderV2` requires 0 concave hops. The constant's
+`static_assert` holds `kMinSeparationSpeed` between three times the measured crossing residue and half the smallest
+intended separation (`BrawlerMovementSimulation-rationale.md` §34).
+
+---
+
+## G-32 — A landing, a `Lip` and a body above its hover are never redirected, except on a hit tick above the hover, and `previous` comes from `State::flags`
+
+**Tag site:** `BrawlerMovementSimulation.h`, in `redirectsIntoFace`'s body, immediately above its
+`return support == SupportState::Supported && committed`, whose condition goes on to
+`ground.kind == SupportKind::Face && (written || ground.probe.clearance <= sd.rideHeight)` and
+`(static_cast<SupportState>((state.flags & kFlagSupportMask) >> kFlagSupportShift) == SupportState::Supported || written)`.
+
+**Added by:** og-ground-aligned-attacks task 35, 2026-11-03 (support law v2, the redirect at a concave crease; the
+task's spec: "Landings (`previous == Unsupported`, not written) are not redirected"). Task 35's rework 1, the same
+day, added the `Face` and hover terms (a lead ruling on the redirect's scope). Rework 2, the same day, added
+`written ||` to the hover term (a lead ruling: a hit tick is not a fall). Not part of task 68's conversion
+census. No compile-time form exists: every term is a runtime decision on this tick's estimate and the restored State.
+
+**The prohibition.**
+
+> ⛔ **DO NOT DROP OR WIDEN `(previous == Supported || written)`, `ground.kind == SupportKind::Face` OR
+> `(written || ground.probe.clearance <= sd.rideHeight)`, DO NOT DROP THAT TERM'S `written ||`, AND DO NOT TAKE
+> `previous` FROM `DerivedState::lastSupportState`.** The redirect removes a committed body's velocity into its
+> face only when the body was already on the ground last tick (a crossing onto a new face) or when this tick's hit
+> wrote the velocity (a hit into the face), only on a `Face`, and, unless this tick's hit wrote the velocity, only
+> at or below the hover. A committed body whose last tick was Unsupported and that this tick did not write is
+> landing: its velocity into the face is the fall that the hover servo and step 6′ absorb (ruling #28's soft
+> landing). Above the hover the same holds for every body this tick did not write: there the one-sided servo is
+> gravity plus a pull-down, so a velocity into the ground is a fall that the hysteresis and the servo own, as for a
+> landing (the mirror of G-31). A written velocity is not a fall, so that reason does not cover a hit tick; and a
+> body resting at its hover has a clearance equal to `rideHeight` only to within rounding, so without `written ||`
+> a hit into the face on a body at rest would be redirected or not by that rounding.
+> A `Lip` has no surface to slide along: its face is `kWorldUp` (rationale §33), so on a `Lip` the redirect would
+> take the downward velocity of every body that slides over a low edge or a tip. `previous` is `State::flags`
+> bits 1–2 for the reason G-30 gives: `DerivedState` is not restored by a rollback.
+
+**The consequence.** With the landing term dropped, a landing loses its velocity into the face on the landing tick,
+so the servo's damping never acts on it: the fall stops in one tick instead of being caught by the servo. With
+`previous` taken from `DerivedState`, a resimulated tick decides the redirect from the support of a discarded tick.
+With the hover term dropped, the redirect removes the one-sided servo's pull-down on every tick above the hover where
+it exceeds the 2° cone, which at a slow speed is nearly every tick: a slow body over a convex crest floats and bleeds
+its speed. With the `Face` term dropped, a body that slides down a face onto a `Lip` loses its downward velocity
+there. With `written ||` dropped, a hit into the face on a body at rest a rounding above `rideHeight` is not
+redirected: the body meets the face, and the push-out and the servo take the velocity into the face instead. Seen
+failing:
+- task 35, the landing term deleted: `GroundAlignedKnockback.V2LandingIsNotRedirected` fails
+  `REQUIRE( !movement::redirectsIntoFace(landing.state, landing.estimate(), movement::SupportState::Supported, true, false) )`
+  on flat ground at a clearance of 0.04 m (the call as it read before rework 1 added its `sd` argument);
+- task 35, `integrate` handing the redirect a State whose flags carry `DerivedState::lastSupportState`: the same case
+  fails `REQUIRE( glm::dot(landing.state.velocity, n) < glm::dot(sliding.state.velocity, n) )` with
+  `2.116f < 1.83667f` (the landing was redirected and the slide was not);
+- rework 1, the hover term deleted: `SupportLawScorecardTest.cpp(516): FAILED: CHECK( measured == pinned )` with
+  `12 == 14` and the message `rig crease field slopeToPlateau.crossed measured 12 pinned 14`, the only failure in
+  `[@og]`. The two slopeToPlateau runs at d = 4.5 m, ±30°, float over the crest (clearance 0.1437 m against
+  0.1224 m at tick 114) at 0.3103 m/s against 0.6650 m/s, and stop short of the crease line;
+- rework 1, the `Face` term deleted: `PlatformEdgeTest.cpp(1013): FAILED: CHECK( e.estimateRedirect == 0.f )` with
+  `1.67458f == 0.0f`, on the one allowed estimate lift (tipCornerPlus, d = 4.9 m, oblique 0°: anomaly 1.85156, servo
+  0.176981, redirect 1.67458 m/s), the only failure in `[@og]`. Of PlatformEdge's other V2 checks none fails: the 48
+  tip and low-edge `Lip` departures that the redirect turns into lifts under the spec's expression need the hover
+  term dropped too (task 35's measurement), because their `Lip` tick is above the hover;
+- rework 2, `written ||` deleted: `[@og]` `940 | 938 passed | 2 failed` (17 assertions). On all eight headings
+  `GroundAlignedKnockbackTest.cpp(1539): FAILED: CHECK( movement::redirectsIntoFace(written, rig.sd, rig.estimate(),
+  movement::SupportState::Supported, true, true) )` with `false`, and `GroundAlignedKnockbackTest.cpp(1552): FAILED:
+  CHECK( err <= 1e-4f * speed )` with `10.0f <= 0.002f` (heading 0°: `v=(0, -0.163333, -20)` against
+  `expected=(0, 8.49692, -15)`; the 10 m/s is the velocity into the face), at 9.98e-6 m above `rideHeight`; and
+  `BrawlerJoltSlopeGoldenTraceTest.cpp(799): FAILED: CHECK( std::string(printed) == "tick=410 travelM=3.9861
+  apexM=1.8964" )` with `"tick=410 travelM=2.6684 apexM=1.2414"`. In that golden G's target, F, rests at a
+  clearance that prints 0.100000; unredirected, F meets the face (clearance 0 on ticks 411 and 412) and slides at
+  14.77 m/s on tick 412 against 16.90 m/s, with a smallest `minClearanceM` of 0.8101 m against 0.9706 m. No rig line
+  moves.
+
+The landing and `previous` poisons move no line of the support-law scorecard or a golden v2 print: no rig run has a
+committed landing with a velocity into the face beyond the cone, so only the unit case guards those two.
+
+**What breaks if it moves.** `GroundAlignedKnockback.V2LandingIsNotRedirected` sets the landing and the slide up
+identically except for `previous`, with `DerivedState::lastSupportState` set opposite to `flags` in both, and requires
+the predicate and the integrated velocity to follow `flags`. `SupportLawScorecard.CreaseCrossingsUnderV2` pins the
+slopeToPlateau crossings at 14 (the hover term). `PlatformEdge.KnockbacksAcrossTheImportedPlatformRimsUnderV2` allows
+at most one estimate lift, at tipCornerPlus d = 4.9 m along the fall line, with no part of it from the redirect (the
+`Face` term), and no estimate down-pull. `GroundAlignedKnockback.V2HitTickIntoTheFaceJustAboveTheHoverIsRedirected`
+places a committed, previously Supported body 1e-5 m above `rideHeight` on a 30° face and requires the predicate
+false unwritten and true written, and the hit tick's velocity to be the projected one plus the above-hover servo's
+vertical step; `BrawlerJoltSlopeGoldenTrace.KnockbacksFollowTheAttackersSwing` checks G's hit at 410 to within
+5e-5 m of its travel and apex (both pin the `written ||`; until task 36 the V2 print case checked it at the print's
+precision).
 
 ---
 
