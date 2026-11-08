@@ -85,10 +85,11 @@ Nothing here is simulation state. The camera never reaches the wire; it is local
 
 1. **No look input unless `lookHeld`.** With look mode off the mouse and the stick are ignored and the yaw does not
    change, except on a followed slope of 15° or more that has held steady for the dwell, where it turns, eased, to
-   face up the slope as it was when the dwell started (§20, tasks 21c, 21d and 21e). Since og-ground-aligned-attacks task 21 the camera then returns, over time, to world up and the target pitch
-   (§18); before it, nothing moved at all (`returnDegPerSec` 0 still gives that camera). The hold-off timer still counts
-   down while look mode is off (it measures time since the last deliberate vertical look, not time spent looking), so a
-   pause longer than the hold-off never delays the next pull.
+   face up the slope as it was when the dwell started (§20, tasks 21c, 21d and 21e). Since og-ground-aligned-attacks
+   task 21 the camera then returns, over time, to world up and the target pitch (§18); before it, nothing moved at all
+   (`returnDegPerSec` 0 still gives that camera). The hold-off timer still counts down while look mode is off (it
+   measures time since the last deliberate vertical look, not time spent looking), so a pause longer than the hold-off
+   never delays the next pull.
 2. **Player look.** Mouse: `Δ = units × mouseDegreesPerUnit × mouseSens`, no dt, no deadzone, no
    normalization. `mouseLook` takes no frame time on purpose: a mouse report is already a distance.
    Stick: radial deadzone, rescaled response curve, then `× rate × stickSens × dt` (§5). If both are
@@ -534,13 +535,12 @@ re-tilts. Under the airborne rule this means a camera whose character leaves the
 while the player turns it, as the lead told the user before dispatch.
 
 **Look mode off: the return** (`returnDegPerSec`, `kReturnDegPerSec` 90°/s; the Unreal host's og.cam.returnDegPerSec).
-`integrate` no longer returns at once when look mode is off. It ignores the look input, keeps the yaw (since task 21c it turns the yaw up a followed slope of 15° or more,
-§20), and moves
-`frameUp` toward world up (`rotateUpToward`) and the pitch toward the target pitch (`stepToward`), each by at most
-`returnDegPerSec × dt` per frame, each snapping to its goal when it is within one step. Both are reached after
-`ceil(angle / (returnDegPerSec × dt))` frames, at 30 to 240 fps, and then they are exactly world up and the target, so
-`worldView` is back on its flat branch: the frozen camera before task 21, at world up and 60°. A rate of 0 or below
-gives that frozen camera from the start.
+`integrate` no longer returns at once when look mode is off. It ignores the look input, keeps the yaw (since task 21c
+it turns the yaw up a followed slope of 15° or more, §20), and moves `frameUp` toward world up (`rotateUpToward`) and
+the pitch toward the target pitch (`stepToward`), each by at most `returnDegPerSec × dt` per frame, each snapping to
+its goal when it is within one step. Both are reached after `ceil(angle / (returnDegPerSec × dt))` frames, at 30 to
+240 fps, and then they are exactly world up and the target, so `worldView` is back on its flat branch: the frozen
+camera before task 21, at world up and 60°. A rate of 0 or below gives that frozen camera from the start.
 
 ## 19. On a slope the pitch follows the ground's rise along the view, clamped; the yaw is the player's (og-ground-aligned-attacks task 21b, 2026-11-03)
 

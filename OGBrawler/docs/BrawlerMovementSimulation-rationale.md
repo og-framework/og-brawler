@@ -49,6 +49,29 @@
 <!-- lint-external-ref: design_ledge_fall_and_landing.md -- brawler-movement-simulation initiative archive; private working material, not distributed with this submodule -->
 <!-- lint-external-ref: BrawlerInputPackaging.h:153 -- a DEAD citation, quoted DELIBERATELY: note R0-13 exists in order to record that task 65's published correction cites a line past the end of a file since rewritten 197 -> 128 lines. The lint is RIGHT and so is the note -->
 <!-- lint-external-ref: ZeroInputIsTheFold -- a RETIRED token -- og-syncedInput-rework task 3 DELETED this Catch2 case with the six-slice input composite it tested; the header quote that names it is verbatim and R0-21 records the successor, so a resolving name would falsify both -->
+<!-- lint-external-ref: detachesFromSupport -- a RETIRED token -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records its history -->
+<!-- lint-external-ref: attackGroundNormal -- a RETIRED token -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records its history -->
+<!-- lint-external-ref: estimateSupportV2 -- a RETIRED token -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records its history (its body is estimateSupport's) -->
+<!-- lint-external-ref: classifySupportV2 -- a RETIRED token -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records its history (renamed classifySupport) -->
+<!-- lint-external-ref: writesKnockbackVelocityV2 -- a RETIRED token -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records its history (renamed writesKnockbackVelocity) -->
+<!-- lint-external-ref: supportLaw -- a RETIRED token -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records its history -->
+<!-- lint-external-ref: SupportLaw::V2 -- a RETIRED token -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records its history -->
+<!-- lint-external-ref: SupportLaw::Legacy -- a RETIRED token -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records its history -->
+<!-- lint-external-ref: BrawlerMovement.XYKnockbackDoesNotDetach -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured -->
+<!-- lint-external-ref: BrawlerMovement.SlopeKnockbackStaysOnSlope -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured -->
+<!-- lint-external-ref: GroundAlignedKnockback.InPlaneTangentSlidesAlongTheFace -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured (its v2 twin ...UnderV2 remains) -->
+<!-- lint-external-ref: GroundAlignedKnockback.DirectionLeavingTheFaceLaunchesOnTheHitTick -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured (its v2 twin ...UnderV2 remains) -->
+<!-- lint-external-ref: GroundAlignedKnockback.FlatTargetHitByASlopeTangentLaunches -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured (its v2 twin ...UnderV2 remains) -->
+<!-- lint-external-ref: GroundAlignedKnockback.DirectionIntoTheFaceStaysSupported -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured -->
+<!-- lint-external-ref: GroundAlignedKnockback.OverheadDownswingNeverDetaches -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured (its v2 twin ...UnderV2 remains) -->
+<!-- lint-external-ref: GroundAlignedKnockback.FlatTargetWithAHorizontalDirectionKeepsTodaysBits -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured -->
+<!-- lint-external-ref: GroundAlignedKnockback.UnwalkableExactFaceOverAWalkableSweepIsWorldUp -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured -->
+<!-- lint-external-ref: GroundAlignedKnockback.WalkableExactFaceStillDecides -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured -->
+<!-- lint-external-ref: GroundAlignedKnockback.V2EqualsLegacyOnEveryPlaneWithoutAnExactEdge -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured -->
+<!-- lint-external-ref: BrawlerGroundSample.AlignedSampleIsTheSharedGroundNormal -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured -->
+<!-- lint-external-ref: BrawlerGroundSample.LegacyDeclaresExactlyOneQueryVolume -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured (restated as DeclaresTheGroundProbeAndTheCentreProbe) -->
+<!-- lint-external-ref: SupportEstimate.LegacyRegistersOneQueryVolumeAndV2Two -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured (restated as RegistersTheGroundProbeAndTheCentreProbe) -->
+<!-- lint-external-ref: PlatformEdge.KnockbacksAcrossTheImportedPlatformRims -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured (the Legacy run; the v2 run ...UnderV2 remains) -->
 # `BrawlerMovementSimulation.h` — rationale
 
 The narrative, the provenance and the **derivations** for the brawler character-movement
@@ -192,9 +215,10 @@ also held the initiative's compile-time knob, that function's default template a
 og-simulation only) because the machine header needs the same type and cannot include this header back:
 this header includes `DAttackMachineSimulation.h`, so the shared type lives below both.
 
-⭐ **[og-ground-aligned-attacks task 13] `OGSimulation/SurfaceFrame.h`, included directly.** It supplies
-`surfaceFrame::isFlat`, which `detachesFromSupport` and step 2's tangent-frame choice read (§30). The leaf
-above already includes it; the header names it itself because it calls it.
+⭐ **[og-ground-aligned-attacks tasks 13 and 37] `OGSimulation/SurfaceFrame.h` is no longer included.** Task 13
+included it directly for `surfaceFrame::isFlat`, which the Legacy lift test (`detachesFromSupport`), the flat rule
+and step 2's detached-frame choice read (§30). Task 37 deleted all three with the Legacy support law (§37), so the
+header names nothing from it. The ground-sample leaf above still includes it.
 
 ---
 
@@ -395,6 +419,10 @@ teleports; never unconditionally per tick.
 >
 > Stored in `State::flags` bits 1-2 — the SAME TWO BITS `SurfaceKind` used, so this moves ZERO
 > wire bytes and the enum may still grow to 4 values before the field has to widen.
+
+⭐ **[og-ground-aligned-attacks task 37]** The predicate the quote names, `detachesFromSupport`, went with the
+Legacy support law. The detach decision is the rows of `classifySupport` (§34), still taken in step 2's
+classification; step 4 still only reads `decision.support`.
 
 
 <!-- header lines 169-170 -->
@@ -778,6 +806,11 @@ copy of the contract is gone, and the `.cpp` statement is now guard G-01 of
 `OGBrawlerUECharacter-guards.md` (Unreal module docs), tagged at the `InitCapsuleSize(42.f, 96.0f)`
 call. After the conversion that call happens to sit at `OGBrawlerUECharacter.cpp:69`, so
 `SimulatableBrawlerTypes.h`'s `:69` is correct again, by coincidence. Cite G-01, not a line.
+
+**Update (og-ground-aligned-attacks task 37, 2026-11-05).** Later edits above the call (the camera cvars of
+og-ground-aligned-attacks tasks 21 to 21e among them) moved it again: on 2026-11-05 it is
+`OGBrawlerUECharacter.cpp:177`, the line under G-01's tag, so the `:69` in the two carried quotes is stale once
+more. The quotes are kept verbatim; cite G-01.
 
 
 <!-- header lines 485-487 -->
@@ -1705,6 +1738,14 @@ A same-face up-slope knockback no longer reaches it; a direction that leaves the
 tick. The flat arm is the task-27 one, verbatim. Details, and the tangent frame while detached, in §30;
 the prohibitions in guard G-07.
 
+⭐ **[og-ground-aligned-attacks task 37, 2026-11-05] The gate this section describes is retired with the Legacy
+support law.** `detachesFromSupport`, its flat arm and its slope arm are deleted, and guard G-07 is retired with them
+(guards doc §R). The detach decision is the event rows of `classifySupport` (§34): the launch row on a written hit
+tick, decided by the direction, and the separation row at or above the hover (guard G-31). Both rows read the
+direction or the velocity, never an enumerator, and the `!detail::kHasLaunched<DAttackState>` tripwire's message
+now names `classifySupport`. The history above is kept because it records why the decision lives in step 2 and why
+it reads the velocity.
+
 ---
 
 ## 23. The movement tick — steps 6′, 0, 1, 2, 3, 4, 5
@@ -1903,6 +1944,9 @@ channels are multiplied by `(R-1)/R` — the attack movement lock, derived in §
 feeds `detachesFromSupport`, whose arm is keyed on `dot(velocity, up) > 0`, so an uphill slide
 would detach and fly. The arm therefore still has exactly ONE tenant (the knockback) and the
 paragraph above still holds for task 31’s `Dashing`, which genuinely does own velocity outright.
+*(Since og-ground-aligned-attacks task 37 `committed` feeds `classifySupport`'s rows instead (§34). Its separation
+row tests `dot(velocity, n)` against the face, so a slide in the face does not detach either way, and the arm
+still has one tenant.)*
 ⚠ **Task 31 interacts with `locked` by construction and with no special case:** a dash-cancelled
 into an attack simply leaves dash speed in `state.velocity` on the first `Attacking` tick, and the
 ramp starts from whatever it finds. Noted, not handled here.
@@ -2347,7 +2391,10 @@ them *at the field*, which is where a person adding a field looks.
 
 ---
 
-## 26. The knockback assignment’s tangent-frame mapping — task 27 ∴D-06
+## 26. The knockback assignment’s tangent-frame mapping — task 27 (retired by og-ground-aligned-attacks task 37)
+
+⭐ **The mapping below is deleted** (∴D-06, retired: see its entry at the end of this section). Everything after this
+paragraph is task 27's record.
 
 `velocityUV = inboundHit.hitDirectionXY * inboundHit.knockbackSpeed;`
 
@@ -2432,7 +2479,29 @@ thirty float steps from 20 leave about 6e-7 m/s behind (emulated in float32; in 
 `BrawlerMovement.LaunchedDecelsAtLaunchDecel` pins that (tick 32), and asserts the closed form against the
 shipped constants rather than restating 5.
 
+### ∴D-06 — RETIRED by og-ground-aligned-attacks task 37 (2026-11-05): the expression it derived is deleted
+
+**Was:** the derivation tag on step 3's hit-tick branch, whose Legacy line was
+`velocityUV = inboundHit.hitDirectionXY * inboundHit.knockbackSpeed;`. It pointed at this section: why the chart
+direction maps onto the tangent channels component-wise, and why the projection spelling is wrong.
+
+**Why it retired.** Its expression is gone. Since og-ground-aligned-attacks task 34 the support law v2 took
+`velocityUV = currentUV` on every hit tick (§34), and task 36 made that law the default. The Legacy law was the
+line's last user, and task 37 deleted it with that law. Step 3's hit tick is now `velocityUV = currentUV`: the
+decomposition of the velocity the write left, an expression a reader can change with only the identifiers in
+front of them, so it carries no tag. **Successor:** §34 (the write) and §19 (the decomposition).
+
 ### 26.1 The hit-tick write of the attacker's direction (og-ground-aligned-attacks task 9b)
+
+⭐ **[og-ground-aligned-attacks task 37] The flat rule is retired.** The predicate this subsection describes
+(`writesKnockbackVelocity(inboundHit, face, walkable, committed)`, with the flat rule at guard G-27) and the
+`hitDirectionXY` line it kept are deleted with the Legacy support law, and G-27 is retired. Since task 34 the
+shipped law's write had no flat rule (§34), and task 36 made that law the default and re-recorded both goldens
+under it. The flat rule existed to keep a flat-ground horizontal hit on the pre-initiative expressions verbatim
+until the flip; after task 36 nothing was left for it to preserve. The write is now
+`writesKnockbackVelocity(inboundHit, committed)`: every committed hit tick with a non-zero direction writes
+`d · knockbackSpeed`, and every hit tick takes `velocityUV = currentUV`. The record below is task 9b's, and the
+cases it measured were deleted with the law (§37).
 
 User ruling OQ14, 2026-10-28: *"What if we just write the attackers tangent to the knockback and then let
 the current model do its thing?"* — "Yes". Since the flip (task 10; task 14 retired the knob it
@@ -2625,6 +2694,12 @@ lines carried a `⛔G` or `∴D` tag (checked against the pre-task header), so n
 
 ## 29. The attack ground sample — `sampleAttackGround` (og-ground-aligned-attacks task 4)
 
+⭐ **[og-ground-aligned-attacks task 37]** Today the sample is `estimateSupport(...).faceNormal` (guard G-25), the
+support law v2's estimate (§33): the exact face on a face contact, and on an edge contact the centre probe's face,
+or world up on a `Lip` or `None`. On an edge contact that is two sweeps, the same two the movement makes. The face
+rule of the first bullet below was the Legacy law's (`attackGroundNormal`, retired with it); the bullets keep
+task 4's and task 13b's record.
+
 `sampleAttackGround(state, sd, bindings, query)`, a template on the query type, is the
 single source of the ground normal the attack code is built in. `SimulatableBrawler::integrate` calls it
 once per tick **before the machine**, from the movement `State` as the tick finds it, and hands the
@@ -2655,6 +2730,15 @@ once per tick **before the machine**, from the movement `State` as the tick find
 ---
 
 ## 30. The surface-relative lift test and the tangent frame while detached (og-ground-aligned-attacks task 13)
+
+⭐ **[og-ground-aligned-attacks task 37] Retired with the Legacy support law.** The lift test below
+(`detachesFromSupport`, guard G-07) and the detached frame's `surfaceFrame::isFlat` term are deleted. Since task 34
+the shipped law's decision is event-driven (§34: one formula on every face, no `isFlat`, and the frame of every
+Unsupported tick is world up), task 36 made that law the default, and task 37 deleted the last caller. Two of this
+section's facts still hold under that law: `kMinLaunchSine` (sin 2°) stays above Jolt's sweep-normal error bound
+(the `static_assert` beside it), and a detached body's frame is world up, so its deceleration is world-horizontal.
+`GroundAlignedKnockback.DetachedTargetDeceleratesWorldHorizontally` runs the one law since task 37 and prints the
+same line as before (`ticks=7 worstAlignedVerticalErr=4.02331352e-07`). The rest is task 13's record.
 
 Step 2 now computes, before the support classification (since og-ground-aligned-attacks task 32 these lines are
 the bodies of `estimateSupport` and `classifySupport`, §32, which also gives today's names of the locals below):
@@ -2713,6 +2797,11 @@ task 14 deleted it, so `integrate` is again a template on its two adapter types 
 
 ## 31. One ground rule for the movement and the attack — `attackGroundNormal` (og-ground-aligned-attacks task 13b)
 
+⭐ **[og-ground-aligned-attacks task 37] Retired with the Legacy support law.** `attackGroundNormal` is deleted. The
+rule it introduced, one ground for the movement and the attack, holds in a wider form: both take the `faceNormal`
+of the same `estimateSupport` call on the same `State` (§33; guard G-25 at the sample, and since task 37 guard G-28
+at step 2's call). The record below, and the three cases it cites (deleted with the law), are task 13b's.
+
 `inline glm::vec3 attackGroundNormal(const SweepHit& hit, const StaticData& sd)` is the ground normal both the
 attack and the movement build in: the hit's `surfaceNormal` when it is non-zero, else its `normal`, returned when
 `hit.blocked && glm::dot(face, kWorldUp) >= sd.cosMaxSlope`, else `kWorldUp`. Its two readers are
@@ -2770,6 +2859,11 @@ detached frame (§30) gives `n` = world up.
 ---
 
 ## 32. The support law extracted — `estimateSupport` and `classifySupport` (og-ground-aligned-attacks task 32)
+
+⭐ **[og-ground-aligned-attacks task 37]** The split stands, but the Legacy bodies described here are gone.
+`estimateSupport` is §33's estimate, and `classifySupport(state, sd, ground, committed, written, d)` is §34's
+transitions (task 37 gave §34's function, then `classifySupportV2`, this name). The table below is the Legacy
+law's, kept as the record of the four grounds.
 
 Since og-ground-aligned-attacks task 32, step 2's ground and its support decision are two functions. Their bodies
 are step 2's lines **moved verbatim**: the same operations in the same order, with no value changed and no wire
@@ -2831,6 +2925,14 @@ task 32. Today those values are:
 ---
 
 ## 33. The support estimate under `SupportLaw::V2` — the exact face, edge contacts, the centre probe and `Lip` (og-ground-aligned-attacks task 33)
+
+⭐ **[og-ground-aligned-attacks task 37] The switch is gone.** `SupportLaw`, the `StaticData` member `supportLaw` and
+the Legacy arm are deleted. The estimate below (`estimateSupportV2` in this section) is the body of `estimateSupport` itself,
+which sweeps the capsule probe and continues with the steps below. `PhysicsSetup::queryVolumes` declares both
+volumes for every character, and its `OG_CHECK` holds the count at two
+(`BrawlerGroundSample.DeclaresTheGroundProbeAndTheCentreProbe` checks the descriptors,
+`SupportEstimate.RegistersTheGroundProbeAndTheCentreProbe` the Jolt registration). Where the text below says "under
+Legacy" or "today's estimate", it describes the law of its time.
 
 Since og-ground-aligned-attacks task 33, `estimateSupport` has a second arm, selected by authored data. Until task 36
 the shipped law was `SupportLaw::Legacy`, and under it every value in §32 was unchanged (the goldens stayed exact,
@@ -2927,6 +3029,11 @@ rule per law. Under Legacy that rule is `attackGroundNormal` (guard G-28); under
 
 ## 34. Support transitions and the one knockback write under `SupportLaw::V2` (og-ground-aligned-attacks task 34)
 
+⭐ **[og-ground-aligned-attacks task 37]** `classifySupportV2` and `writesKnockbackVelocityV2` are `classifySupport`
+and `writesKnockbackVelocity` since task 37, and the Legacy predicates this section contrasts them with are deleted.
+Step 3's hit-tick branch is `velocityUV = currentUV` on every hit tick, so the movement reads
+`inboundHit.hitDirectionXY` nowhere (§37 lists the field's remaining readers).
+
 Since og-ground-aligned-attacks task 34, `SupportLaw::V2` decides support by events rather than by a per-tick lift
 test, and writes every committed knockback the same way. `SupportLaw::Legacy` is untouched: `classifySupport`,
 `detachesFromSupport` (guard G-07), `writesKnockbackVelocity` (guard G-27) and the hit-tick channel branch run
@@ -3006,6 +3113,9 @@ damped it first. There the cone (`kMinLaunchSine · 19.3 m/s` = 0.675 m/s) decid
 ---
 
 ## 35. The redirect into the face under `SupportLaw::V2` (og-ground-aligned-attacks task 35)
+
+⭐ **[og-ground-aligned-attacks task 37]** The call is no longer behind `v2`: `redirectsIntoFace` runs on every tick
+of the one law. The two arc-top stay runs below (2 → 84 and 1 → 0 geometric `Lip` ticks) are traced in §37.
 
 Since og-ground-aligned-attacks task 35, V2 removes the part of a committed body's velocity that points into its
 ground, after the classification (§34) and before the tangent frame is built. `SupportLaw::Legacy` never calls it:
@@ -3100,6 +3210,9 @@ has a side effect, so the order does not change the result.
 
 ## 36. The flip: `SupportLaw::V2` is the default (og-ground-aligned-attacks task 36)
 
+⭐ **[og-ground-aligned-attacks task 37]** `SupportLaw::Legacy` is retired and the member this section quotes is
+deleted (§37).
+
 Since og-ground-aligned-attacks task 36 the member reads `SupportLaw supportLaw = SupportLaw::V2;`. Every shipped
 character, and every test or scenario that does not set the law, runs §33 to §35. `SupportLaw::Legacy` runs only
 where a test names it, until the initiative's task 37 retires it.
@@ -3119,6 +3232,88 @@ where a test names it, until the initiative's task 37 retires it.
   all uncommitted: the slope golden's stun at 1369 and its projectile hit at 1080, and two in the flat golden. Only
   test-built slices that set `hitDirectionXY` alone produce such a tick. A stun during a slide still stops the body,
   but through the freeze (`machineFreezesMovement`), not through this tick.
+
+---
+
+---
+
+## 37. The Legacy support law retired (og-ground-aligned-attacks task 37)
+
+Since og-ground-aligned-attacks task 37 the header has one support law, the one §33 to §35 describe. Task 36 made it
+the default, so every operation task 37 deleted was on a branch the shipped law never took.
+
+**Deleted:**
+- `enum class SupportLaw` and the `StaticData` member that selected the law;
+- the Legacy arm of `estimateSupport` (§32) and the Legacy `classifySupport` (§30, §32);
+- `detachesFromSupport` (the Legacy lift test, §22, §30) and `attackGroundNormal` (§31);
+- the Legacy `writesKnockbackVelocity` and its flat rule (§26.1);
+- every `surfaceFrame::isFlat` use in the header, and with them the `OGSimulation/SurfaceFrame.h` include (§1);
+- step 3's Legacy hit-tick line, `velocityUV = inboundHit.hitDirectionXY * inboundHit.knockbackSpeed;` (§26).
+
+**Renamed or folded, with the same operations in the same order:**
+- the body of `estimateSupportV2` is the body of `estimateSupport`, after its `probeGround` call;
+- `classifySupportV2` is `classifySupport(state, sd, ground, committed, written, d)`;
+- `writesKnockbackVelocityV2` is `writesKnockbackVelocity(inboundHit, committed)`;
+- `PhysicsSetup::queryVolumes` declares the centre probe for every character, after the ground probe, and its
+  `OG_CHECK` holds the count at two;
+- step 3's hit tick is `velocityUV = currentUV`, the line the shipped law already took.
+
+Task 30's fast path in `decomposeVelocity` (§19.1) is unchanged.
+
+**The guard and derivation ids.**
+- G-07 (`detachesFromSupport`) and G-27 (the flat rule) are retired; their entries are in the guards doc's §R.
+- ∴D-06 (the hit-tick mapping) is retired at the end of §26.
+- G-28 (one ground for the movement and the attack) moved to step 2's `estimateSupport` call, its third site after
+  task 32 and task 33.
+- G-26 is restated: the write must come before the redirect, which reads the velocity. The classification no longer
+  reads it on a written tick (row 3 decides from the direction), so "before the classification" was the Legacy
+  law's reason; moving the write between the two passes every case.
+- G-25 and G-29 to G-32 stand at their sites and no longer name a law.
+
+**What G-07 carried that still holds.** Its prohibitions were written for the Legacy lift test. Three of its facts
+apply to the shipped law's separation row too, which is guard G-31's site:
+- the rows are keyed on the direction and the velocity, never on a machine enumerator. The
+  `!detail::kHasLaunched<DAttackState>` tripwire holds this at compile time, and its message now names
+  `classifySupport`;
+- `kMinLaunchSine` stays above the 0.0221 bound on Jolt's sweep-normal error. The `static_assert` beside the
+  constant holds this;
+- the separation row tests the velocity against the face `n`, not against world up, and scales the cone by the
+  speed. [derived] On a 30° face an in-face up-slope slide has `dot(v, up) = 0.5 · |v|` and `dot(v, n) = 0`. Against
+  world up it would pass `max(kMinLaunchSine · |v|, kMinSeparationSpeed)` above 0.66 m/s, so every such slide at or
+  above its hover would detach. No guard carries this; it is recorded here.
+
+**`inboundHit.hitDirectionXY` is kept.** The movement no longer reads it, but it has readers outside this header:
+- the routing's write (`BrawlerHitRoutingSystem.h`, `slice.hitDirectionXY = knockback ? directionXY : glm::vec2(0.f);`);
+- the golden trace's `hit.inboundDirection` field (`GoldenTraceScene.h`). Deleting the member changes the golden
+  format, and task 37 is bit-identical with no re-recording;
+- the routing tests and the slope golden's measurement print.
+
+**The arc-top stay runs (§35's 2 → 84 and 1 → 0).** Traced on PlatformEdge under the shipped law, with and without
+the redirect, by printing every tick of the two runs at d = 4.9 m, −30° (arcTop, arcTopSeam). The runs are equal up
+to a tick inside the lockout (arcTop 110, arcTopSeam 114). On the tick before it the body sits at its hover, where
+the one-sided servo is 0, so gravity's step leaves `dot(v, n)` = −0.1414 m/s and the body dips 2.7 mm. On that tick
+the body is committed, previously Supported, on a `Face` and below its hover, so the redirect removes the velocity
+into the face. Its up channel is then 0 against −0.1633 m/s without the redirect, and the servo's damping adds
+0.2593 m/s of world-vertical velocity against 0.4146 m/s. World up has an up-slope part on a 30° face, so without
+the redirect the body keeps more speed along the face (3.3737 against 3.3036 m/s on arcTop's tick 110). The arcTop
+run therefore stops 0.225 m short of the rim with the redirect, against 0.218 m without. At the shorter stop the
+capsule probe's contact lies on the arc's 60° hull facet (exact face 60°, GJK normal −29°). That is an edge
+contact, so the estimate sweeps the centre probe and takes the platform's top face (the frame's tilt prints −30°):
+the tick is `Face` and Supported. The geometric `Lip` counter (a walkable sweep over an unwalkable exact face)
+counts every such tick: 84 of the 85 ticks from 116 to 200 (tick 117's contact is on the top face). Without the redirect the body rests on the 30° face itself, and only ticks 114 and 115 pass over the
+facet. arcTopSeam stops 0.220 m short with the redirect and 0.218 m without, and here it is the run without the
+redirect that crosses the facet, on tick 115 only. Both runs stay on the platform, Supported, with no flip, lift or
+change of outcome under either expression.
+
+**Measured** (task 37, OGBrawlerTests):
+- both goldens exact against task 36's recordings, with `[GoldenTrace.signedZero] p=0 d=0 a=0 q=0 s=0 2=0`;
+- the support-law scorecard's and PlatformEdge's 7,292 `law=v2` lines, run with OG_SUPPORT_LAW_RUNS=1,
+  byte-identical to task 36's. The rigs keep the `law=v2` label so that each line still compares with the two-law
+  record;
+- the GroundAlignedKnockback v2 prints byte-identical; `[GroundAlignedKnockback.detachedBasis]`, which ran the
+  Legacy law by default, prints the same line under the one law;
+- `[@og]` 959 → 939 cases: the cases that set the Legacy law or tested a deleted function were deleted, and two that
+  set both laws keep their v2 half under a new name.
 
 ---
 

@@ -104,8 +104,9 @@ resolved pointer is the attacker's exactly when the hit's root id is the attacke
 **What each branch's consumer does** (`BrawlerInboundHit-rationale.md` §2 for the full table): the
 machine enters `HitFlinch` from any state on `wasHitThisTick`, `GuardFlinch` from any state but
 `GuardFlinch` on `wasProjectileBlockedThisTick`, and `GuardFlinch` from `Attacking` only on
-`wasGuardBlockedThisTick`. The movement sub-simulation launches on `wasHitThisTick` with
-`hitDirectionXY * knockbackSpeed`. ⚠ The projectile-block transition is gone since
+`wasGuardBlockedThisTick`. The movement sub-simulation launches a committed hit tick with
+`hitDirectionWorld * knockbackSpeed` (until og-ground-aligned-attacks task 37 the Legacy law used
+`hitDirectionXY * knockbackSpeed`). ⚠ The projectile-block transition is gone since
 og-attackstatetransition-cleanup task 4. Branches 2 and 3 also write the 3-D `hitDirectionWorld`
 (og-ground-aligned-attacks task 9, §4.4). The movement's hit-tick write reads it
 (og-ground-aligned-attacks task 9b, `BrawlerMovementSimulation-rationale.md` §26.1). Until the flip,

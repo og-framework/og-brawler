@@ -33,7 +33,8 @@ character's ground up.
 **The normal is the guard body's up.** The caller reads it with `UOGBrawlerSimulatableComponent::vizGround`
 (og-ground-aligned-attacks task 21; the guard body's up from the visualization snapshot, in og-simulation axes,
 `dAttackVisualizationUtils::guardBodyUp`). The guard is posed in the attack ground sample's frame every tick (task 6):
-the exact face normal on walkable ground, otherwise world up (`brawlerMovementSimulation::attackGroundNormal`). That is
+the face of the movement's support estimate (`brawlerMovementSimulation::sampleAttackGround`): the exact face on a face
+contact, the face under the centre probe at an edge, otherwise world up. That is
 the normal the swing frame and the guard use, so an aim in that plane is one the machine's flatten leaves alone (§5).
 It is read whether or not the character is supported: the guard is posed from the same ground sample the swing starts
 from in either case.

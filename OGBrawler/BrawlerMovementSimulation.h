@@ -23,7 +23,6 @@
 #include "OGSimulation/SpatialQueryResult.h"
 #include "OGSimulation/OGAssert.h"
 #include "OGSimulation/SimulationFrame.h"
-#include "OGSimulation/SurfaceFrame.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
 #include "OGBrawler/BrawlerCharacterBindings.h"
 #include "OGBrawler/DAttackMachineSimulation.h"
@@ -57,12 +56,6 @@ static_assert(static_cast<uint8_t>(SupportState::Unsupported)    == 0u
     "brawlerMovementSimulation::SupportState - these three values ride State::flags bits 1-2 "
     "and are ON THE WIRE. The enum may grow to FOUR values (0-3) before the flags byte has to "
     "widen; a fifth is a wire change, not an enumerator.");
-
-enum class SupportLaw : uint8_t
-{
-    Legacy = 0,
-    V2     = 1
-};
 
 inline constexpr float kNominalSimStepSeconds = 1.f / 60.f;
 
@@ -139,8 +132,6 @@ public:
     MovementModel model;
 
     bool drivesBody = true;
-
-    SupportLaw supportLaw = SupportLaw::V2;
 
     float maxWalkSpeed, acceleration, brakingDeceleration;
     uint32_t stepPeriodTicks;
@@ -241,24 +232,21 @@ struct PhysicsSetup
             }
         };
 
-        if (sd.supportLaw == SupportLaw::V2)
-        {
-            glm::mat4 centreOffset(1.f);
-            centreOffset[3] = glm::vec4(simFrame::withHeight(glm::vec3(0.f), -(sd.capsuleHalfHeight - kCenterProbeRadius)), 1.f);
-            volumes.push_back(QueryVolumeDescriptor{
-                SphereGeometry{kCenterProbeRadius},
-                collisionCategory::worldOnly,
-                centreOffset,
-                collisionCategory::queryRouting
-            });
-        }
+        glm::mat4 centreOffset(1.f);
+        centreOffset[3] = glm::vec4(simFrame::withHeight(glm::vec3(0.f), -(sd.capsuleHalfHeight - kCenterProbeRadius)), 1.f);
+        volumes.push_back(QueryVolumeDescriptor{
+            SphereGeometry{kCenterProbeRadius},
+            collisionCategory::worldOnly,
+            centreOffset,
+            collisionCategory::queryRouting
+        });
 
-        OG_CHECK(volumes.size() == (sd.supportLaw == SupportLaw::V2 ? 2u : 1u),
-            "brawlerMovementSimulation::PhysicsSetup::queryVolumes - the Legacy support law declares "
-            "EXACTLY ONE query volume, the ground probe at index 0, and V2 declares that one plus the "
-            "centre probe at index 1. Every shipped character registers this list, so a volume added "
-            "for every law changes every peer's registration, and estimateSupport's V2 arm reads the "
-            "centre at index 1. Was the task 33 guard 'Legacy declares exactly one query volume'.");
+        OG_CHECK(volumes.size() == 2u,
+            "brawlerMovementSimulation::PhysicsSetup::queryVolumes - a character declares EXACTLY TWO "
+            "query volumes: the ground probe at index 0 and the centre probe at index 1. Every shipped "
+            "character registers this list, so a volume added here changes every peer's registration, "
+            "and estimateSupport reads the centre at index 1. Was the task 33 guard 'Legacy declares "
+            "exactly one query volume' (one volume per law until og-ground-aligned-attacks task 37).");
 
         return volumes;
     }
@@ -544,12 +532,14 @@ template <typename E> inline constexpr bool kHasHitFlinch = requires { E::HitFli
 }
 
 static_assert(!detail::kHasLaunched<DAttackState>,
-    "brawlerMovementSimulation::detachesFromSupport - `DAttackState::Launched` NOW EXISTS, and "
+    "brawlerMovementSimulation::classifySupport - `DAttackState::Launched` NOW EXISTS, and "
     "THERE IS NO `Launched` BY DESIGN (task 27, user ruling 2026-09-12): `HitFlinch` PLUS "
-    "`dAttackMachineSimulation::State::m_hitReaction` IS the hit-reaction state, and the arm "
-    "below is keyed on VELOCITY - `committed && dot(velocity, up) > 0` on flat ground, "
-    "`committed && dot(velocity, face) > kMinLaunchSine * |velocity|` on a slope - not on an "
-    "enumerator, so it is false for every in-ground knockback and true for one that leaves the "
+    "`dAttackMachineSimulation::State::m_hitReaction` IS the hit-reaction state, and the rows "
+    "below are keyed on DIRECTION and VELOCITY - a written hit tick detaches when "
+    "`dot(d, n) > kMinLaunchSine` (`|dot(d, n)|` on a Lip), and a committed body at or above "
+    "its hover when "
+    "`dot(velocity, n) > max(kMinLaunchSine * |velocity|, kMinSeparationSpeed)` - not on an "
+    "enumerator, so they are false for every in-ground knockback and true for one that leaves the "
     "ground, with no enumerator knowledge at all. A fifth DAttackState bumps "
     "`kDAttackStateCount`, moves the visualizer's `kMachineStateCellCount` fence and four "
     "switch sites in another initiative's files, and leaves `HitFlinch` with no writer. "
@@ -567,29 +557,7 @@ static_assert(kMinLaunchSine > 0.0221f,
     "radius): at or below it a normal outlier, not the velocity, decides whether a knockback "
     "launches.");
 
-// ⛔G-07  docs/BrawlerMovementSimulation-guards.md
-inline bool detachesFromSupport(const State& state, const glm::vec3& up, const glm::vec3& face, bool committed)
-{
-    if (!surfaceFrame::isFlat(face))
-    {
-        return committed && glm::dot(state.velocity, face) > kMinLaunchSine * glm::length(state.velocity);
-    }
-    return committed && glm::dot(state.velocity, up) > 0.f;
-}
-
-inline bool writesKnockbackVelocity(const brawlerInboundHit::DerivedState& inboundHit, const glm::vec3& face, bool walkable, bool committed)
-{
-    const glm::vec3& d = inboundHit.hitDirectionWorld;
-    if (!(committed && inboundHit.wasHitThisTick) || d == glm::vec3(0.f))
-    {
-        return false;
-    }
-    const glm::vec3 g = walkable ? face : simFrame::kUp;
-    // ⛔G-27  docs/BrawlerMovementSimulation-guards.md
-    return !(surfaceFrame::isFlat(g) && simFrame::height(d) == 0.f);
-}
-
-inline bool writesKnockbackVelocityV2(const brawlerInboundHit::DerivedState& inboundHit, bool committed)
+inline bool writesKnockbackVelocity(const brawlerInboundHit::DerivedState& inboundHit, bool committed)
 {
     return committed && inboundHit.wasHitThisTick && inboundHit.hitDirectionWorld != glm::vec3(0.f);
 }
@@ -630,16 +598,6 @@ GroundProbe probeGround(const State& state, const StaticData& sd, const RuntimeB
     const bool walkable   = probe.blocked && glm::dot(probe.normal, up) >= sd.cosMaxSlope;
 
     return GroundProbe{probe, clearance, walkable};
-}
-
-inline glm::vec3 attackGroundNormal(const SweepHit& hit, const StaticData& sd)
-{
-    const glm::vec3 face = glm::dot(hit.surfaceNormal, hit.surfaceNormal) > 0.f ? hit.surfaceNormal : hit.normal;
-    if (hit.blocked && glm::dot(face, kWorldUp) >= sd.cosMaxSlope)
-    {
-        return face;
-    }
-    return kWorldUp;
 }
 
 enum class SupportKind : uint8_t
@@ -685,8 +643,9 @@ inline GroundSupport groundSupportOf(const GroundProbe& probe, SupportKind kind,
 }
 
 template <typename Q>
-GroundSupport estimateSupportV2(const State& state, const StaticData& sd, const RuntimeBindings& bindings, Q& query, const GroundProbe& probe)
+GroundSupport estimateSupport(const State& state, const StaticData& sd, const RuntimeBindings& bindings, Q& query)
 {
+    const GroundProbe probe = probeGround(state, sd, bindings, query);
     if (!probe.hit.blocked)
         return groundSupportOf(probe, SupportKind::None, kWorldUp);
 
@@ -700,9 +659,9 @@ GroundSupport estimateSupportV2(const State& state, const StaticData& sd, const 
     }
 
     OG_CHECK(bindings.queryVolumeIds.size() > 1u,
-        "brawlerMovementSimulation::estimateSupport - SupportLaw::V2 met an edge contact, and the "
-        "centre probe it then sweeps is not bound: PhysicsSetup::queryVolumes declares it at index 1 "
-        "only when StaticData::supportLaw is V2, so these bindings were made for another law.");
+        "brawlerMovementSimulation::estimateSupport - an edge contact, and the centre probe it then "
+        "sweeps is not bound: PhysicsSetup::queryVolumes declares it at index 1, so these bindings "
+        "were not made from that list.");
 
     const glm::vec3 up = kWorldUp;
     const float probeLength = sd.rideHeight + sd.snapDistance;
@@ -719,17 +678,6 @@ GroundSupport estimateSupportV2(const State& state, const StaticData& sd, const 
         : groundSupportOf(probe, SupportKind::None, kWorldUp);
 }
 
-template <typename Q>
-GroundSupport estimateSupport(const State& state, const StaticData& sd, const RuntimeBindings& bindings, Q& query)
-{
-    const GroundProbe probe = probeGround(state, sd, bindings, query);
-    if (sd.supportLaw == SupportLaw::V2)
-        return estimateSupportV2(state, sd, bindings, query, probe);
-    // ⛔G-28  docs/BrawlerMovementSimulation-guards.md
-    const glm::vec3 faceNormal = attackGroundNormal(probe.hit, sd);
-    return GroundSupport{probe, probe.walkable ? SupportKind::Face : SupportKind::None, probe.walkable, probe.hit.normal, faceNormal};
-}
-
 struct SupportDecision
 {
     bool detached;
@@ -737,20 +685,7 @@ struct SupportDecision
     glm::vec3 frameNormal;
 };
 
-inline SupportDecision classifySupport(const State& state, const GroundSupport& ground, bool committed)
-{
-    const bool detached = detachesFromSupport(state, kWorldUp, ground.faceNormal, committed);
-
-    const SupportState support = (ground.eligible && !detached)
-        ? SupportState::Supported
-        : SupportState::Unsupported;
-
-    const glm::vec3 frameNormal = (ground.eligible && !(detached && !surfaceFrame::isFlat(ground.faceNormal))) ? ground.frameNormal : kWorldUp;
-
-    return SupportDecision{detached, support, frameNormal};
-}
-
-inline SupportDecision classifySupportV2(const State& state, const StaticData& sd, const GroundSupport& ground,
+inline SupportDecision classifySupport(const State& state, const StaticData& sd, const GroundSupport& ground,
     bool committed, bool written, const glm::vec3& d)
 {
     // ⛔G-30  docs/BrawlerMovementSimulation-guards.md
@@ -869,21 +804,16 @@ void integrate(float deltaSeconds,
 
     const glm::vec3 up = kWorldUp;
 
+    // ⛔G-28  docs/BrawlerMovementSimulation-guards.md
     const GroundSupport ground = estimateSupport(state, sd, bindings, query);
 
-    const bool v2 = sd.supportLaw == SupportLaw::V2;
-
     // ⛔G-26  docs/BrawlerMovementSimulation-guards.md
-    const bool knockbackWritten = v2
-        ? writesKnockbackVelocityV2(inboundHit, committed)
-        : writesKnockbackVelocity(inboundHit, ground.faceNormal, ground.eligible, committed);
+    const bool knockbackWritten = writesKnockbackVelocity(inboundHit, committed);
     if (knockbackWritten)
         state.velocity = inboundHit.hitDirectionWorld * inboundHit.knockbackSpeed;
 
-    const SupportDecision decision = v2
-        ? classifySupportV2(state, sd, ground, committed, knockbackWritten, inboundHit.hitDirectionWorld)
-        : classifySupport(state, ground, committed);
-    if (v2 && redirectsIntoFace(state, sd, ground, decision.support, committed, knockbackWritten))
+    const SupportDecision decision = classifySupport(state, sd, ground, committed, knockbackWritten, inboundHit.hitDirectionWorld);
+    if (redirectsIntoFace(state, sd, ground, decision.support, committed, knockbackWritten))
         state.velocity -= ground.faceNormal * glm::dot(state.velocity, ground.faceNormal);
 
     glm::vec3 u(simFrame::kForward);
@@ -940,13 +870,7 @@ void integrate(float deltaSeconds,
     if (committed)
     {
         if (inboundHit.wasHitThisTick)
-        {
-            // ∴D-06  docs/BrawlerMovementSimulation-rationale.md
-            if (knockbackWritten || v2)
-                velocityUV = currentUV;
-            else
-                velocityUV = inboundHit.hitDirectionXY * inboundHit.knockbackSpeed;
-        }
+            velocityUV = currentUV;
         else
             velocityUV = moveTowards(currentUV, glm::vec2(0.f), sd.launchDecel * dt);
     }

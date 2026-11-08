@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- lint-external-ref: detachesFromSupport -- a RETIRED token -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records its history -->
 # `BrawlerGroundFrame.h` — rationale
 
 The narrative behind `BrawlerGroundFrame.h`: the brawler's per-tick ground sample, the one normal every
@@ -68,8 +69,10 @@ traces re-recorded. Per-consumer switches and a runtime console variable were co
 Task 14 deleted it (OQ4 (a), ruled by the user after G3), with the template parameter and every off
 branch, keeping the on arms verbatim: the shipped build computed the on arms already, so the deletion
 changed no float (both goldens exact). `sampleAttackGround` is now a template on its query type only,
-and `detachesFromSupport` and `writesKnockbackVelocity` are plain `inline` functions. A test that wants a
-slope passes a tilted `GroundSample` directly or scripts the sweep the sample reads.
+and `detachesFromSupport` and `writesKnockbackVelocity` became plain `inline` functions. Task 37 deleted
+`detachesFromSupport`, and the Legacy `writesKnockbackVelocity`, with the Legacy support law; the support law v2's
+write took that name. A test that wants a slope passes a tilted `GroundSample` directly or scripts the sweep the
+sample reads.
 
 ---
 

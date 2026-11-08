@@ -203,8 +203,9 @@ a zero tangent for a degenerate hit (`BrawlerHitDetectionSystem-guards.md` G-06)
 projection is exactly the case the fallback exists for.
 
 **What breaks if the edit is made.** A tangent whose ground-plane projection is zero (or NaN) normalises to
-NaN. That NaN becomes the slice's `hitDirectionXY`, and the movement sub-simulation multiplies it
-into the knockback velocity. ⚠ **R0, task 29: not reachable with the shipped table.** The tangent's
+NaN. That NaN becomes the slice's `hitDirectionXY`, which the Legacy movement law multiplied into the
+knockback velocity until og-ground-aligned-attacks task 37 deleted that law; today the golden trace's
+`hit.inboundDirection` field and the routing tests read it. ⚠ **R0, task 29: not reachable with the shipped table.** The tangent's
 ground-plane projection is degenerate only for a swing whose world axis is not vertical. Sequences 0-3, the
 Knockback rows, rotate about the turn axis, and the machine's aim rotation axis is ±`simFrame::kTurnAxis`, so their
 tangent is a horizontal unit vector (the detector skips a hit whose centre has no in-plane direction,

@@ -455,10 +455,10 @@ void visualize(const Input<RendererFunctorType>& input,
     // ⭐ [og-ground-aligned-attacks task 33] THE CONTACT NORMAL, NOT THE FRAME. The derivation
     // above needs the direction from the impact point to the probe's hemisphere centre, which
     // is the sweep's own (GJK) normal. `derivedState.contactNormal` is exactly that when the
-    // hit was walkable and `up` otherwise. Under the Legacy support law it equals `n` except on
-    // a detached tick on a slope (where the frame falls back to `up`); under SupportLaw::V2 the
-    // frame `n` is the exact face, the centre probe's face or `up` (a Lip), none of which is the
-    // contact direction at a rim. The rays above and below keep drawing `n`, the frame.
+    // hit was walkable and `up` otherwise. The frame `n` is the exact face, the centre probe's
+    // face or `up` (a Lip), none of which is the contact direction at a rim (under the Legacy
+    // support law, retired by og-ground-aligned-attacks task 37, the two were equal except on a
+    // detached tick on a slope). The rays above and below keep drawing `n`, the frame.
     const glm::vec3 contactN = derivedState.contactNormal;
     const glm::vec3 probeTipAtContact =
         derivedState.lastProbePoint + (radius - brawlerMovementSimulation::kProbeShrink) * (contactN - up);

@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- lint-external-ref: detachesFromSupport -- a RETIRED token -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records its history -->
 # `BrawlerGroundFrame.h` — guards
 
 Every prohibition that governs a line of `BrawlerGroundFrame.h`. Each entry has an **opaque, stable id**.
@@ -32,7 +33,8 @@ in it connected and mispredicted every attack started on a slope.
 **Why retired.** Its subject is gone. Task 14 deleted the constant (OQ4 (a), ruled by the user
 2026-11-02 after G3) together with the `bool` template parameter that `sampleAttackGround`,
 `detachesFromSupport`, `writesKnockbackVelocity` and the movement `integrate` defaulted to it; their
-ground-aligned arms are the only code left. There is no value left to flip, so no build can differ from
+ground-aligned arms were the only code left (og-ground-aligned-attacks task 37 later deleted `detachesFromSupport`
+with the Legacy support law). There is no value left to flip, so no build can differ from
 another in it. ⛔ The number 1 is spent.
 
 The default normal's bits are a `static_assert` in the header, not a guard (rationale §2).
