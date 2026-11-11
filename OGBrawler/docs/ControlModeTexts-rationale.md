@@ -91,7 +91,8 @@ when task 2 wrote them; when that code changes, this is the list of sentences to
   og-ground-aligned-attacks task 21), then holds it there. On a followed slope of 15° to 30.1° it also turns the yaw
   to face up the slope, eased up to og.cam.slopeYawDegPerSec, once the slope has held steady for
   og.cam.slopeYawDwellSec (the same document's §20, tasks 21c, 21d and 21e), and keeps that heading
-  after the slope. It still follows the character. Before task 21
+  in the air and on steeper ground. On supported ground under 15° it turns the yaw the same way to the shared iso
+  camera's yaw (§20, task 21f). It still follows the character. Before task 21
   the sentence was "the camera holds still and the mouse cursor aims": `integrate` returned before any
   change, so the camera did not rotate at all. The cursor
   is shown and the mouse aim is resolved (`UOGBrawlerInputCollectionComponent::updateGameThreadCache`).

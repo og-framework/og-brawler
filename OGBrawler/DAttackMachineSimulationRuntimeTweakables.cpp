@@ -14,6 +14,7 @@ namespace dAttackMachineSimulation
     std::atomic<MovementScheme> g_movementScheme = MovementScheme::AimRelative;
     std::atomic<float>          g_moveStickDeadzone = 0.15f;
     std::atomic<float>          g_aimStickDeadzone  = 0.2f;
+    std::atomic<float>          g_backStopMaxMagnitude = kDefaultBackStopMaxMagnitude;
     std::atomic<bool>           g_swapMoveAndAimSticks = false;
     std::atomic<bool>           g_gamepadMoveStickFeedsAim = true;
 
@@ -142,6 +143,10 @@ namespace dAttackMachineSimulation
         if (name == "AimStickDeadzone")
         {
             return parseClampedFloat(value, g_aimStickDeadzone, "AimStickDeadzone");
+        }
+        if (name == "BackStopMaxMagnitude")
+        {
+            return parseClampedFloat(value, g_backStopMaxMagnitude, "BackStopMaxMagnitude");
         }
         if (name == "SwapMoveAndAimSticks")
         {

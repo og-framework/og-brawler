@@ -145,7 +145,14 @@ struct OrbitCameraInput
 	glm::vec2 stick = glm::vec2(0.f);
 	float targetPitchDeg = 0.f;
 	glm::vec3 targetUp = kCameraUp;
+	glm::vec3 groundUp = kCameraUp;
+	bool groundSupported = false;
+	float isoYawDeg = 0.f;
 };
+
+static_assert(!OrbitCameraInput{}.groundSupported,
+	"An input that does not set the ground (task 21f) has no supported ground, so with look mode off it never turns to "
+	"the iso yaw and the camera is task 21e's.");
 
 struct OrbitCameraState
 {
@@ -192,9 +199,15 @@ inline float wrapYawDeg(float yawDeg)
 	return std::remainder(yawDeg, 360.f);
 }
 
+inline float yawDegFromUEYawDegrees(float ueYawDegrees)
+{
+	return wrapYawDeg(ueYawDegrees);
+}
+
 inline OrbitCameraState seedFromUERotation(float uePitchDegrees, float ueYawDegrees, const OrbitCameraSettings& settings)
 {
-	return OrbitCameraState{ wrapYawDeg(ueYawDegrees), pitchDegFromUEPitchDegrees(uePitchDegrees, settings), 0.f };
+	return OrbitCameraState{ yawDegFromUEYawDegrees(ueYawDegrees), pitchDegFromUEPitchDegrees(uePitchDegrees, settings),
+		0.f };
 }
 
 inline float stickCurve(float magnitude, const OrbitCameraSettings& settings)
@@ -444,20 +457,45 @@ inline float slopeYawStep(float yawDeg, const glm::vec3& targetUp, float maxStep
 	return wrapYawDeg(yawDeg + ((gapDeg > 0.f) ? maxStepDeg : -maxStepDeg));
 }
 
+inline bool turnsToIsoYaw(const glm::vec3& groundUp, bool groundSupported)
+{
+	if (!groundSupported)
+		return false;
+	const float length = glm::length(groundUp);
+	if (!(length > 0.f))
+		return false;
+	return std::acos(std::clamp(groundUp.z / length, -1.f, 1.f)) * kSightRadiansToDegrees + kSlopeYawSlopeEpsilonDeg
+		< kSlopeYawMinSlopeDeg;
+}
+
+struct LookOffYawGoal
+{
+	bool turns;
+	float yawDeg;
+};
+
+inline LookOffYawGoal lookOffYawGoal(const OrbitCameraInput& input)
+{
+	if (turnsUpSlope(input.targetUp))
+		return LookOffYawGoal{ true, wrapYawDeg(upSlopeYawDeg(input.targetUp)) };
+	if (turnsToIsoYaw(input.groundUp, input.groundSupported))
+		return LookOffYawGoal{ true, wrapYawDeg(input.isoYawDeg) };
+	return LookOffYawGoal{ false, 0.f };
+}
+
 struct SlopeDwell
 {
 	float seconds;
 	float yawDeg;
 };
 
-inline SlopeDwell slopeDwellStep(const SlopeDwell& dwell, const glm::vec3& targetUp, float deltaSeconds)
+inline SlopeDwell slopeDwellStep(const SlopeDwell& dwell, const LookOffYawGoal& goal, float deltaSeconds)
 {
-	if (!turnsUpSlope(targetUp))
+	if (!goal.turns)
 		return SlopeDwell{ 0.f, dwell.yawDeg };
-	const float targetDeg = wrapYawDeg(upSlopeYawDeg(targetUp));
-	if (dwell.seconds > 0.f && glm::abs(wrapYawDeg(targetDeg - dwell.yawDeg)) <= kSlopeYawDwellToleranceDeg)
+	if (dwell.seconds > 0.f && glm::abs(wrapYawDeg(goal.yawDeg - dwell.yawDeg)) <= kSlopeYawDwellToleranceDeg)
 		return SlopeDwell{ dwell.seconds + deltaSeconds, dwell.yawDeg };
-	return SlopeDwell{ deltaSeconds, targetDeg };
+	return SlopeDwell{ deltaSeconds, goal.yawDeg };
 }
 
 inline bool slopeDwellElapsed(float dwellSeconds, float requiredSeconds)

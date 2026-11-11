@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 #include "OGBrawler/DAttackMachineSimulationRuntimeTweakables.h"
+#include "OGBrawler/InputSequence/GameMotions.h"
+#include "OGBrawler/InputSequence/InputSequence.h"
 #include "OGSimulation/DMathUtil.h"
 #include "OGSimulation/SimulationFrame.h"
 #include "glm/vec2.hpp"
@@ -38,19 +40,35 @@ inline glm::vec2 clampUnit(const glm::vec2& v)
 	return len > 1.f ? v / len : v;
 }
 
+inline bool inBackStopZone(const glm::vec2& move, float moveDeadzone, float backStopMaxMagnitude)
+{
+	const float length = glm::length(move);
+	if (!(moveDeadzone < length && length < backStopMaxMagnitude))
+		return false;
+	constexpr glm::vec2 stickForward(0.f, -1.f);
+	return inputSequence::stickMatchesStep(simFrame::fromForwardRight(move, 0.f),
+		simFrame::fromForwardRight(stickForward, 0.f), kBackShortcutStep, moveDeadzone);
+}
+
 inline LogicalSticks routeSticks(
 	const StickSources& sources,
 	dAttackMachineSimulation::MovementScheme scheme,
 	bool legacySwap,
 	bool feedsAim,
-	float moveDeadzone)
+	float moveDeadzone,
+	float backStopMaxMagnitude)
 {
 	if (scheme == dAttackMachineSimulation::MovementScheme::AimRelativeSwapped)
 	{
 		const bool rightStickNeutral =
 			glm::dot(sources.rightStick, sources.rightStick) <= moveDeadzone * moveDeadzone;
 		if (!(rightStickNeutral && feedsAim))
-			return { clampUnit(sources.moveKeys + sources.rightStick), sources.leftStick };
+		{
+			const glm::vec2 move = clampUnit(sources.moveKeys + sources.rightStick);
+			if (inBackStopZone(move, moveDeadzone, backStopMaxMagnitude))
+				return { glm::vec2(0.f, 0.f), sources.leftStick };
+			return { move, sources.leftStick };
+		}
 		return { clampUnit(sources.moveKeys + sources.leftStick), sources.rightStick };
 	}
 
@@ -66,14 +84,16 @@ inline bool guardFreezeRequested(
 	dAttackMachineSimulation::MovementScheme scheme,
 	bool legacySwap,
 	bool feedsAim,
-	float moveDeadzone)
+	float moveDeadzone,
+	float backStopMaxMagnitude)
 {
 	if (!holdGuard)
 		return false;
 	const bool ownMoveIgnoresFallback = false;
 	const glm::vec2 ownMove =
-		routeSticks(sources, scheme, legacySwap, ownMoveIgnoresFallback, moveDeadzone).move;
-	const glm::vec2 actualMove = routeSticks(sources, scheme, legacySwap, feedsAim, moveDeadzone).move;
+		routeSticks(sources, scheme, legacySwap, ownMoveIgnoresFallback, moveDeadzone, backStopMaxMagnitude).move;
+	const glm::vec2 actualMove =
+		routeSticks(sources, scheme, legacySwap, feedsAim, moveDeadzone, backStopMaxMagnitude).move;
 	return glm::length(ownMove) < moveDeadzone || glm::length(actualMove) < moveDeadzone;
 }
 

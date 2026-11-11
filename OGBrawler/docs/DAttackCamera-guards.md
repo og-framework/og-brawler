@@ -15,7 +15,8 @@ followed ground's cut-off (30° + 0.1°) stays below 90°, the default slope pit
 order, the look-mode-off turn up a slope starts inside the followed range, its threshold's tolerance is positive and
 below the cut-off's, and its default rate is positive, its default dwell is positive, the dwell's heading tolerance lies
 inside (0°, 180°), and the dwell's time tolerance is positive and below 1 ms, the turn's default ease and acceleration
-are positive, and its arrival snap is positive and below one frame's step of the default rate at 1000 fps
+are positive, and its arrival snap is positive and below one frame's step of the default rate at 1000 fps, and an
+input that does not set the ground has no supported ground, so it never turns to the iso yaw (task 21f)
 (`static_assert`s in `DAttackCamera.h`;
 rationale §6, §13, §14,
 §18, §19 and §20). The Catch2 suite in og-brawler-tests (`DAttackOrbitCameraTest.cpp`,

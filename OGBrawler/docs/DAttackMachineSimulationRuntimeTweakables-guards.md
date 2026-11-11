@@ -106,7 +106,7 @@ tests and writers excluded:
 * `g_moveStickDeadzone` — `UOGBrawlerInputCollectionComponent`: `buildAimDirection`,
   `buildMoveDirectionWorld`, the file-local `routeRawSticks` behind `getMoveStick` /
   `getAimStick` (it passes the value to `dInput::stickRouting::routeSticks` as the
-  right-stick-neutral threshold of `AimRelativeSwapped`), and `buildPlayerInput`, which loads it once and passes
+  right-stick-neutral threshold of `AimRelativeSwapped` and the lower bound of its back-stick stop zone), and `buildPlayerInput`, which loads it once and passes
   that one value to both the `resolveTriggeredActionId` call and
   `dInput::stickRouting::guardFreezeRequested` (the hold-guard freeze request;
   og-brawler-3rdControllerMode task 5), and `onMoveStick`, which passes it to

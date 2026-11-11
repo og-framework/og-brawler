@@ -4,7 +4,7 @@
 # `DAttackMachineSimulationRuntimeTweakables.h` — rationale
 
 This is the narrative, the derivations and the provenance for the runtime tweakables and the
-refused-name table: `MovementScheme`, the five `g_*` globals, `RefusedVariable`,
+refused-name table: `MovementScheme`, the six `g_*` globals, `RefusedVariable`,
 `refusedVariablesBegin`/`refusedVariablesEnd`, `refusedVariableReason` and `SetVariable`.
 Under `CommentExtractionRule_v2.md` the header keeps **no prose at all**: a licence line, a
 two-line pointer, code, and one `⛔G-nn` tag per guard. Every fence is in
@@ -22,7 +22,7 @@ cannot be skimmed past at all. `tools/lint/guard_tag_lint.ps1` is a hard gate on
 both directions; a fence filed here has no site and no lint row.
 
 ⛔ **This file is not the source of truth for any VALUE.** The refused names, their reason
-strings and the shipped defaults of the five globals live in
+strings and the shipped defaults of the six globals live in
 `DAttackMachineSimulationRuntimeTweakables.cpp`; the console variables, their tombstones and the
 stale-ini sweep live in `Source/OGBrawlerUnreal/MovementSchemeCVar.cpp`. Where a value appears
 below it is there to make an argument readable.
@@ -47,12 +47,12 @@ run recorded in `impl_notes_seam_16.md`.
 
 ## 1. What this header is
 
-Five process-global tweakables and a table of names that are **refused**. The globals are
+Six process-global tweakables and a table of names that are **refused**. The globals are
 `std::atomic` because they are written from the UE game thread (a console-variable sink, or the
 named-pipe `SetVariable` handler) and read from wherever the input collection runs; the
 `OGBRAWLER_API` export is what lets the UE module see them at all.
 
-Nothing here is simulation state. Every one of the five is read by the UE layer only, and the
+Nothing here is simulation state. Every one of the six is read by the UE layer only, and the
 sub-simulations take the values they need as **parameters** rather than reading a global —
 `BrawlerInputHistoryVisualization.h` states that discipline at its own seam.
 
@@ -78,8 +78,8 @@ header's named-pipe path); the simulation sees only the resulting directions.
 The fourth enumerator, `AimRelativeSwapped`, is AimRelative with the two gamepad sticks
 exchanged: the right stick is the move stick and the left stick is the aim stick. What each raw
 source feeds is decided in one place, `dInput::stickRouting::routeSticks` in
-`InputMapping/StickRouting.h`. It takes the scheme, the two stick toggles and the move deadzone as parameters
-and reads no global. With the right stick at or inside the move deadzone and
+`InputMapping/StickRouting.h`. It takes the scheme, the two stick toggles, the move deadzone and the back-stop
+magnitude (§11) as parameters and reads no global. With the right stick at or inside the move deadzone and
 `g_gamepadMoveStickFeedsAim` on, that function routes this scheme exactly as it routes
 AimRelative with `g_swapMoveAndAimSticks` off, so the single-stick fallback is shared rather than reimplemented.
 `isAimRelativeFamily` is the test for "AimRelative or AimRelativeSwapped", for the call sites
@@ -134,7 +134,7 @@ stick event set it, and a resting pad's drift broke that half (§10).
 
 Since og-brawler-3rdControllerMode task 5, both toggles also shape one bit the simulation does
 see, still without the simulation reading either of them. `UOGBrawlerInputCollectionComponent::buildPlayerInput`
-passes them, with `g_movementScheme` and `g_moveStickDeadzone`, to
+passes them, with `g_movementScheme`, `g_moveStickDeadzone` and `g_backStopMaxMagnitude`, to
 `dInput::stickRouting::guardFreezeRequested`. That function decides whether a held guard raises
 `brawlerMovementSimulation::kInputFlagHoldGuard`, and it raises the bit only when the scheme's
 own move (routed with the fallback off, so `g_swapMoveAndAimSticks` picks which stick it is) or
@@ -333,3 +333,64 @@ unchanged: the latch is UE-side only, and the simulation sees the resulting dire
 `StickRoutingTest.cpp` in og-brawler-tests pins the three functions: the cases tagged [GamepadLatch],
 including the bug's frame order (WASD, then a drifting left stick, then a drifting right stick, every
 frame) and a mouse move beside a drifting pad.
+
+## 11. The back-stick stop zone in AimRelativeSwapped
+
+Origin: og-ground-aligned-attacks task 40 (a user request and the user's rulings, 2026-11-10).
+
+**The problem.** In `AimRelativeSwapped` the right stick moves the brawler. A light pull back on it
+already counts as "holding back", so it reaches the back-stick attacks: the held projectile
+(`dAttackMachineSimulation::wantsHeldProjectile`, which tests `kBackShortcutStep` on the live input),
+the backpedal swing, and the back steps of the motion inputs in `kGameMotions`. The user wanted a light
+back pull to stop the brawler instead, and a firm one to keep those attacks.
+
+**The default.** 0.45, held once as `kDefaultBackStopMaxMagnitude` beside the global. The global's
+initialiser, the console variable's initialiser and the tests reference it, and a `static_assert` in
+`MovementSchemeCVar.cpp` ties the help text's "default 0.45" to it. The user first ruled 0.4 and, on
+2026-11-10, after trying the console variable, raised it to 0.45.
+
+**The rule.** `g_backStopMaxMagnitude` is set from the console variable
+`OGBrawler.BackStopMaxMagnitude` (in `MovementSchemeCVar.cpp`, clamped to `[0, 1]` like the
+deadzones) and from the named-pipe name `BackStopMaxMagnitude` (`SetVariable`, `parseClampedFloat`).
+`UOGBrawlerInputCollectionComponent` loads it, with the other routing globals, in `routeRawSticks`
+and in `buildPlayerInput`, and passes it to `dInput::stickRouting::routeSticks` and
+`guardFreezeRequested` as `backStopMaxMagnitude`. Like the deadzones, neither function reads the
+global.
+
+In `routeSticks`, `AimRelativeSwapped`'s main branch (the right stick moves: `rightStickNeutral &&
+feedsAim` is false) computes `m = clampUnit(moveKeys + rightStick)` as before, and
+`inBackStopZone(m, moveDeadzone, backStopMaxMagnitude)` decides whether the routed move becomes
+`(0, 0)`. The zone is:
+
+* strictly between the two magnitudes: `moveDeadzone < |m| < backStopMaxMagnitude`. At exactly the
+  stop magnitude the brawler moves; at or below the deadzone nothing changes. A stop magnitude at or
+  below the move deadzone (0 included) therefore disables the zone;
+* within `kBackShortcutStep`'s window of straight back. The angle test **is**
+  `inputSequence::stickMatchesStep` with `kBackShortcutStep`, applied in stick space: the move is
+  `simFrame::fromForwardRight(m, 0)`, and the aim is stick-up, `(0, -1)` in the shared
+  "stick-up = -Y" storage convention, which is the stick that `cameraRelativeDirection` turns onto the
+  aim. So the window, the tolerance and `angle::Back` are those of the projectile shortcut by
+  construction, and no tolerance is copied. `StickRoutingTest.cpp` checks the equivalence through the
+  real move direction: each stopped stick, turned onto five aims by `cameraRelativeDirection`, satisfies
+  `stickMatchesStep(world, aim, kBackShortcutStep, kMoveMagnitudeEpsilon)`, and a one-degree sweep at
+  magnitude 0.3 agrees with `inBackStopZone` away from the window's edges.
+
+**What follows from the zero move, with no other change.** `buildMoveDirectionWorld` already returns
+zero below the move deadzone, so `moveStick` and `moveDirectionWorld` are both zero on the wire, and
+the attacks see a standing brawler. `guardFreezeRequested` routes the scheme's own move with the
+fallback off, which for this scheme is the main branch, so guard plus a stop-zone stick requests the
+freeze. Keys alone are at full deflection and never fall in the zone.
+
+**What it does not change.** The fallback branch (the right stick at or inside the move deadzone with
+`g_gamepadMoveStickFeedsAim` on, so the left stick moves), every other scheme and the legacy swap route
+exactly as before; their code paths are untouched. The simulation, the wire format and both goldens
+are unchanged, because the zone acts only on the client's input shaping.
+
+**A side effect in one sub-case.** With the left stick released and the gamepad latch set,
+`buildAimDirection` derives the aim from the move stick, so a light back pull used to turn the brawler
+and walk it toward the camera, and it never matched the back step (the move was along the aim). Inside
+the zone that pull now reads as centred too: the brawler stands, and the aim falls back to the mouse or
+the camera forward.
+
+`StickRoutingTest.cpp` (the cases tagged [BackStop]) and `GuardFreezeRequestTest.cpp` in
+og-brawler-tests pin the rule.

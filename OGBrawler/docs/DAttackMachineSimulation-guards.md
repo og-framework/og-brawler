@@ -267,7 +267,8 @@ the simulation as the zero vector, and the epsilon only has to reject that zero.
 `inputSequence::stickMatchesStep` gates on the length of `moveDirectionWorld`'s ground-plane part. ⚠ The 2D stick
 (`PlayerInputView::moveDirection`, the wire's `moveStick`) is **not** zeroed: the client packs the
 routed raw stick (`dInput::stickRouting::routeSticks` applies the deadzone only to pick a source in
-one scheme). This predicate does not read it.
+one scheme, and in that scheme as the lower bound of the back-stick stop zone, which routes a light
+back pull to the zero stick). This predicate does not read it.
 
 **Placement.** Both edits are substitutions on the tagged statement.
 

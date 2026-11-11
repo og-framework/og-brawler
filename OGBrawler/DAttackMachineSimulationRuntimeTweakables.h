@@ -27,6 +27,8 @@ OGBRAWLER_API extern std::atomic<MovementScheme> g_movementScheme;
 // ⛔G-01  docs/DAttackMachineSimulationRuntimeTweakables-guards.md
 OGBRAWLER_API extern std::atomic<float> g_moveStickDeadzone;
 OGBRAWLER_API extern std::atomic<float> g_aimStickDeadzone;
+OGBRAWLER_API extern std::atomic<float> g_backStopMaxMagnitude;
+inline constexpr float kDefaultBackStopMaxMagnitude = 0.45f;
 
 OGBRAWLER_API extern std::atomic<bool> g_swapMoveAndAimSticks;
 

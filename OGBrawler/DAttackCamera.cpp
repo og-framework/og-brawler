@@ -51,12 +51,13 @@ OrbitCameraState integrate(float deltaSeconds, const OrbitCameraInput& input,
 		next.frameUp = rotateUpToward(state.frameUp, kCameraUp, returnStepDeg);
 		next.pitchDeg = clampPitchDeg(
 			stepToward(state.pitchDeg, clampPitchDeg(input.targetPitchDeg, settings), returnStepDeg), settings);
-		const SlopeDwell dwell = slopeDwellStep(SlopeDwell{ state.slopeDwellSeconds, state.slopeDwellYawDeg }, input.targetUp,
-			deltaSeconds);
+		const LookOffYawGoal goal = lookOffYawGoal(input);
+		const SlopeDwell dwell =
+			slopeDwellStep(SlopeDwell{ state.slopeDwellSeconds, state.slopeDwellYawDeg }, goal, deltaSeconds);
 		next.slopeDwellSeconds = dwell.seconds;
 		next.slopeDwellYawDeg = dwell.yawDeg;
 		next.slopeYawRateDegPerSec = 0.f;
-		if (turnsUpSlope(input.targetUp) && slopeDwellElapsed(dwell.seconds, settings.slopeYawDwellSeconds))
+		if (goal.turns && slopeDwellElapsed(dwell.seconds, settings.slopeYawDwellSeconds))
 		{
 			const SlopeYawTurn turn =
 				slopeYawEase(state.yawDeg, dwell.yawDeg, state.slopeYawRateDegPerSec, deltaSeconds, settings);
