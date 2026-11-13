@@ -368,11 +368,12 @@ build their keys from `kLocalCoopKeyNames` itself, so the hint and the binding s
 ⛔ They are key names, not wording: guard G-01.
 
 **The limit notice:** the engine lets one client create at most 4 local players
-(`UGameViewportClient::MaxSplitscreenPlayers`, default 4, not overridden in this project's
-config). The 5th Tab fails harmlessly on the client; task 13 shows `localPlayerLimitNoticeText(n)`
+(`UGameViewportClient::MaxSplitscreenPlayers`, the engine's default 4; since og-input-latency P7-5
+the UE layer sets it from `og::brawler::session::maxLocalPlayersPerClient`, also 4, user ruling
+2026-11-12). The 5th Tab fails harmlessly on the client; task 13 shows `localPlayerLimitNoticeText(n)`
 on the HUD for `kLocalPlayerLimitNoticeSeconds` (4 s), with `localPlayerLimitNoticeVisible`
 deciding the window. The limit is a **parameter**, not a constant here: the UE layer passes the
-viewport's live value, so the text stays right if the ini value is ever raised. This is not a
+viewport's live value, so the text stays right if the constant is ever changed. This is not a
 player cap in the sense of the initiative's NO HARD PLAYER CAP ruling — the engine refuses the
 player; the notice only says so.
 

@@ -152,10 +152,10 @@ imported that symptom onto a design that cannot produce it.
   2. Its first respawn cleared the dead bit and wrote **no** teleport seed.
   3. The body was still below the kill plane, so the death arm fired again on the next tick.
   4. That repeated every `respawnDelayTicks`, and every death paid every other player a point.
-- The playtest rules forbid refusing a player for numbers (NO HARD PLAYER CAP). Two clients × three local players (6 characters) is an ordinary local playtest.
+- The playtest rules then forbade refusing a player for numbers (NO HARD PLAYER CAP). Two clients × three local players (6 characters) is an ordinary local playtest.
 - So the user ruled: size the table for **8** characters. Above the tested 3 is accepted as "may run degraded", not refused.
 - 8 is a playtest-size ruling, not a derivation: it is the scoreboard's row count (`kScoreboardMaxRows = 8u`) and two full local-co-op clients.
-- The engine allows more: 4 local players per client and 16 players per server. The 9th concurrent character still gets `kNoFreeSlot` and the loop above, which is why the next raise is a ruling, not a bug fix.
+- The engine allowed more: 4 local players per client and 16 players per server. Since og-input-latency P7-5 (user ruling 2026-11-12) the server refuses a 9th player at the login (`og::brawler::session::hardPlayerCeiling` = 8), and the UE layer `static_assert`s that ceiling against `kMaxSpawnPoints`. Without that refusal the 9th concurrent character would get `kNoFreeSlot` and the loop above, which is why the next raise is a ruling, not a bug fix.
 
 **How it is tied to the cap now.** `BrawlerRosterUImpl::kPreDietCharacterCap` (the manager's until og-ue-simulationcomponentandmanagersplit task 23) stays **4**, because it is the packet-budget number. `BrawlerRosterUImpl.h` asserts `kPreDietCharacterCap <= kMaxSpawnPoints`, so the cap can never exceed the table. Characters 5-8 register, get real slots, and trigger the cap's advisory `Warning`, which is the truthful "above the tested size" signal. When the wire diet deletes the cap, this constant stays sized by the playtest ruling.
 
@@ -382,6 +382,37 @@ fence: taking the list by const reference does not compile — see §1d.
 
 ⚠ These coordinates belong to ThirdPersonMap's arena. On any map that places eight or more player starts they are never used. On a map with fewer than eight and a different arena, re-derive them by the rule above, or place more player starts, which is the better fix (§5).
 
+⚠ **Not re-measured since `1d89c37` (2026-11-02).** That commit rebuilt ThirdPersonMap's arena (the 30° platforms) and moved
+its player starts: the three task 2c quotes stand at heights 3.49, 5.27 and 5.63 m, against this table's 1.2 m. Whether entries 4-7 still lie on the arena was not checked by og-input-latency task 2d. With §5e rejecting two of
+the level's six starts, ThirdPersonMap now seeds four slots, so entries 4-7 are the ones a 5th to 8th character uses.
+
+### 5e. Starts at or below the kill plane are rejected — og-input-latency task 2d
+
+**The defect.** ThirdPersonMap's `1d89c37` placed two of its six player starts far below the kill plane, at -55.66 m and
+-141.03 m (og-input-latency task 2c, from the `[Ringout.spawnPoints]` seed log). The merge took them as slots 4 and 5. A
+character respawning to either fell below the plane and died again, and a pawn the engine spawned on either died one tick
+after its first integrate.
+
+**The rule.** `seedFromLevelPlacements(placements, authoredFallback, killPlaneHeight)` drops every placement for which
+`spawnPointClearsKillPlane` is false, that is, whose `simFrame::height` is **at or below**
+`killPlaneHeight + kSpawnPointKillPlaneMargin`. It then merges the rest with `spawnPointsFromLevelPlacements`, unchanged.
+It returns the table, the rejected placements sorted by `levelSpawnPointOrderBefore` (so every peer logs them in one
+order), and `levelSlotCount`, the number of slots the level filled. With no start rejected the table is exactly the merge's:
+`Ringout.SpawnPoints.WithEveryStartAboveThePlaneTheSeedIsTodaysMerge`.
+
+**The margin, 1 m, and why it is not 0.** A player start marks where the pawn's capsule centre goes. A brawler standing
+on a floor has its centre about 1.06 m above it: the capsule half-height, 0.96 m, plus the hover ride height, 0.1 m
+(`SimulatableBrawlerTypes.h`). So a start at height *h* implies a floor near *h* − 1.06 m, and a start within 1 m of the
+plane implies a floor at or below the plane, which is ground the game counts as out of the arena. The 1 m is that 1.06 m
+rounded down; it is a judgement, not a derivation. Any margin from 0 to 50 m rejects both of ThirdPersonMap's offenders.
+
+**Rejected means: no ring-out slot and no engine spawn.** The UE caller logs one Warning per rejected actor
+(`BrawlerRosterUImpl-rationale.md` §1a), and the game mode's PlayerStart choice skips the same starts through the same
+predicate (`BrawlerPlayerStartUImpl-rationale.md`).
+
+**Not a substitute for moving the actors.** A rejected start is a level error, and the Warning names it. The fix is the
+user's, in the editor.
+
 ---
 
 ## 6. The wire slices
@@ -395,6 +426,10 @@ you only see on the respawn tick.
 ⛔ **Unlike the movement teleport seed, this is NOT a counter-free edge** — nothing consumes and
 clears it. It is written once and read on every respawn for the life of the character. The UE
 caller says the same thing from its own side.
+
+⚠ **"Written once" is false since og-input-latency task 2d.** The registration seed is the first write. The
+authority's `RespawnSlotSystem` may write it again on a death tick and on a respawn tick (§11d). Still true: only the
+authority writes it, nothing consumes or clears it, and a correction restores it with the rest of the composite.
 
 **`State` — 5 B: one flags byte plus the absolute respawn tick.** `respawnAtTick` is meaningful
 only while `kFlagDead` is set; it is left at its last value once cleared, deliberately — an extra
@@ -575,6 +610,10 @@ calls and no logic at all.
 The AUTHORITY assigns each character the LOWEST index no live character currently holds, once, at
 registration. Arrival order decides who gets which number.
 
+⚠ Since og-input-latency task 2d the index can change after registration, on the authority only, when the point it names
+is occupied at a death or a respawn (§11d). The argument below, that an authority-assigned value which rides the wire
+cannot make peers disagree, covers that write too.
+
 ⛔ **Arrival order is acceptable here. Do not "fix" this into a per-peer derivation.** The
 determinism rule this looks like it bends exists to stop exactly two things: peers DISAGREEING
 about a spawn point, and a resim producing a DIFFERENT answer than the original run. Neither can
@@ -629,6 +668,33 @@ not of a role test. Machine-checked by
 ⛔ **A `held` flag, not a sentinel character id.** Character ids arrive from the engine as an
 object's unique id; reserving one of their values to mean "free" would be a guess about a range
 this engine-free header cannot see.
+
+### 11d. A respawn never lands on an occupied point when a free one exists — og-input-latency task 2d
+
+**The defect.** The allocator hands each character its own slot, but the engine spawns each pawn on a random player start,
+not on its slot's point. So a respawn to the character's own slot could land on another character standing there: in
+og-input-latency task 2c, three of four runs put two capsules on one point after a respawn.
+
+**The rule, as pure functions in this header.**
+- `spawnPointIsOccupied(point, occupants)`: some occupant lies strictly within `kSpawnPointOccupiedRadius` (1 m) of the
+  point, by 3-D distance.
+- `chooseRespawnSlot(currentSlot, spawnPoints, occupants)`:
+  - the current slot if it is free, or if it is out of range (the over-capacity join of §11b stays placeless);
+  - otherwise the **lowest-index** free slot;
+  - otherwise, when every slot is occupied, the current slot: a full table keeps today's choice.
+
+**The radius, 1 m.** Two upright capsules touch when their centres are two capsule radii apart, 0.84 m. 1 m is that
+plus 0.16 m of slack for a body that has drifted a little off the point or settled a little below it. It must stay
+above two capsule radii: the
+system checks that with an `OG_CHECK` against the movement `StaticData` when a character registers.
+
+**Who decides, and where the answer goes.** `brawlerRingout::RespawnSlotSystem` (`BrawlerRingoutRespawnSystem.h`) runs on
+the authority only and writes the answer into `InitialConditions::spawnSlot`. That is today's wire path: the slot rides
+every correction, `integrate`'s respawn arm reads it on every peer, and §11a's argument for authority-assigned values
+applies unchanged. Its own rationale is `BrawlerRingoutRespawnSystem-rationale.md`.
+
+**`respawnIsDue(state, tick)`** is the respawn arm's condition, `isDead(state) && tick >= state.respawnAtTick`, as a
+function. The system's respawn-tick hook and `integrate` both call it, so they cannot drift apart.
 
 ---
 

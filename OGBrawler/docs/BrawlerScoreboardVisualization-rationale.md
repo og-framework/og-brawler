@@ -271,27 +271,30 @@ not on this being non-zero.
 sorted** on.
 
 It is the same colour that fighter's mesh is wearing, not a colour this board picks: the UE
-gather copies `AOGBrawlerUECharacter::BrawlerColor`'s three channels in.
+gather copies in the three channels `AOGBrawlerUECharacter::GetBrawlerColor` returns.
 
-⛔ **That source is already on every peer.** `BrawlerColor` is assigned server-side from the
-character file's `kBrawlerPalette` and replicated with a plain `DOREPLIFETIME`, deliberately
-**not** `COND_OwnerOnly` — the comment at its registration gives the reason in one line,
-*"every client must see every brawler's colour"* — so a client's board draws real tints
-rather than a column of white. It travels exactly like the score does, which is why this
-column works on a client for the same reason column two does.
+⛔ **That source is already on every peer.** No colour replicates (since og-input-latency
+P7-4): `GetBrawlerColor()` derives it on each peer from the replicated sim id, as entry
+`(id - 1) % 10` of the character file's 10-entry `kBrawlerPalette`. The id replicates with a
+plain `DOREPLIFETIME`, deliberately **not** `COND_OwnerOnly`, because every client must learn
+every character's id (`OGBrawlerUECharacter-guards.md` G-10), so a client's board draws real
+tints rather than a column of white. The id travels exactly like the score does, which is why
+this column works on a client for the same reason column two does.
 
-⚠ The couch-co-op argument for declining `COND_OwnerOnly` sits at `RingoutScore`'s
-registration immediately below `BrawlerColor`'s, and a separate couch-co-op argument — for
-keying the palette per brawler rather than per connection — sits at `kBrawlerPalette`.
-Neither is the one-line comment quoted above.
+⚠ Two couch-co-op arguments sit in the character's docs, and neither is the reason above. The
+one for declining `COND_OwnerOnly` on `RingoutScore` (guard G-09) is recorded there as false
+in its mechanism: a split-screen player's child connection counts as its parent's owner, so
+what that condition would starve is every other machine. The one for keying the palette per
+brawler rather than per connection still holds: each local player's pawn gets its own sim id.
 
 ⚠ **The default is white, and it is the right default rather than an arbitrary one.**
-`BrawlerColor` itself defaults to white, so a brawler that has not been possessed yet, or
-whose colour has not replicated in yet, draws the swatch its **mesh** is currently wearing.
+`GetBrawlerColor()` returns white while the sim id is `SimCharacterId::None`, so a brawler
+whose id has not been assigned yet, or has not replicated in yet, draws the swatch its
+**mesh** is currently wearing.
 The board and the world agree even in that window.
 
-⛔ **No alpha.** The swatch is opaque; see 4 and 4.1. `BrawlerColor` carries an alpha channel
-that the material uses and this column deliberately drops, because a half-transparent swatch
+⛔ **No alpha.** The swatch is opaque; see 4 and 4.1. `GetBrawlerColor()` returns an alpha channel
+that the material receives and this column deliberately drops, because a half-transparent swatch
 over a bright scene is a different colour to the eye than the same swatch over a dark one —
 and "which fighter is this" must not depend on what happens to be behind the board.
 
@@ -597,13 +600,13 @@ Stated explicitly rather than left to be inferred, because it is the first colou
 board that is not a constant.
 
 `scoreboardRowSwatch` is a per-character **runtime tint**: it returns a value that was carried
-in on the row, assigned at possession time from `kBrawlerPalette` over in the UE character
+in on the row, picked by the sim id from `kBrawlerPalette` over in the UE character
 file, and this header neither names an entry of that palette nor selects between entries.
 
 The lint's subject is *a function that switches on an enumerator*, because that is the shape
 whose arms can silently fall out of step with a legend table listing the enumerator names. A
 function with no arms at all has nothing to list: a legend for this column would have to
-enumerate the palette, which lives in a different module, is indexed by a possession counter
+enumerate the palette, which lives in a different module, is indexed by the sim id
 rather than by any named state, and is therefore exactly the table that would go stale the day
 someone appends another colour.
 

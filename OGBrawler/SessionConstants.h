@@ -8,9 +8,9 @@
 // supports" and "how many local players a single client connection drives."
 // They are visible to all future bandwidth / topology decisions (Phase 2a's
 // MaxClientRate ceiling spike measures against the worst-case topologies these
-// imply). NO production logic enforces these limits yet — the actual
-// "reject the 4th player joining a Tier 1 session" gate belongs to a future
-// server-session-management task and is OUT OF SCOPE for this initiative.
+// imply). Nothing rejects a player above maxPlayersPerServer or its Tier 2 value.
+// maxLocalPlayersPerClient and hardPlayerCeiling are enforced at login by
+// AOGBrawlerUEGameMode::InitGame (og-input-latency P7-5).
 //
 // Tier rationale:
 //   Tier 1 (MVP, must ship): maxPlayersPerServer = 3 player-controlled
@@ -36,7 +36,10 @@ namespace og::brawler::session
 	static constexpr int maxPlayersPerServerTier2 = 6;  // Tier 2 stretch target
 
 	// Maximum local players per client connection. Path A multi-`ULocalPlayer`-per-client
-	// architecture (shipped OGBrawlerMultiPlayerPerClient 2026-05-30) supports up to 3 LPs
-	// per parent UNetConnection via UChildConnection. Value is constant across Tier 1 and Tier 2.
-	static constexpr int maxLocalPlayersPerClient = 3;
+	// architecture (shipped OGBrawlerMultiPlayerPerClient 2026-05-30) supports up to 4 LPs
+	// per parent UNetConnection via UChildConnection (user ruling Q3, 2026-11-12). Value is constant across Tier 1 and Tier 2.
+	static constexpr int maxLocalPlayersPerClient = 4;
+
+	// Players per server; the server refuses the next login (user ruling Q3, 2026-11-12; og-input-latency P7-5).
+	static constexpr int hardPlayerCeiling = 8;
 }
