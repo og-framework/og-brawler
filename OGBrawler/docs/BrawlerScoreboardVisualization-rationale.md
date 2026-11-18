@@ -459,6 +459,11 @@ itself, so it goes red the day that flag changes and the negation becomes load-b
 ⛔ **Do not "simplify" either clamp to the non-negated form.** The reason it currently looks
 equivalent is a compiler flag, not the language.
 
+**Since og-input-latency task 20 (2026-11-18) the flag has changed.** The sim modules and the test target compile
+`/fp:precise` (UnrealBuildTool's `FPSemantics = Precise`), so the paragraphs above describe the build before it: `n < 0.25f`
+is now false for a NaN, as IEEE-754 says. The negation is load-bearing, a red probe against it bites, and
+`Scoreboard.TheNaNClampIsCorrectHereForAReasonTheToolchainSupplies` asserts the IEEE result.
+
 ---
 
 ## 10. `ScoreboardLayout` — the fields, and why each one is shaped as it is

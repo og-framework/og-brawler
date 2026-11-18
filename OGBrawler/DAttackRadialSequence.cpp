@@ -5,8 +5,7 @@
 #include "OGSimulation/DMathUtil.h"
 #include <algorithm>
 #include "glm/geometric.hpp"
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/vector_angle.hpp>
+#include "OGSimulation/SimTrig.h"
 #include <glm/gtc/constants.hpp>
 
 DAttackRadialSequence::DAttackRadialSequence(const std::vector<DAttackRadialSequencePoint>& attackPoints, float timeToReachZeroVelocity, glm::vec3 rotationAxis)
@@ -140,7 +139,7 @@ float DAttackRadialSequence::getInitialVelocity() const
 glm::vec2 DAttackRadialSequence::getDirection(unsigned int index) const
 {
 	const float angle = m_attackPoints[index].angle;
-	return glm::vec2(std::cos(angle), std::sin(angle));
+	return glm::vec2(simTrig::cos(angle), simTrig::sin(angle));
 }
 
 glm::vec3 DAttackRadialSequence::getRotationAxis() const
@@ -173,9 +172,9 @@ DAttackSegment DAttackRadialSequence::getAttackSegment(const glm::vec2& localDir
 {
 	bool velocityIsPositive = m_velocityAtPoint[1] > 0.f;
 	auto& firstPoint = m_attackPoints.front();
-	glm::vec2 initialDirection(std::cos(firstPoint.angle), std::sin(firstPoint.angle));
+	glm::vec2 initialDirection(simTrig::cos(firstPoint.angle), simTrig::sin(firstPoint.angle));
 	float initialAngle = firstPoint.angle;
-	float angle = glm::orientedAngle(initialDirection, localDirection);
+	float angle = simTrig::orientedAngle(initialDirection, localDirection);
 
 	if (velocityIsPositive)
 	{ 

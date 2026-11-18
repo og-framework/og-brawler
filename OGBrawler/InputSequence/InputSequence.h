@@ -10,6 +10,7 @@
 #include "glm/geometric.hpp"
 #include "glm/common.hpp"
 #include "OGSimulation/SimulationFrame.h"
+#include "OGSimulation/SimTrig.h"
 
 namespace inputSequence
 {
@@ -92,7 +93,7 @@ inline std::optional<float> aimRelativeAngle(glm::vec2 stick, glm::vec3 referenc
     const float dotF = glm::clamp(glm::dot(fwd,   sNorm), -1.f, 1.f);
     const float dotR = glm::clamp(glm::dot(right, sNorm), -1.f, 1.f);
 
-    return std::atan2(dotR, dotF); // [-pi, pi]
+    return simTrig::atan2(dotR, dotF); // [-pi, pi]
 }
 
 // ---------------------------------------------------------------------------

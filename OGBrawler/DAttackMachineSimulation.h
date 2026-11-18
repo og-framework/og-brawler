@@ -26,6 +26,7 @@
 #include "OGSimulation/OGAssert.h"
 #include "OGSimulation/SimulationFrame.h"
 #include "OGSimulation/SurfaceFrame.h"
+#include "OGSimulation/SimTrig.h"
 #include "OGBrawlerLog.h"
 
 // ∴D-03  docs/DAttackMachineSimulation-rationale.md
@@ -234,7 +235,7 @@ void setRadialSimulationInitialConditions(float deltaTime,
 	    "Not -simFrame::kUp or kUp * -1.f: their -0 zeros are other input bits to the round trip (a test-side copy at og-ground-aligned-attacks task 14b gave the same output for both; this assert keeps the input exact rather than relying on that). "
 	    "Was the chart-P simFrame::kTurnAxis.");
 	const float aimDot = glm::dot(aimDirection, defaultForward);
-	const float aimAngle = glm::acos(aimDot);
+	const float aimAngle = simTrig::acos(aimDot);
 	// ⛔G-03  docs/DAttackMachineSimulation-guards.md
 	const bool aimEqualsForward = glm::abs(glm::abs(aimDot) - 1.f) < 0.0001f;
 	const glm::vec3 aimRotationAxis = [&aimEqualsForward, &aimFallbackAxis, &defaultForward, &aimDirection]() {
@@ -245,7 +246,7 @@ void setRadialSimulationInitialConditions(float deltaTime,
 	}();
 
 	const surfaceFrame::AngleAxis swingFrame = surfaceFrame::toAngleAxis(surfaceFrame::tiltMatrix(ground.normal)
-		* glm::mat3(glm::rotate(glm::mat4(1.f), aimAngle, aimRotationAxis)));
+		* glm::mat3(simTrig::rotate(glm::mat4(1.f), aimAngle, aimRotationAxis)));
 	attackIntialConditions.initialAimAngle = swingFrame.angle;
 	attackIntialConditions.initialAimRotationAxis = swingFrame.axis;
 }

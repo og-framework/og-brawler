@@ -24,6 +24,7 @@
 #include "glm/geometric.hpp"
 #include "glm/common.hpp"
 #include "glm/gtc/matrix_transform.hpp"
+#include "OGSimulation/SimTrig.h"
 
 namespace brawlerHitRouting
 {
@@ -200,7 +201,7 @@ namespace brawlerHitRouting
                 (glm::dot(ic.initialAimRotationAxis, ic.initialAimRotationAxis) > 0.f)
                     ? ic.initialAimRotationAxis
                     : aimFallbackAxis;
-            return glm::rotate(glm::mat4(1.f), ic.initialAimAngle, axis);
+            return simTrig::rotate(glm::mat4(1.f), ic.initialAimAngle, axis);
         }
 
         static glm::vec2 attackerAimXY(const SimulatableBrawler& attacker)

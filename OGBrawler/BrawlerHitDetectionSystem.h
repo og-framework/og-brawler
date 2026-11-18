@@ -33,6 +33,7 @@
 #include "glm/common.hpp"
 #include "glm/geometric.hpp"
 #include "glm/gtc/matrix_transform.hpp"
+#include "OGSimulation/SimTrig.h"
 
 #include "OGSimulation/CompilerControl.h"
 OGSIM_OPTIMIZE_OFF
@@ -141,7 +142,7 @@ void detectRadialHits(float deltaSeconds,
 	const glm::vec4 defaultForward4(DAttackRadialSequence::defaultForward(), 0.f);
 	const glm::vec3 currentDirection = glm::vec3(rootTransform * defaultForward4);
 
-	const glm::mat4 initialRotation = glm::rotate(glm::mat4(1.f), initialConditions.initialAimAngle, initialConditions.initialAimRotationAxis);
+	const glm::mat4 initialRotation = simTrig::rotate(glm::mat4(1.f), initialConditions.initialAimAngle, initialConditions.initialAimRotationAxis);
 	const glm::vec3 worldSequenceRotationAxis = glm::vec3(initialRotation * glm::vec4(activeAttackSequence.getRotationAxis(), 0.f));
 
 	const auto currentAttackSegment = getAttackSegment(initialConditions, staticData, currentDirection);

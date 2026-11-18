@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 #include "DAttackCircle.h"
 #include "OGSimulation/OGAssert.h"
+#include "OGSimulation/SimTrig.h"
 #include <algorithm>
 #include <cmath>
 
@@ -37,6 +38,6 @@ void DAttackCircle::getLines(std::vector<glm::vec3>& lines, bool getOuter) const
 		{
 			angle += getSegmentLength() * 0.5f;
 		}
-		lines.push_back(glm::vec3(radius * cos(angle) * m_forwardRangeMultiplier, radius * sin(angle), 0.f));
+		lines.push_back(glm::vec3(radius * simTrig::cos(angle) * m_forwardRangeMultiplier, radius * simTrig::sin(angle), 0.f));
 	}
 }

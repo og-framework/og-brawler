@@ -56,8 +56,8 @@ both forms. Only the rounding NaN separates them.)
 `side` in one of two branches, flat or the guard's plane, and then ran one shared decision block, so this
 gate had a single site for both. Task 14b retired the flat branch (`DAttackRadialSimulation-rationale.md`
 §7), and with it the unclamped `std::acos` the paragraph above derives from. The remaining computation
-clamps the dot to [−1, 1] before `std::acos` and returns `false` on a zero projected direction before the
-gate. So for finite, non-degenerate inputs the rounding NaN above no longer reaches the gate [derived from
+clamps the dot to [−1, 1] before its `acos` and returns `false` on a zero projected direction before the
+gate. Since og-input-latency task 22 that `acos` is `simTrig::acos`, which clamps its input itself. So for finite, non-degenerate inputs the rounding NaN above no longer reaches the gate [derived from
 the clamp]. The gate stays positive, so the fall-through holds again if an unclamped `td` comes back. Keep
 the one decision block: a second copy of it is a second site this tag does not cover.
 

@@ -20,6 +20,7 @@
 #include "glm/common.hpp"
 #include "glm/geometric.hpp"
 #include "glm/trigonometric.hpp"
+#include "OGSimulation/SimTrig.h"
 
 #include "OGSimulation/CompilerControl.h"
 OGSIM_OPTIMIZE_OFF
@@ -69,7 +70,7 @@ inline bool projectileGuardBlocks(const glm::mat4& guardTransform, const glm::ve
 		return false;
 	incoming = glm::normalize(incoming);
 	const float d     = glm::clamp(glm::dot(guardForward, incoming), -1.f, 1.f);
-	const float angle = glm::acos(d);
+	const float angle = simTrig::acos(d);
 	return angle <= guardMiddleSectionHalfAngle;
 }
 

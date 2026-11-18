@@ -150,7 +150,7 @@ poison (task 17): widening the angle to four times the middle section turns
 **The guard's-plane projection is the projectile's own too** (og-ground-aligned-attacks tasks 8 and
 20b). Since task 8 `projectileGuardBlocks` projects the incoming direction onto the guard's plane, and
 since task 20b (OQ17 (b)) it does so for every guard, a flat one included
-(`BrawlerProjectileHitDetection-rationale.md` §1); the clamp, `glm::acos` and half-angle test follow the
+(`BrawlerProjectileHitDetection-rationale.md` §1); the clamp, `simTrig::acos` and half-angle test follow the
 projection. This prohibition covers the projection too: it is not replaced by `wouldGuardBlock`, and the
 half-angle argument stays. Re-measured at task 20b with the same poison (four times the middle section):
 `BrawlerProjectile.DamageOnGuardSide` goes from a hit to a block, `REQUIRE( state.slots[0].endReason == 2u )`
@@ -245,7 +245,7 @@ own guard played no part. Measured by poison (task 20b, the root test removed):
 
 **The prohibition.** ⛔ Do not delete this return on the ground that the angle test says "not
 blocked" for a degenerate shot anyway. A shot along the guard's up projects to the zero vector, and
-`glm::normalize` of it is not a direction; what the clamp, `glm::acos` and the comparison then make of
+`glm::normalize` of it is not a direction; what the clamp, `simTrig::acos` and the comparison then make of
 it is the compiler's floating-point model, not a rule.
 
 **What breaks if the edit is made.** Measured by poison (task 20b, the return deleted):
