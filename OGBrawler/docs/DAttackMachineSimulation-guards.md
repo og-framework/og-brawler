@@ -75,7 +75,10 @@ under the duration, so the loop takes **43** steps, while `ceilf(0.70000005f / (
 `static_assert(swingTickCount(0.6f + 0.1f, 1.f / 60.f) == 43u)` on a `constexpr` helper. It compiled,
 and then **so did the poison**, a `ceil`-shaped body: MSVC's constant evaluator gives 43 where the
 same division at run time gives 42. A compile-time pin cannot witness run-time float behaviour here.
-It was rejected as vacuous.
+It was rejected as vacuous. ⚠ That was under `/fp:fast`. Under `/fp:precise`, the mode since
+og-input-latency task 20, a one-file probe (MSVC 19.38, 2026-11-18, `/O2` and `/Od`) gives 42 for a
+ceil-shaped body in the constant evaluator as at run time, and 43 for the loop in both, so such a pin
+would no longer be vacuous. None is written yet.
 
 **Placement.** Both edits are typed on the tagged statement. Replacing the loop deletes it; the
 multiplication substitutes it.

@@ -247,8 +247,9 @@ All three verified 2026-09-23. `SimulatableBrawler::integrate` builds the machin
 42 float additions of `1.f / 60.f` land **exactly on** `0.7f`. The duration `getDuration()` returns for
 sequences 0 and 1 is `0.6f + 0.1f` = `0.70000005f`, one ulp higher, because the constructor appends
 the zero-velocity point. So the loop takes 43 steps where `ceilf` says 42. The prohibition is guard
-**G-02**, and so is the record of why it is not a `static_assert`: MSVC's constant evaluator does not
-reproduce the run-time division.
+**G-02**, and so is the record of why it is not a `static_assert`: under `/fp:fast` MSVC's constant
+evaluator did not reproduce the run-time division (under `/fp:precise`, since og-input-latency task 20,
+it does: G-02).
 
 `kNominalSimStepSeconds` is `1.f / 60.f` (`BrawlerMovementSimulation.h`), and `SimulationManager`
 reads one `stepDt` per step. The fixed-step assumption holds today.
@@ -984,11 +985,11 @@ aim rotation axis (the second bullet).
   byte-identical): `DAttackAbs.MachineNearPoleAimTakesTheEpsilonBandBranch` fails (`turnComponent` +1
   where the band must give −1), and both sections of `DAttackGuard.NearPoleAimTakesTheEpsilonBandBranch`
   fail. The golden trace stays exact: its scenario never aims inside the band, so it cannot see this edit.
-* **Both are `constexpr` locals: the constant-folding form, which does not fix the zero signs.**
+* **Both are `constexpr` locals: the constant-folding form, which did not fix the zero signs under `/fp:fast`.**
   A vocabulary constant that enters arithmetic (a cross or matrix product, a rotation axis) is used
   through a `constexpr` local or as the `static constexpr` member itself, because a runtime copy
   (`const glm::vec3 defaultForward(simFrame::kForward)`) is not folded into the arithmetic the way
-  the literal it replaced was. What no form of this source fixes is the sign of the zeros in
+  the literal it replaced was. What no form of this source fixed under `/fp:fast` is the sign of the zeros in
   `glm::normalize(glm::cross(defaultForward, aimDirection))`. In the Z-up frame its x and y were
   exact zeros for every flattened aim (`defaultForward` has zero y and z, the aim a `+0` z), and
   under `/fp:fast` the compiler may rewrite `0 - x` as `-x`, which turns a `+0` into a `-0`,
@@ -1000,8 +1001,12 @@ aim rotation axis (the second bullet).
   scratch `cl` copy of the function gave `+0` in every variant, so the inlining context decides,
   not the expression. The brawler golden trace therefore compares `+0` and `-0` as equal in exact
   mode and counts such differences separately (its `[GoldenTrace.signedZero]` line). In the shipped
-  form it counts 321 axial-vector values (tag `a`, one per field and sample) that differ only in
-  the sign of a zero, the first in this field at tick 40, and no other bit differs.
+  form it counted 321 axial-vector values (tag `a`, one per field and sample) that differed only in
+  the sign of a zero, the first in this field at tick 40, and no other bit differed. Since
+  og-input-latency task 20 the modules compile `/fp:precise`: UnrealBuildTool's build and five
+  standalone MSVC and clang-cl builds recorded both goldens alike, zero signs included (task 20), and
+  against the re-recorded goldens the line reads `a=0` and `first=none` for both (2026-11-18). The
+  golden still compares `+0` and `-0` as equal.
 * **`launchHadouken`** flattens the aim the same way, and a degenerate aim falls back to
   `aimFallback`, a `constexpr` copy of `simFrame::kForward`. The spawn offset along up is
   `simFrame::withHeight(glm::vec3(0.f), projSD.spawnHeightOffset)` (the field was spawnZOffset until

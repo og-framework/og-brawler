@@ -551,10 +551,11 @@ bullet). They also stay right when the frame changes.
   `idleAxis` here). That is the constant-folding form: a runtime `const` copy of a `simFrame`
   constant is not folded into the arithmetic the way the literal it replaced was. It does not pin
   the sign of an exact-zero result under `/fp:fast`. The aim rotation axis this header stores
-  (`initialAimRotationAxis`, written by the machine) has exact-zero components whose signs come
-  from how the compiler optimises the machine's cross product, not from the source; three builds
-  gave three results (`DAttackMachineSimulation-rationale.md` §16). The brawler golden trace
-  therefore compares `+0` and `-0` as equal and counts that field separately.
+  (`initialAimRotationAxis`, written by the machine) has exact-zero components whose signs, under
+  `/fp:fast`, came from how the compiler optimised the machine's cross product, not from the source;
+  three builds gave three results (`DAttackMachineSimulation-rationale.md` §16). Under `/fp:precise`
+  (og-input-latency task 20) six builds recorded the same signs (§16 there). The brawler golden trace
+  compares `+0` and `-0` as equal and counts that field separately.
 * **Lengths.** The body sphere is `0.3f` (metres; task 5b's wrapped 30 cm, unwrapped by task 22),
   and `attachmentOffset` returns `simFrame::kUp * 0.3f`. A positive scale of an axis keeps its `+0`
   components, so this was the literal `(0, 0, 30)` bit for bit in the Z-up frame. The two query-volume radii
