@@ -2,6 +2,7 @@
 # `BrawlerRingoutSimulation.h` — rationale
 
 <!-- lint-external-ref: `Ringout.SpawnSlotOutOfRange` -- R0-8: this is the name the header CITED and that no test case has ever had. It is quoted as the defect, so it must stay unresolvable. -->
+<!-- lint-external-ref: largestFittingCharacterCountUnderJoin -- the old RoundVsPacketBudgetTest.cpp's (og-brawler-tests), which priced the Iris round until og-input-latency task P5-26 re-based the file on og-sim-net's correction budget; kept in the history -->
 <!-- lint-external-ref: `FName::FastLess` -- engine symbol, Runtime/Core/Public/UObject/NameTypes.h, outside every scan root. -->
 <!-- lint-external-ref: `FNameFastLess` -- engine symbol, same header, outside every scan root. -->
 <!-- lint-external-ref: `FNameEntryId` -- engine symbol, same header, outside every scan root. -->
@@ -128,8 +129,9 @@ the same defect.
 > same spawn point at a legal player count; more would be entries nothing can ever index.
 
 ⛔ **Superseded 2026-09-29 (og-brawler-uploadtosteam T18): the constant is now 8, and it is no
-longer a mirror of the cap.** What the quotation says about `kPreDietCharacterCap` is still true
-(it is 4, it mirrors `largestFittingCharacterCountUnderJoin()`), but the table stopped being sized
+longer a mirror of the cap.** `kPreDietCharacterCap` is still 4. It mirrored
+`largestFittingCharacterCountUnderJoin()` until og-input-latency task P5-26 re-based that test on
+og-sim-net's correction budget, so nothing derives it now; and the table stopped being sized
 by it. Why it changed and what it is sized by now is below the two R0 corrections, which are
 kept because they are what made the change safe.
 

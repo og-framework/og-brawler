@@ -49,7 +49,7 @@
 // Everything selected here is COSMETIC. The returned PlayerInput must be passed
 // only to visualize() functions, which take every simulation-side parameter by
 // const reference and mutate nothing but their own visualization State. It must
-// never reach the simulation, the input RPC, or a correction cache. On the local
+// never reach the simulation, the input bundle, or a correction cache. On the local
 // path the value is not even tick-aligned — it is a mid-tick sample that no
 // authority ever saw — so feeding it to the sim would desync by construction.
 //

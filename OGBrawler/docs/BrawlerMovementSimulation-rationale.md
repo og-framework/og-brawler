@@ -12,6 +12,7 @@
 <!-- an escape that matches NOTHING is itself a lint violation.          -->
 <!-- ------------------------------------------------------------------ -->
 <!-- lint-external-ref: impl/impl_notes_seam_27.md -- brawler-movement-simulation initiative archive; private working material, not distributed with this submodule -->
+<!-- lint-external-ref: kStateWireBytes -- the old RoundVsPacketBudgetTest.cpp's (og-brawler-tests), which priced the Iris round until og-input-latency task P5-26 re-based the file on og-sim-net's correction budget; kept in the history -->
 <!-- lint-external-ref: DetachGateIsVacuousUntilJumpLands -- a RETIRED token -- task 27 DELETED this Catch2 case and replaced it with XYKnockbackDoesNotDetach; the prose exists in order to say the name is gone, so a resolving name would falsify it -->
 <!-- lint-external-ref: paramName -- not an identifier at all: it is the PLACEHOLDER inside the `/*paramName=*/` call-site annotation convention (CommentExtractionRule v2 section 1.4), and the real names are the constructor parameters it stands in for -->
 <!-- lint-external-ref: ASimulationManagerUImpl::m_staticData -- moved member inside carried text: the static data is UESimulationSession's m_staticData since og-ue-simulationcomponentandmanagersplit task 24a, still a by-value member constructed with the actor, before BeginPlay installs the ogblog sink, so the carried ordering reason still holds -->
@@ -297,9 +298,10 @@ it is in: on flat ground the frame is world XY, on a slope it is the slope, on a
 > ⛔ The paragraph below quotes the **margin** cost (10.264 B) and then the quotient
 > produced by the **net closure** cost (10.764 B), dropping the one sentence that
 > reconciles them. A reader who divides the two numbers it gives them gets 2.665 and
-> concludes one of them is wrong. `RoundVsPacketBudgetTest.cpp:466-473` carries the missing
+> concludes one of them is wrong. `RoundVsPacketBudgetTest.cpp:466-473` carried the missing <!-- lint-anchor-ignore: the old RoundVsPacketBudgetTest.cpp's lines, before og-input-latency task P5-26 re-based the file -->
 > term: the half-entry floor itself rises 0.5 B per stride byte, so net closure is
-> 10.764 B per input byte and 27.352 / 10.764 = 2.5411 ✓.
+> 10.764 B per input byte and 27.352 / 10.764 = 2.5411 ✓. (Those lines are the old file's: og-input-latency
+> task P5-26 re-based `RoundVsPacketBudgetTest.cpp` on og-sim-net's correction budget, and the ring arithmetic left it.)
 >
 > ⛔ **The defect is HEADER-ONLY.** Task 65 concluded the root cause was in
 > `RoundVsPacketBudgetTest.cpp` and routed it there. That routing is **cancelled**: the test

@@ -1434,7 +1434,7 @@ its subject was re-triaged as rationale rather than a fence, so they now land on
 | `SimulatableBrawlerTypes.h:254` | *“Read `hoverPullDownAccel`’s comment in …”* | that member carries no tag — **dangles** |
 | `SimulatableBrawlerTypes.h:250-255` | *“Read `hoverPullDownAccel`’s comment … before moving it”* | same |
 | `SimulatableBrawlerTypes.h:272` | *“read `hoverDampingRatio`’s comment in …”* | that member carries no tag — **dangles** |
-| `RoundVsPacketBudgetTest.cpp:475` | *“recorded at the “ADDING A MOVEMENT MODEL” block”* | the block is gone — **dangles** |
+| `RoundVsPacketBudgetTest.cpp:475` | *“recorded at the “ADDING A MOVEMENT MODEL” block”* | the block is gone — **dangles** | <!-- lint-anchor-ignore: the old RoundVsPacketBudgetTest.cpp's line; og-input-latency task P5-26 re-based the file, so the pointer is history twice over -->
 | `OgTagAliases.cpp:30` | *“Task 11 shipped an “ADDING A MOVEMENT MODEL” instruction”* | past tense; survives as history, but the block it names is gone |
 
 ⭐ **The mechanism, stated so it is not re-discovered.** The measured lesson from the phase so far
