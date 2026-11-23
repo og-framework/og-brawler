@@ -14,14 +14,16 @@ file is stale.** Fix this file; do not soften the header to match it.
 before it.
 
 ⛔ **This file is not the source of truth for any VALUE.** The ids and masks are in the
-header; the engine channel mapping is in the host game's two per-engine bindings (`BrawlerJoltBindingUImpl.cpp`,
-`BrawlerChaosBindingUImpl.cpp`); the channel declarations
+header; the engine channel mapping is in the host game's engine binding (`BrawlerJoltBindingUImpl.cpp`; the Chaos
+binding was removed by og-session-runtime task 3); the channel declarations
 are in `Config/DefaultEngine.ini`. Where a value appears below it is there to make an argument
 readable.
 
 **Read alongside:** `QueryGeometry.h` — `CollisionCategories` itself, and the statement that a
-category id is not an engine channel number. `ChaosSpatialQueryAdapter.cpp` — the authority on
-what an unmapped category does to a query, including the `static_assert` truth table.
+category id is not an engine channel number. `JoltSpatialQueryAdapter-rationale.md` §5 — what an
+unmapped category does to a query (`joltQueryRule`, with its `static_assert`s, in the Jolt adapter's
+header). Until og-session-runtime task 4 the authority was the former Chaos adapter,
+ChaosSpatialQueryAdapter.cpp, with its own `static_assert` truth table.
 
 Origin: `brawler-movement-simulation` tasks T1, T6, 11, 17, 39, 43, 53, 67 and 72; `hit-resolution` T3, T11 and T13; user rulings #5 (2026-09-03) and #6 (2026-09-04).
 
@@ -35,11 +37,13 @@ Origin: `brawler-movement-simulation` tasks T1, T6, 11, 17, 39, 43, 53, 67 and 7
 ## 1. What a collision category is, and where the engine mapping lives
 
 Collision category assignments — DAttack-local sequential IDs. These are NOT engine channel
-numbers. The QUERY adapter is handed an explicit mapping from these IDs to the engine's native
-object type — `ChaosCategoryMapping`, handed over at the composition root's `BeginPlay` (the rows are in
-`BrawlerChaosBindingUImpl.cpp`; the Jolt configuration's static importer reads the same rows from
-`BrawlerJoltBindingUImpl.cpp`). The body adapters (Chaos, Jolt) never see a category
-at all.
+numbers. The QUERY adapter is handed the set of mapped IDs —
+`BrawlerJoltBindingUImpl::mappedCategories`, built from the rows of `BrawlerJoltBindingUImpl.cpp` ::
+`categoryChannels`, from which the static importer reads the engine channels too (both handed over
+in `TickDriverBackendUImpl.h`'s world build). In the former Chaos configuration (removed by
+og-session-runtime tasks 3–6) the query adapter was handed an explicit mapping from these IDs to the
+engine's native object type, ChaosCategoryMapping, whose rows were in the Chaos binding
+(BrawlerChaosBindingUImpl.cpp). The body adapter never sees a category at all.
 
 ⭐ The guard that sits on this fact in the header is **G-01**.
 
@@ -82,13 +86,16 @@ says so at the site.
 ### 4.1 The mapping exists
 
 ⭐ [movement-sim task 17] THE MAPPING EXISTS: task 39 mapped `world -> ECC_WorldStatic` at BOTH
-ChaosCategoryMapping tables in OGBrawlerSimulationManager.cpp's BeginPlay (history: that mapping is the
-one Chaos table `BrawlerChaosBindingUImpl.cpp` :: `categoryChannels` today, re-pointed by
-og-ue-simulationcomponentandmanagersplit task 36).
+ChaosCategoryMapping tables in OGBrawlerSimulationManager.cpp's BeginPlay (history: that mapping became
+the one Chaos table, the Chaos binding's categoryChannels, re-pointed by
+og-ue-simulationcomponentandmanagersplit task 36 and removed by og-session-runtime task 3; the Jolt
+binding's `BrawlerJoltBindingUImpl.cpp` :: `categoryChannels` maps it today).
 
-⚠ And it cannot be verified by reading the mapping back — that is **G-03**, the strongest
-guard on this header. `ChaosSpatialQueryAdapter.cpp` is the authority: its `ambiguousGapMask`
-and its `static_assert` truth table both exist for this one ambiguity.
+⚠ In the former Chaos configuration it could not be verified by reading the mapping back — that was
+**G-03**, then the strongest guard on this header, retired by og-session-runtime task 7b with its premise (guards §R). The Chaos adapter (ChaosSpatialQueryAdapter.cpp,
+removed by og-session-runtime task 4) was the authority: its ambiguousGapMask and its
+`static_assert` truth table both existed for this one ambiguity. The Jolt path has no read-back:
+the mapped mask is the set of table rows.
 
 ## 5. `character` (5) — the movement capsule
 
@@ -99,7 +106,7 @@ and its `static_assert` truth table both exist for this one ambiguity.
 ⭐ [movement-sim task 17] THIS CATEGORY IS LIVE, AND THE THREE SENTENCES THAT SAID OTHERWISE ARE
 GONE. All three halves of that old claim have landed:
 
-* task 43 MAPPED it — `character -> ECC_GameTraceChannel6` at both ChaosCategoryMapping tables in OGBrawlerSimulationManager.cpp's BeginPlay (history: the one Chaos table `BrawlerChaosBindingUImpl.cpp` :: `categoryChannels` today, task 36);
+* task 43 MAPPED it — `character -> ECC_GameTraceChannel6` at both ChaosCategoryMapping tables in OGBrawlerSimulationManager.cpp's BeginPlay (history: then the one Chaos table, the Chaos binding's categoryChannels, task 36, removed by og-session-runtime task 3; the Jolt binding's `BrawlerJoltBindingUImpl.cpp` :: `categoryChannels` maps it today);
 * task 53 DECLARED the channel — one `+DefaultChannelResponses=(...)` row in Config/DefaultEngine.ini: Channel=ECC_GameTraceChannel6, DefaultResponse=ECR_Block, Name="BrawlerCharacter";
 * task 11 took the movement sim LIVE — its PhysicsDeclaration ships in the SimulatableBrawler composite and runs for every character in every session.
 

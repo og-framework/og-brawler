@@ -231,9 +231,9 @@ void SimulatableBrawler::firstResimStep(PhysAdapterT& adapter, int32_t physicsSt
     // Resim body correction is applied by the host, not here. The Jolt configuration's
     // step driver pushes the restored body states through
     // SimulationIntegrationExecutor::pushCorrectedBodyStatesAll before the first replayed
-    // step; the Chaos configuration writes them onto the particles in
-    // FSimulationManagerAsyncCallback::FirstPreResimStep_Internal. Direct adapter writes
-    // here would bypass both, and under Chaos break ResimAsFollower bodies.
+    // step (the former Chaos configuration, removed by og-session-runtime tasks 3-6,
+    // wrote them onto the particles in its first-resim-step hook). Direct adapter writes
+    // here would bypass that push.
     (void)adapter;
     (void)physicsStep;
 

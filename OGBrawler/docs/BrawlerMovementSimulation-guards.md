@@ -35,6 +35,8 @@
 <!-- lint-external-ref: GroundAlignedKnockback.UnwalkableExactFaceOverAWalkableSweepIsWorldUp -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured -->
 <!-- lint-external-ref: BrawlerGroundSample.AlignedSampleIsTheSharedGroundNormal -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured -->
 <!-- lint-external-ref: GroundAlignedKnockback.V2EqualsLegacyOnEveryPlaneWithoutAnExactEdge -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured -->
+<!-- lint-external-ref: Plugins/OGSimulation/Source/OGSimulationUnreal/ChaosSpatialQueryAdapter.h -- deleted by og-session-runtime task 4 (OGSimulationUnreal's Chaos adapters, factory, tick mapper, time context, the Chaos engine traits and their two docs); kept in the history -->
+<!-- lint-external-ref: m_toEngine -- deleted by og-session-runtime task 4 (OGSimulationUnreal's Chaos adapters, factory, tick mapper, time context, the Chaos engine traits and their two docs); kept in the history -->
 # `BrawlerMovementSimulation.h` — guards
 
 Every fence that stood in the header. Each entry has an **opaque, stable id**; in the header a
@@ -1217,6 +1219,10 @@ better.** At `:224-231` there: *“‘index in range’ and ‘category mapped�
 questions, and neither the stored value nor the vector’s size can separate them. Every T40
 diagnostic keys on THIS mask; none of them keys on `m_toEngine.size()`.”* Presence
 re-verified on the shipped bytes **before** this deletion.
+
+*og-session-runtime task 4 deleted that header with the former Chaos configuration, so the working
+copy is gone too. This entry is kept as history; the Jolt query adapter has no channel table and no
+UnmappedCategory diagnostic (`JoltSpatialQueryAdapter-rationale.md` §5).*
 
 ⚠ Task 81’s audit cites that block as `:223-231`; measured today it is `:224-231`. A
 one-line drift in a one-day-old audit, recorded because that audit predicted exactly this.

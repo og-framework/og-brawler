@@ -236,7 +236,10 @@ Measured RED -> GREEN: `HitDetection.Behaviour.ReplayAnchoredAtTheEndOfThe{Block
 * LLT rigs: body transforms and query answers are fakes written by the sub-simulations during
   `integrate`. Identical at both points; the rigs schedule contact, so they cannot show a
   physics-step difference.
-* UE (code read, not measured in PIE). `ChaosPhysicsBodyAdapter::getBodyTransform` reads the
+* UE in the former Chaos configuration, removed by og-session-runtime tasks 3–6 (code read, not
+  measured in PIE; the two UE bullets are that configuration's record and were not re-analysed for
+  Jolt, whose reads come from the step's own world: `JoltPhysicsBodyAdapter-rationale.md` §3,
+  `JoltSpatialQueryAdapter-rationale.md` §9). ChaosPhysicsBodyAdapter::getBodyTransform read the
   physics-thread handle's `GetX()`/`GetR()`. At `postIntegrate(T)` that was the weapon pose
   `integrate(T)` wrote: translation re-attached to the capsule, rotation as physics step T-1
   committed it. At `preIntegrate(T+1)` it is the pose physics step T committed. Until task 2 poses
@@ -245,9 +248,9 @@ Measured RED -> GREEN: `HitDetection.Behaviour.ReplayAnchoredAtTheEndOfThe{Block
   T+2. That is earlier, never later, relative to the swing edge, and it is the same on every peer.
   The weapon's translation is whatever step T left, which can trail the capsule by one step of the
   capsule's own motion.
-* UE, the candidate set and target positions: `ChaosSpatialQueryAdapter::overlap` sweeps
-  `FPhysicsInterface::GeomSweepMulti` against the world's scene-query structure, which the game
-  thread updates, and takes `objectPosition` from `FHitResult::HitObjectHandle.GetLocation()`,
+* UE (the same former configuration), the candidate set and target positions: ChaosSpatialQueryAdapter::overlap swept
+  FPhysicsInterface::GeomSweepMulti against the world's scene-query structure, which the game
+  thread updates, and took `objectPosition` from `FHitResult::HitObjectHandle.GetLocation()`,
   which is `AActor::GetActorLocation()` (UE 5.6 `ActorInstanceHandle.cpp`, lines 220-231 at
   commit `cdda65ce`). Neither sees a physics-thread write made mid-frame, at either point. On a resim
   every replayed step runs inside one physics-thread burst, so the query answers from the same

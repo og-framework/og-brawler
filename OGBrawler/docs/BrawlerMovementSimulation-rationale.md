@@ -73,6 +73,15 @@
 <!-- lint-external-ref: BrawlerGroundSample.LegacyDeclaresExactlyOneQueryVolume -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured (restated as DeclaresTheGroundProbeAndTheCentreProbe) -->
 <!-- lint-external-ref: SupportEstimate.LegacyRegistersOneQueryVolumeAndV2Two -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured (restated as RegistersTheGroundProbeAndTheCentreProbe) -->
 <!-- lint-external-ref: PlatformEdge.KnockbacksAcrossTheImportedPlatformRims -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured (the Legacy run; the v2 run ...UnderV2 remains) -->
+<!-- lint-external-ref: ChaosSpatialQueryAdapter.cpp -- deleted by og-session-runtime task 4 (OGSimulationUnreal's Chaos adapters, factory, tick mapper, time context, the Chaos engine traits and their two docs); kept in the history -->
+<!-- lint-external-ref: bFindInitialOverlaps -- Unreal Engine / Chaos API name, outside every scan root; its last in-tree code user, OGSimulationUnreal's Chaos spatial query adapter or physics factory, was deleted by og-session-runtime task 4 -->
+<!-- lint-external-ref: Time -- Unreal Engine / Chaos API name, outside every scan root; its last in-tree code user, OGSimulationUnreal's Chaos spatial query adapter or physics factory, was deleted by og-session-runtime task 4 -->
+<!-- lint-external-ref: localParams -- deleted by og-session-runtime task 4 (OGSimulationUnreal's Chaos adapters, factory, tick mapper, time context, the Chaos engine traits and their two docs); kept in the history -->
+<!-- lint-external-ref: worldMat -- deleted by og-session-runtime task 4 (OGSimulationUnreal's Chaos adapters, factory, tick mapper, time context, the Chaos engine traits and their two docs); kept in the history -->
+<!-- lint-external-ref: ChaosSpatialQueryAdapter::sweep -- deleted by og-session-runtime task 4 (OGSimulationUnreal's Chaos adapters, factory, tick mapper, time context, the Chaos engine traits and their two docs); kept in the history -->
+<!-- lint-external-ref: ChaosSpatialQueryAdapter::registerVolume -- deleted by og-session-runtime task 4 (OGSimulationUnreal's Chaos adapters, factory, tick mapper, time context, the Chaos engine traits and their two docs); kept in the history -->
+<!-- lint-external-ref: ChaosPhysicsFactory -- deleted by og-session-runtime task 4 (OGSimulationUnreal's Chaos adapters, factory, tick mapper, time context, the Chaos engine traits and their two docs); kept in the history -->
+<!-- lint-external-ref: ChaosPhysicsBodyAdapter.h -- deleted by og-session-runtime task 4 (OGSimulationUnreal's Chaos adapters, factory, tick mapper, time context, the Chaos engine traits and their two docs); kept in the history -->
 # `BrawlerMovementSimulation.h` — rationale
 
 The narrative, the provenance and the **derivations** for the brawler character-movement
@@ -292,6 +301,12 @@ it is in: on flat ground the frame is world XY, on a slope it is the slope, on a
      are model-agnostic by construction and an acceptance criterion greps for it.
   3. If the model needs memory, APPEND fields to `State` and APPEND their `SIM_MEMBER`s.
 ```
+
+*The block above is verbatim and names Chaos as the solver of its day. The former Chaos
+configuration was removed by og-session-runtime tasks 3–6: the walls row's push-out is now the Jolt
+solver's, and the rewind remarks are history (the Jolt world restores and replays the whole world;
+`JoltPhysicsFactory-rationale.md` §6). The same holds for "Chaos" in the other verbatim blocks of
+this file.*
 
 > ### R0-03 — FALSE — an arithmetic elision, and the routing that came with it is CANCELLED
 >

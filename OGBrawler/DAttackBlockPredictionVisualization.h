@@ -37,8 +37,8 @@ OGSIM_OPTIMIZE_OFF
 // computeAttackIndicatorGeometry helper the aim viz also consumes is untouched.
 //
 // Templated on the READER physics-body adapter concept (PhysicsBodyReaderAdapterType,
-// game-thread-safe const reads via the host's visualization reader: ChaosPhysicsBodyReaderAdapter
-// in the Chaos configuration, JoltPhysicsBodyReaderAdapter in the Jolt one) alongside the
+// game-thread-safe const reads via the host's visualization reader: JoltPhysicsBodyReaderAdapter;
+// the Chaos configuration's reader was removed by og-session-runtime task 4) alongside the
 // SpatialQueryAdapterType / RendererFunctorType idiom the two target-viz files use.
 namespace dAttackBlockPredictionVisualization
 {

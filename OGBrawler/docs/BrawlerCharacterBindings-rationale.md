@@ -232,8 +232,9 @@ ACharacter::GetCapsuleComponent — rather than the movement declaration's own b
 any more.
 
 **The VALUE never moved across that cutover**, and that was the design: task 11's descriptor sets
-`isRoot` (`BrawlerMovementSimulation.h`, `.isRoot = true,` in `PhysicsSetup`), so the factory **adopts** the
-character's existing root capsule instead of creating a body, which makes
+`isRoot` (`BrawlerMovementSimulation.h`, `.isRoot = true,` in `PhysicsSetup`), so the factory (then the
+Chaos factory, removed by og-session-runtime task 4) **adopted** the character's existing root capsule
+instead of creating a body, which made
 `bindings.ownBodyId == bindings.parentBodyId == capsuleBodyId` true **by construction**. It was a
 change of PROVENANCE only. The step-by-step design is architecture_movement_sim.md §4.2, *"The
 cutover, step by step — designed so the value never changes"* (initiative archive, not in this
@@ -256,12 +257,15 @@ removal sat above that struct until 2026-09-22, when it was carried out of the h
 **The capsule body id** (since task 28 that paragraph is `BrawlerSessionGameUImpl-rationale.md` §7.1), and its §12 *The
 header's declaration comments, carried* keeps it verbatim.
 
-**The identity is still asserted, one layer down**, by a check neither task touched:
-`ChaosPhysicsFactory::createPhysicalObject`'s adopt-root arm ends in
-`checkf(bodyId == m_parentBodyId, …)` (`ChaosPhysicsFactory.cpp:195`), and its `m_parentBodyId` is
+**The identity was still asserted, one layer down**, by a check neither task touched: in the former
+Chaos configuration, the Chaos factory's createPhysicalObject adopt-root arm ended in
+checkf(bodyId == m_parentBodyId, …) (ChaosPhysicsFactory.cpp:195), and its m_parentBodyId was
 derived from the same capsule component the registration path passes as the attach parent. So the
 removal dropped a duplicate, not the only witness. ⚠ Neither was ever a Shipping-build guarantee —
-`checkf` compiles out there.
+`checkf` compiles out there. og-session-runtime task 4 removed that factory with the Chaos
+configuration. The Jolt factory, the only one since, has no equality check: it derives its parent body
+id from the slot template's single `isRoot` body (an `OG_CHECK` that there is exactly one) and binds
+that same body for the root declaration, so the identity holds by construction there.
 
 ---
 
@@ -290,8 +294,9 @@ evidence than a tally of the word — but the universal was not true.
 
 **And its premise has weakened.** Both of the facts that weaken it are in §5.2 and §5.1 above:
 PendingRegistration::parentBodyId is gone, and the two-source tripwire with it; and
-`ownBodyId == parentBodyId == capsuleBodyId` now holds **by construction**, asserted one layer down
-by `ChaosPhysicsFactory`'s adopt-root `checkf`. OGBrawlerHadouken T34 was written to de-duplicate
+`ownBodyId == parentBodyId == capsuleBodyId` now holds **by construction** (one layer down it was
+asserted by the former Chaos factory's adopt-root checkf, and in the Jolt factory it holds by
+construction too: §5.2). OGBrawlerHadouken T34 was written to de-duplicate
 two genuinely independent sources. What it would buy today is naming consistency across the **four**
 sub-simulations that carry a `using RuntimeBindings = PhysicsRuntimeBindings;` — movement,
 projectile, guard and radial — for **~100+ LOC** and no behaviour change. A materially weaker case.
