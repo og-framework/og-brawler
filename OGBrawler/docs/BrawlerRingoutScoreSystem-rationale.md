@@ -1,4 +1,6 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- lint-external-ref: BrawlerRosterUImpl::pushRingoutScores -- the roster's ring-out score push, deleted by og-session-runtime task 16b (its one caller, afterVisualization's authority branch, ran nowhere since task 14); named in this file's history -->
+<!-- lint-external-ref: pushRingoutScores -- the roster's ring-out score push, deleted by og-session-runtime task 16b (its one caller, afterVisualization's authority branch, ran nowhere since task 14); named in this file's history -->
 <!-- lint-external-ref: SimulationManagerUImpl.cpp -- RENAMED by og-ue-simulationcomponentandmanagersplit task 30 to OGBrawlerSimulationManager.cpp; kept in the verbatim fence of §4a -->
 <!-- lint-external-ref: SimulationManagerUImpl.h -- RENAMED by og-ue-simulationcomponentandmanagersplit task 30 to OGBrawlerSimulationManager.h; kept in the verbatim header lines of §12 -->
 <!-- lint-external-ref: ASimulationManagerUImpl::m_systemsExec -- moved member inside a verbatim fence: the systems executor is UESimulationSession's m_systemsExec (a std::optional) since og-ue-simulationcomponentandmanagersplit task 24a; the fence is the code's text at its date -->
@@ -94,8 +96,10 @@ each naming the executor-level case that replaced it.
 
 ⚠ **One UE-layer role site remains, and it is not this one.** The UE layer's post-physics pass (the brawler's hook
 `BrawlerSessionGameUImpl::afterVisualization`, called from the session's `onPostPhysicsStep`; the manager actor's
-`OnPostPhysicsStep` before) still gates its call of `BrawlerRosterUImpl::pushRingoutScores` on
-`!runsPrediction()` (read through the session's `getManager()`). That gates the score's
+`OnPostPhysicsStep` before) gated its call of `BrawlerRosterUImpl::pushRingoutScores` on
+`!runsPrediction()` (read through the session's `getManager()`) until og-session-runtime task 16b deleted that
+branch (no authority reached it since task 14). The role site is now the session's own `!runsPrediction()` branch of
+`onPostPhysicsStep`, which presents the authority's score snapshot. That gates the score's
 REPLICATION, not the award, and per F26 nothing mechanical checks it. Task 19 removed one of the
 layer's two role sites, not both.
 
@@ -171,7 +175,8 @@ argues that the derivation must live in the UE layer, which task 19 falsified by
 ```
 
 ⭐ **`hasScoreEntry`'s most important consumer is not named in the carried text.**
-`BrawlerRosterUImpl.cpp`'s `pushRingoutScores` (the manager's `.cpp` until og-ue-simulationcomponentandmanagersplit task 23) wraps every game-thread
+`BrawlerRosterUImpl.cpp`'s `pushRingoutScores` (the manager's `.cpp` until og-ue-simulationcomponentandmanagersplit task 23;
+deleted by og-session-runtime task 16b) wrapped every game-thread
 read of the table in `checkf(scoreSystem.hasScoreEntry(id), ...)`, because the award's
 `operator[]` (see **G-04**) could otherwise insert — and rehash — on the physics thread
 under that walk. The unregister contract is the *other* consumer, not the only one.
@@ -243,8 +248,8 @@ character, which is `0` by default whether or not the roster was ever seeded
 makes the zero row appear.** What the seed actually buys is named in the same paragraph
 and is real: the unregister contract needs an entry to drop for a character that died to
 nobody, and the `checkf` over `hasScoreEntry` in `BrawlerRosterUImpl.cpp` :: `pushRingoutScores` (the manager's
-`OGBrawlerSimulationManager.cpp` until og-ue-simulationcomponentandmanagersplit task 23) needs every
-authority-registered id present before the push walks.
+`OGBrawlerSimulationManager.cpp` until og-ue-simulationcomponentandmanagersplit task 23; deleted by og-session-runtime
+task 16b) needed every authority-registered id present before the push walked.
 
 <!-- header lines 251-254 -->
 ```

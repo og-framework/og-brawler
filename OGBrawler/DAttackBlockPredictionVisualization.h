@@ -399,10 +399,10 @@ void visualize(const Input<PhysicsBodyReaderAdapterType, SpatialQueryAdapterType
 		}
 
 		// Fetch the guard body's world transform via the GT-safe reader adapter — same signature
-		// as the sim's detector (detectRadialHits), but reading the host's game-thread view: Chaos's
-		// GT-interpolated state; in the Jolt configuration the step's world between inline steps, or
-		// on a client that steps on a worker the game-thread shadow world restored from the newest
-		// saved step (the newest step's state either way).
+		// as the sim's detector (detectRadialHits), but reading the host's game-thread view: on a
+		// client, which steps on a worker, the game-thread shadow world restored from the newest saved
+		// step (the former Chaos configuration's GT-interpolated state, and an inline-stepping
+		// authority's step world, until og-session-runtime tasks 3-6 and 14).
 		const glm::mat4 guardTransform =
 			input.getPhysicsReader().getBodyTransform(queryReport[actorHit.guardHitIndex].bodyId);
 

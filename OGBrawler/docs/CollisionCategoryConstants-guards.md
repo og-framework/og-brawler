@@ -100,7 +100,7 @@ Chaos binding was removed by og-session-runtime task 3) and `Config/DefaultEngin
 	// adapter tables and carry no ini row; an audit that reads only the ini reports them free.
 ```
 
-**What breaks if it moves.** **Written for this entry (task 67 guard, not on the must-never-move list).** The ini is the file an audit reads to answer "which trace channels are free?", and it lists two rows. Channels 2-5 are occupied by the two adapter tables and leave no trace in it at all, so the honest reading of the ini is off by four. The next person to claim a channel reads the ini, sees ch2 free, and collides with `body`.
+**What breaks if it moves.** **Written for this entry (task 67 guard, not on the must-never-move list).** The ini is the file an audit reads to answer "which trace channels are free?", and it lists two rows. Channels 2-5 are occupied by the Jolt binding's table, `BrawlerJoltBindingUImpl::categoryChannels` (one of two adapter tables until og-session-runtime tasks 3–6 removed the Chaos configuration), and leave no trace in it at all, so the honest reading of the ini is off by four. The next person to claim a channel reads the ini, sees ch2 free, and collides with `body`.
 
 ---
 
