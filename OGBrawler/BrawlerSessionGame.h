@@ -1,7 +1,8 @@
 #pragma once
 // SPDX-License-Identifier: BUSL-1.1
-// ../../../../../../Source/OGBrawlerUnreal/docs/BrawlerSessionGameUImpl-rationale.md ·
-// ../../../../../../Source/OGBrawlerUnreal/docs/BrawlerSessionGameUImpl-guards.md
+// docs/BrawlerSessionGame-rationale.md · docs/BrawlerSessionGame-guards.md
+
+#include <cstdint>
 
 #include "OGSimulation/BodyId.h"
 #include "OGSimulation/CompilerControl.h"
@@ -13,8 +14,8 @@ struct BrawlerSessionGame
 
 	struct AuthorityPresentationSlice
 	{
-		uint32 ringoutScore  = 0u;
-		bool   hasScoreEntry = false;
+		uint32_t ringoutScore  = 0u;
+		bool     hasScoreEntry = false;
 	};
 
 	static BodyId rootBodyId(const SimulatableBrawler& simulatable);
@@ -24,7 +25,7 @@ OGSIM_OPTIMIZE_OFF
 
 inline simulatableBrawler::PlayerInput BrawlerSessionGame::neutralInput()
 {
-	// ⛔G-01  docs/BrawlerSessionGameUImpl-guards.md
+	// ⛔G-01  docs/BrawlerSessionGame-guards.md
 	return simulatableBrawler::getZeroPlayerInput();
 }
 
