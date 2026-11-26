@@ -249,8 +249,8 @@ history about task 13, not a description of a class you can grep for.
 ⚠ **History, closed at task 17.** While two independent sources for the capsule id coexisted, an
 assertion watched them agree. Task 17 deleted the tripwire **and the second source with it**:
 PendingRegistration::parentBodyId is gone. The record today —
-`UESimulationSession.h` :: `PendingRegistration`, `simulatable`, `bodiesCreated`, `inputProvider`, `isAuthority`
-(the struct, then its four members; the session's since og-ue-simulationcomponentandmanagersplit task 28, the manager's
+`SessionRuntime.h` :: `PendingRegistration`, `simulatable`, `bodiesCreated`, `inputProvider`, `queued`
+(the struct, then its four members; og-sim-session's runtime's since og-session-runtime task 31, the Unreal session's since og-ue-simulationcomponentandmanagersplit task 28, the manager's
 `OGBrawlerSimulationManager.h` before) — has no such member. The header comment that recorded the
 removal sat above that struct until 2026-09-22, when it was carried out of the header into
 `OGBrawlerSimulationManager-rationale.md`: its §10 *Registration and unregistration* restated it under
