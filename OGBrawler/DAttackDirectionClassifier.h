@@ -46,6 +46,7 @@
 
 #include "OGBrawler/DAttackSequenceId.h"
 #include "OGSimulation/SimulationFrame.h"
+#include "OGSimulation/SimTrig.h"
 
 namespace dAttackDirection
 {
@@ -90,7 +91,7 @@ inline unsigned int classify(const glm::vec3& aimDirection,
 	// and trips the threshold even when the ground directions align. Clamp so FP rounding cannot push
 	// the dot past 1.0 and turn acos into NaN.
 	const float dotXY = glm::clamp(glm::dot(aimXY, moveXY), -1.f, 1.f);
-	const float angle = glm::acos(dotXY);   // UNSIGNED, [0, pi]
+	const float angle = simTrig::acos(dotXY);   // UNSIGNED, [0, pi]
 
 	// --- FORWARD region: moving roughly with your aim. -----------------------
 	if (angle < kForwardConeHalfAngle)

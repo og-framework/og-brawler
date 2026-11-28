@@ -12,6 +12,7 @@
 <!-- an escape that matches NOTHING is itself a lint violation.          -->
 <!-- ------------------------------------------------------------------ -->
 <!-- lint-external-ref: impl/impl_notes_seam_27.md -- brawler-movement-simulation initiative archive; private working material, not distributed with this submodule -->
+<!-- lint-external-ref: kStateWireBytes -- the old RoundVsPacketBudgetTest.cpp's (og-brawler-tests), which priced the Iris round until og-input-latency task P5-26 re-based the file on og-sim-net's correction budget; kept in the history -->
 <!-- lint-external-ref: DetachGateIsVacuousUntilJumpLands -- a RETIRED token -- task 27 DELETED this Catch2 case and replaced it with XYKnockbackDoesNotDetach; the prose exists in order to say the name is gone, so a resolving name would falsify it -->
 <!-- lint-external-ref: paramName -- not an identifier at all: it is the PLACEHOLDER inside the `/*paramName=*/` call-site annotation convention (CommentExtractionRule v2 section 1.4), and the real names are the constructor parameters it stands in for -->
 <!-- lint-external-ref: ASimulationManagerUImpl::m_staticData -- moved member inside carried text: the static data is UESimulationSession's m_staticData since og-ue-simulationcomponentandmanagersplit task 24a, still a by-value member constructed with the actor, before BeginPlay installs the ogblog sink, so the carried ordering reason still holds -->
@@ -72,6 +73,15 @@
 <!-- lint-external-ref: BrawlerGroundSample.LegacyDeclaresExactlyOneQueryVolume -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured (restated as DeclaresTheGroundProbeAndTheCentreProbe) -->
 <!-- lint-external-ref: SupportEstimate.LegacyRegistersOneQueryVolumeAndV2Two -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured (restated as RegistersTheGroundProbeAndTheCentreProbe) -->
 <!-- lint-external-ref: PlatformEdge.KnockbacksAcrossTheImportedPlatformRims -- a RETIRED Catch2 case -- og-ground-aligned-attacks task 37 deleted it with the Legacy support law; the prose records what it measured (the Legacy run; the v2 run ...UnderV2 remains) -->
+<!-- lint-external-ref: ChaosSpatialQueryAdapter.cpp -- deleted by og-session-runtime task 4 (OGSimulationUnreal's Chaos adapters, factory, tick mapper, time context, the Chaos engine traits and their two docs); kept in the history -->
+<!-- lint-external-ref: bFindInitialOverlaps -- Unreal Engine / Chaos API name, outside every scan root; its last in-tree code user, OGSimulationUnreal's Chaos spatial query adapter or physics factory, was deleted by og-session-runtime task 4 -->
+<!-- lint-external-ref: Time -- Unreal Engine / Chaos API name, outside every scan root; its last in-tree code user, OGSimulationUnreal's Chaos spatial query adapter or physics factory, was deleted by og-session-runtime task 4 -->
+<!-- lint-external-ref: localParams -- deleted by og-session-runtime task 4 (OGSimulationUnreal's Chaos adapters, factory, tick mapper, time context, the Chaos engine traits and their two docs); kept in the history -->
+<!-- lint-external-ref: worldMat -- deleted by og-session-runtime task 4 (OGSimulationUnreal's Chaos adapters, factory, tick mapper, time context, the Chaos engine traits and their two docs); kept in the history -->
+<!-- lint-external-ref: ChaosSpatialQueryAdapter::sweep -- deleted by og-session-runtime task 4 (OGSimulationUnreal's Chaos adapters, factory, tick mapper, time context, the Chaos engine traits and their two docs); kept in the history -->
+<!-- lint-external-ref: ChaosSpatialQueryAdapter::registerVolume -- deleted by og-session-runtime task 4 (OGSimulationUnreal's Chaos adapters, factory, tick mapper, time context, the Chaos engine traits and their two docs); kept in the history -->
+<!-- lint-external-ref: ChaosPhysicsFactory -- deleted by og-session-runtime task 4 (OGSimulationUnreal's Chaos adapters, factory, tick mapper, time context, the Chaos engine traits and their two docs); kept in the history -->
+<!-- lint-external-ref: ChaosPhysicsBodyAdapter.h -- deleted by og-session-runtime task 4 (OGSimulationUnreal's Chaos adapters, factory, tick mapper, time context, the Chaos engine traits and their two docs); kept in the history -->
 # `BrawlerMovementSimulation.h` — rationale
 
 The narrative, the provenance and the **derivations** for the brawler character-movement
@@ -292,14 +302,21 @@ it is in: on flat ground the frame is world XY, on a slope it is the slope, on a
   3. If the model needs memory, APPEND fields to `State` and APPEND their `SIM_MEMBER`s.
 ```
 
+*The block above is verbatim and names Chaos as the solver of its day. The former Chaos
+configuration was removed by og-session-runtime tasks 3–6: the walls row's push-out is now the Jolt
+solver's, and the rewind remarks are history (the Jolt world restores and replays the whole world;
+`JoltPhysicsFactory-rationale.md` §6). The same holds for "Chaos" in the other verbatim blocks of
+this file.*
+
 > ### R0-03 — FALSE — an arithmetic elision, and the routing that came with it is CANCELLED
 >
 > ⛔ The paragraph below quotes the **margin** cost (10.264 B) and then the quotient
 > produced by the **net closure** cost (10.764 B), dropping the one sentence that
 > reconciles them. A reader who divides the two numbers it gives them gets 2.665 and
-> concludes one of them is wrong. `RoundVsPacketBudgetTest.cpp:466-473` carries the missing
+> concludes one of them is wrong. `RoundVsPacketBudgetTest.cpp:466-473` carried the missing <!-- lint-anchor-ignore: the old RoundVsPacketBudgetTest.cpp's lines, before og-input-latency task P5-26 re-based the file -->
 > term: the half-entry floor itself rises 0.5 B per stride byte, so net closure is
-> 10.764 B per input byte and 27.352 / 10.764 = 2.5411 ✓.
+> 10.764 B per input byte and 27.352 / 10.764 = 2.5411 ✓. (Those lines are the old file's: og-input-latency
+> task P5-26 re-based `RoundVsPacketBudgetTest.cpp` on og-sim-net's correction budget, and the ring arithmetic left it.)
 >
 > ⛔ **The defect is HEADER-ONLY.** Task 65 concluded the root cause was in
 > `RoundVsPacketBudgetTest.cpp` and routed it there. That routing is **cancelled**: the test

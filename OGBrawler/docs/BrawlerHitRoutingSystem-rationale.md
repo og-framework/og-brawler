@@ -401,8 +401,8 @@ bits as the literal it replaced.
   `constexpr` locals, the constant-folding form for a vocabulary constant that enters arithmetic.
   The same section says what that form does not fix: the zero signs of the stored aim axis this
   branch reads, which depend on how the compiler optimises the machine, not on its source.
-* **What a different fallback would break, and when it is reached.** `glm::rotate(angle, +Y)` is
-  `glm::rotate(-angle, -Y)`, so for any non-zero stored angle a `+Y` fallback mirrors the aim that
+* **What a different fallback would break, and when it is reached.** `simTrig::rotate(angle, +Y)` is
+  `simTrig::rotate(-angle, -Y)`, so for any non-zero stored angle a `+Y` fallback mirrors the aim that
   `directionAwayFromAttacker` falls back to, and a knockback on that path goes the other way. A negated
   axis (`-simFrame::kUp`) has `-0` components where this one has `+0` (the signed-zero rule). With the
   shipped machine the branch is never taken with a non-zero angle: the machine writes `initialAimAngle`

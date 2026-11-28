@@ -94,7 +94,7 @@ the two clamps.
 
 ## 5. `getAttackSegment` of a direction: the wrap and its two ties
 
-The lookup takes `glm::orientedAngle` from the sequence's initial direction (`getDirection(0)` computed
+The lookup takes `simTrig::orientedAngle` from the sequence's initial direction (`getDirection(0)` computed
 inline) to `localDirection`, wraps it into the sweep, and finds the segment whose span, measured from the
 initial angle, contains it. The wrap depends on the sign of the velocity at point 1:
 * positive (the sequence turns towards positive angles): a negative angle gets `2π` added;
@@ -103,8 +103,9 @@ initial angle, contains it. The wrap depends on the sign of the velocity at poin
 If no segment contains the angle, the "no segment" value is returned: index `getAttackPointCount()`,
 state `Idle`, both angles 0.
 
-glm's 2-D `orientedAngle` returns the unsigned angle when the 2-D cross product is strictly positive and
-its negation otherwise (`glm/gtx/vector_angle.inl`), so at an **exactly zero** cross it returns the
+`simTrig::orientedAngle` (og-simulation's `OGSimulation/SimTrig.h`, since og-input-latency task 22; before it, glm's 2-D
+`orientedAngle`, which it copies with og-simulation's `acos`) returns the unsigned angle when the 2-D cross product is
+strictly positive and its negation otherwise, so at an **exactly zero** cross it returns the
 negated angle whatever the side. That is not odd under a mirror of the chart, and task 26 mirrors the
 chart, which swaps the two branches of the wrap for every sequence. Two inputs meet it:
 

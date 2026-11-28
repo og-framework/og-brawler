@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: BUSL-1.1 -->
+<!-- lint-external-ref: pushRingoutScores -- the roster's ring-out score push, deleted by og-session-runtime task 16b (its one caller, afterVisualization's authority branch, ran nowhere since task 14); named in this file's history -->
 <!-- lint-external-ref: ASimulationManagerUImpl::m_authorityRegisteredIds -- retired qualified name inside the verbatim fence of retired G-05: the set is BrawlerRosterUImpl::m_authorityRegisteredIds since og-ue-simulationcomponentandmanagersplit task 23 -->
 # `BrawlerRingoutScoreSystem.h` — guards
 
@@ -91,7 +92,9 @@ the roster is seeded — so no expression distinguishes them and no assertion ca
 written. It is also the one line whose insert behaviour a UE-layer caller depends on:
 `BrawlerRosterUImpl.cpp`'s `pushRingoutScores` (in the manager's `.cpp` until og-ue-simulationcomponentandmanagersplit task 23) carries a `checkf` over
 `hasScoreEntry` precisely because an insert here would rehash on the physics thread under
-its game-thread walk. Changing this line means re-reading that argument.
+its game-thread walk. Changing this line means re-reading that argument. (og-session-runtime task 16b deleted that
+push: no authority reached it since task 14. The authority's score is read on the step's thread after each batch by
+the UE layer's `authorityPresentationSlice_Step`, which tests `hasScoreEntry` and never inserts.)
 
 ---
 

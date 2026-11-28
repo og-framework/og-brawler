@@ -10,6 +10,7 @@
 #include "glm/geometric.hpp"
 #include "glm/common.hpp"
 #include "OGSimulation/SimulationFrame.h"
+#include "OGSimulation/SimTrig.h"
 
 namespace inputSequence
 {
@@ -73,7 +74,7 @@ inline constexpr uint32_t kHistoryWindowFrames = 30;
 // +pi = back (numpad 4), -pi/2 = right-of-aim (numpad 8). (Clockwise and right-of-aim
 // for +pi/2 until og-sim-metres-yup task 26 corrected the comment; the code is unchanged.)
 //
-// Deterministic across CPUs — uses glm::clamp + std::atan2.
+// The angle comes from simTrig::atan2 (og-simulation's own atan2, og-input-latency task 22), not libm's.
 // ---------------------------------------------------------------------------
 inline std::optional<float> aimRelativeAngle(glm::vec2 stick, glm::vec3 referenceForwardXY, float deadzone)
 {
@@ -92,7 +93,7 @@ inline std::optional<float> aimRelativeAngle(glm::vec2 stick, glm::vec3 referenc
     const float dotF = glm::clamp(glm::dot(fwd,   sNorm), -1.f, 1.f);
     const float dotR = glm::clamp(glm::dot(right, sNorm), -1.f, 1.f);
 
-    return std::atan2(dotR, dotF); // [-pi, pi]
+    return simTrig::atan2(dotR, dotF); // [-pi, pi]
 }
 
 // ---------------------------------------------------------------------------

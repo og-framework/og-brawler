@@ -12,7 +12,6 @@ namespace collisionCategory
 	constexpr uint32_t queryRouting = 2;
 	constexpr uint32_t projectile = 3;
 	// ⛔G-02  docs/CollisionCategoryConstants-guards.md
-	// ⛔G-03  docs/CollisionCategoryConstants-guards.md
 	constexpr uint32_t world = 4;
 	// ⛔G-05  docs/CollisionCategoryConstants-guards.md
 	// ⛔G-06  docs/CollisionCategoryConstants-guards.md

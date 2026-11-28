@@ -184,7 +184,7 @@ leaves the file, so all five go to `hits 0`. Their successors:
 
 **What breaks if it moves.** The render-rate packer returns the **same type** as the sim packer. Nothing in the signature stops a caller feeding a cosmetic `PlayerInput` to the wire; this sentence is the only thing that does, and it must sit on the function that produces it.
 
-⚠ **The caller carries the same fence.** `OGBrawlerInputCollectionComponent.h:81` reads *"Cosmetic only: never feed this to the simulation or to the input RPC."* — and that is the file where the forbidden edit is actually typed.
+⚠ **The caller carries the same fence.** `OGBrawlerInputCollectionComponent.h` (its render-rate input block) reads *"Cosmetic only: never feed this to the simulation or to the input bundle."* (*"to the input RPC"* until og-input-latency task P5-33 named og-sim-net's bundle) — and that is the file where the forbidden edit is actually typed.
 
 ---
 

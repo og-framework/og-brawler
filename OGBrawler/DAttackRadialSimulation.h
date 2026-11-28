@@ -30,6 +30,7 @@
 #include "OGSimulation/OGAssert.h"
 #include "OGSimulation/SimulationFrame.h"
 #include "OGSimulation/SurfaceFrame.h"
+#include "OGSimulation/SimTrig.h"
 
 #include "OGSimulation/CompilerControl.h"
 OGSIM_OPTIMIZE_OFF
@@ -281,7 +282,7 @@ inline bool wouldGuardBlock(
 	if (glm::dot(collisionDirection, collisionDirection) <= 0.f)
 		return false;
 	const glm::vec3 normalizedCollisionDirection = glm::normalize(collisionDirection);
-	const float td = std::acos(glm::clamp(glm::dot(normalizedCollisionDirection, guardForward), -1.f, 1.f));
+	const float td = simTrig::acos(glm::clamp(glm::dot(normalizedCollisionDirection, guardForward), -1.f, 1.f));
 	const float side = glm::dot(glm::cross(normalizedCollisionDirection, guardForward), guardUp);
 	// ⛔G-03  docs/DAttackRadialSimulation-guards.md
 	if (td < outerShieldAngle)
@@ -316,7 +317,7 @@ void setInitialConditions(float deltaSeconds,
 	DerivedState& derivedState)
 {
 	constexpr glm::vec3 up = simFrame::kUp;
-	const glm::vec3 swingPlaneUp = glm::mat3(glm::rotate(glm::mat4(1.f), initialConditions.initialAimAngle, initialConditions.initialAimRotationAxis)) * up;
+	const glm::vec3 swingPlaneUp = glm::mat3(simTrig::rotate(glm::mat4(1.f), initialConditions.initialAimAngle, initialConditions.initialAimRotationAxis)) * up;
 	OGBLOG_G("[Radial.setInitialConditions] seq=%u aimAngle=%.4f axis=(%.3f,%.3f,%.3f) (attackTimer reset to 0) up=(%.9g,%.9g,%.9g)",
 		initialConditions.activeAttackSequence,
 		initialConditions.initialAimAngle,
@@ -341,10 +342,10 @@ void setInitialConditions(float deltaSeconds,
 	const glm::mat4x4 rootTransform = physics.getBodyTransform(bindings.ownBodyId);
 	glm::vec3 rootTranslation = glm::vec3(rootTransform[3]);
 
-	glm::mat4 initialAimRotationMatrix = glm::rotate(glm::mat4(1.f), initialConditions.initialAimAngle, initialConditions.initialAimRotationAxis);
+	glm::mat4 initialAimRotationMatrix = simTrig::rotate(glm::mat4(1.f), initialConditions.initialAimAngle, initialConditions.initialAimRotationAxis);
 	glm::vec4 localSequenceRotationAxis4(activeAttackSequence.getRotationAxis(), 0.f);
 	glm::vec3 worldSequenceRotationAxis = glm::vec3(initialAimRotationMatrix * localSequenceRotationAxis4);
-	glm::mat4 initialSequenceRotationMatrix = glm::rotate(glm::mat4(1.f), activeAttackSequence.getInitialAngle(), worldSequenceRotationAxis);
+	glm::mat4 initialSequenceRotationMatrix = simTrig::rotate(glm::mat4(1.f), activeAttackSequence.getInitialAngle(), worldSequenceRotationAxis);
 	glm::mat4 initialWorldTransform = glm::translate(glm::mat4(1.0f), rootTranslation) * initialSequenceRotationMatrix * initialAimRotationMatrix;
 
 	physics.setBodyTransform(bindings.ownBodyId, initialWorldTransform);
@@ -367,7 +368,7 @@ void setIdlePose(float deltaSeconds,
 	glm::vec3 rootTranslation = glm::vec3(rootTransform[3]);
 
 	constexpr glm::vec3 idleAxis = glm::cross(simFrame::kForward, simFrame::kUp);
-	glm::mat4 upAlignmentTransform = glm::rotate(glm::mat4(1.f), glm::pi<float>()*0.5f, idleAxis);
+	glm::mat4 upAlignmentTransform = simTrig::rotate(glm::mat4(1.f), glm::pi<float>()*0.5f, idleAxis);
 	upAlignmentTransform[3] = glm::vec4(rootTranslation, 1.f);
 	physics.setBodyTransform(bindings.ownBodyId, upAlignmentTransform);
 }
@@ -387,7 +388,7 @@ void applyTorque(float deltaSeconds,
 	const glm::mat4x4 rootTransform = physics.getBodyTransform(bindings.ownBodyId);
 
 	float a = activeAttackSequence.getAngularAcceleration(state.attackTimer);
-	glm::mat4 initialRotationMatrix = glm::rotate(glm::mat4(1.f), initialConditions.initialAimAngle, initialConditions.initialAimRotationAxis);
+	glm::mat4 initialRotationMatrix = simTrig::rotate(glm::mat4(1.f), initialConditions.initialAimAngle, initialConditions.initialAimRotationAxis);
 	glm::vec4 localSequenceRotationAxis4(activeAttackSequence.getRotationAxis(), 0.f);
 	glm::vec3 worldSequenceRotationAxis = glm::vec3(rootTransform * localSequenceRotationAxis4);
 

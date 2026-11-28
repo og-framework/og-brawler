@@ -98,7 +98,9 @@ The machine header also includes the leaf `BrawlerGroundFrame.h` (og-ground-alig
 reason as `BrawlerCharacterBindings.h`: the movement header, which produces the sample, includes this one.
 og-ground-aligned-attacks task 5 added og-simulation's `OGSimulation/SurfaceFrame.h` for the ground-frame
 helpers the two attack writers use (§16), and glm's matrix-transform and 3×3-matrix headers for the
-`glm::rotate` and `glm::mat3` of the composite swing frame.
+rotation and `glm::mat3` of the composite swing frame. Since og-input-latency task 22 the rotation is
+`simTrig::rotate` and the aim angle `simTrig::acos`, from og-simulation's `OGSimulation/SimTrig.h`: glm's
+`rotate` and `acos` call the platform's maths library, whose bits differ between Windows, Linux and Android.
 
 ---
 
@@ -245,8 +247,9 @@ All three verified 2026-09-23. `SimulatableBrawler::integrate` builds the machin
 42 float additions of `1.f / 60.f` land **exactly on** `0.7f`. The duration `getDuration()` returns for
 sequences 0 and 1 is `0.6f + 0.1f` = `0.70000005f`, one ulp higher, because the constructor appends
 the zero-velocity point. So the loop takes 43 steps where `ceilf` says 42. The prohibition is guard
-**G-02**, and so is the record of why it is not a `static_assert`: MSVC's constant evaluator does not
-reproduce the run-time division.
+**G-02**, and so is the record of why it is not a `static_assert`: under `/fp:fast` MSVC's constant
+evaluator did not reproduce the run-time division (under `/fp:precise`, since og-input-latency task 20,
+it does: G-02).
 
 `kNominalSimStepSeconds` is `1.f / 60.f` (`BrawlerMovementSimulation.h`), and `SimulationManager`
 reads one `stepDt` per step. The fixed-step assumption holds today.
@@ -970,8 +973,8 @@ aim rotation axis (the second bullet).
   with `aimAngle`, through the swing-frame round trip (the ground-frame bullet below), and the round trip's
   axis is the radial's `InitialConditions::initialAimRotationAxis`, a wire field. That axis is `(0, -1, 0)`
   inside the band and `+Y` on an exact ±`kForward` aim, where `toAngleAxis` picks its own canonical axis
-  (the flat-rule bullet below). Until task 14b flat ground stored this axis itself. `glm::rotate(aimAngle, +Y)` is
-  `glm::rotate(-aimAngle, -Y)`: a different swing pose for every `aimAngle` the band admits other than an
+  (the flat-rule bullet below). Until task 14b flat ground stored this axis itself. `simTrig::rotate(aimAngle, +Y)` is
+  `simTrig::rotate(-aimAngle, -Y)`: a different swing pose for every `aimAngle` the band admits other than an
   exact 0, and near the antiparallel pole `aimAngle` is about π, where `sin` is not 0 in float. Inside
   the band the stored axis changes sign too [derived from `toAngleAxis`'s `w >= 0` rule; not re-measured
   at task 14b], so the correction payload changes. A negated axis (`-simFrame::kUp`) has `-0` components
@@ -982,11 +985,11 @@ aim rotation axis (the second bullet).
   byte-identical): `DAttackAbs.MachineNearPoleAimTakesTheEpsilonBandBranch` fails (`turnComponent` +1
   where the band must give −1), and both sections of `DAttackGuard.NearPoleAimTakesTheEpsilonBandBranch`
   fail. The golden trace stays exact: its scenario never aims inside the band, so it cannot see this edit.
-* **Both are `constexpr` locals: the constant-folding form, which does not fix the zero signs.**
+* **Both are `constexpr` locals: the constant-folding form, which did not fix the zero signs under `/fp:fast`.**
   A vocabulary constant that enters arithmetic (a cross or matrix product, a rotation axis) is used
   through a `constexpr` local or as the `static constexpr` member itself, because a runtime copy
   (`const glm::vec3 defaultForward(simFrame::kForward)`) is not folded into the arithmetic the way
-  the literal it replaced was. What no form of this source fixes is the sign of the zeros in
+  the literal it replaced was. What no form of this source fixed under `/fp:fast` is the sign of the zeros in
   `glm::normalize(glm::cross(defaultForward, aimDirection))`. In the Z-up frame its x and y were
   exact zeros for every flattened aim (`defaultForward` has zero y and z, the aim a `+0` z), and
   under `/fp:fast` the compiler may rewrite `0 - x` as `-x`, which turns a `+0` into a `-0`,
@@ -998,8 +1001,12 @@ aim rotation axis (the second bullet).
   scratch `cl` copy of the function gave `+0` in every variant, so the inlining context decides,
   not the expression. The brawler golden trace therefore compares `+0` and `-0` as equal in exact
   mode and counts such differences separately (its `[GoldenTrace.signedZero]` line). In the shipped
-  form it counts 321 axial-vector values (tag `a`, one per field and sample) that differ only in
-  the sign of a zero, the first in this field at tick 40, and no other bit differs.
+  form it counted 321 axial-vector values (tag `a`, one per field and sample) that differed only in
+  the sign of a zero, the first in this field at tick 40, and no other bit differed. Since
+  og-input-latency task 20 the modules compile `/fp:precise`: UnrealBuildTool's build and five
+  standalone MSVC and clang-cl builds recorded both goldens alike, zero signs included (task 20), and
+  against the re-recorded goldens the line reads `a=0` and `first=none` for both (2026-11-18). The
+  golden still compares `+0` and `-0` as equal.
 * **`launchHadouken`** flattens the aim the same way, and a degenerate aim falls back to
   `aimFallback`, a `constexpr` copy of `simFrame::kForward`. The spawn offset along up is
   `simFrame::withHeight(glm::vec3(0.f), projSD.spawnHeightOffset)` (the field was spawnZOffset until
@@ -1018,7 +1025,7 @@ aim rotation axis (the second bullet).
     are unchanged and run on the local heading, so the band and the fallback apply in the local frame.
     Their rotation `A` turns `kForward` onto the local heading about `±kUp`, or about the fallback axis
     `(0, -1, 0)` inside the band, so `A` keeps `kUp`. The stored pair is
-    `surfaceFrame::toAngleAxis(surfaceFrame::tiltMatrix(n) * glm::mat3(glm::rotate(glm::mat4(1.f), aimAngle, aimRotationAxis)))`
+    `surfaceFrame::toAngleAxis(surfaceFrame::tiltMatrix(n) * glm::mat3(simTrig::rotate(glm::mat4(1.f), aimAngle, aimRotationAxis)))`
     on every ground since task 14b (on non-flat ground only, from task 5 until then), the composite `G·A`: the rotated `kUp` is `n` (the swing plane is the ground plane) and the rotated
     `kForward` is the projected aim. The order is the point: `A·G` tilts the ground frame and then turns
     it about world up, so the plane no longer contains the aim's projection and its normal is not `n`.
@@ -1045,10 +1052,13 @@ aim rotation axis (the second bullet).
     * **The pole flip.** On an aim exactly along ±`kForward` the stored axis is `+Y` where the flat
       branch stored the fallback `(0, -1, 0)`. At angle 0, `toAngleAxis`'s `s > 0.f` test fails and it returns
       `simFrame::kUp`; at the float π the quaternion's `w` is negative, so it is negated. The rotation the pair encodes
-      is unchanged (0 at angle 0, 6.4e-8 at π).
-    * **Why it is acceptable.** Every consumer rebuilds `glm::rotate(angle, axis)` (the radial body, hit
-      detection, the routing, the visualization and the `up=` log), so none reads the axis's sign
-      alone. The slope path has always stored whatever `toAngleAxis` returns, and one path replaces two.
+      is unchanged (0 at angle 0, 6.4e-8 at π). Since og-input-latency task 22 the difference at π is 1.75e-7, twice
+      `|sin(π)|` of the float π: `simTrig::atan2(1, 4.37e-8)` rounds the half angle to the float π/2 (0x3fc90fdb) where
+      `std::atan2` gave the float below it (0x3fc90fda), so the stored angle is the float π itself (derived from
+      those two results; `GroundAlignedMachineTest.cpp`'s pole check, 2e-7 since then).
+    * **Why it is acceptable.** Every consumer rebuilds the rotation from the pair (`simTrig::rotate(angle, axis)`
+      in the radial body, hit detection, the routing and the `up=` log; `glm::rotate` in the visualization), so
+      none reads the axis's sign alone. The slope path has always stored whatever `toAngleAxis` returns, and one path replaces two.
       The wire bytes change, so the correction version went 11 → 12 (`CorrectionStateBufferCodec.h`).
     * **Where the flat rule stays.** It is kept at the display site `drawsWorldAligned`
       (`DAttackVisualizationUtils.h`, the user's ruling of the same day, "Keep 3c's flat test"): folding it

@@ -23,8 +23,8 @@ live in `CollisionCategoryConstants-rationale.md`. A guard is a prohibition plus
 of ignoring it, and nothing else.
 
 ⚠ **This file is not the source of truth for any VALUE.** The category ids and the masks live
-in the header; the engine channels live in the host game's two per-engine bindings (`BrawlerJoltBindingUImpl.cpp`,
-`BrawlerChaosBindingUImpl.cpp`) and `Config/DefaultEngine.ini`. Where a value appears below it is there to make an argument readable.
+in the header; the engine channels live in the host game's engine binding (`BrawlerJoltBindingUImpl.cpp`; the
+Chaos binding was removed by og-session-runtime task 3) and `Config/DefaultEngine.ini`. Where a value appears below it is there to make an argument readable.
 
 ---
 
@@ -40,7 +40,7 @@ in the header; the engine channels live in the host game's two per-engine bindin
 // one branch each; that site's own `⚠ KEEP IN SYNC` note is the one to read before typing.
 ```
 
-**What breaks if it moves.** **Written for this entry (task 67 guard, not on the must-never-move list).** The category constants are here; the engine mapping is in another module entirely, in a table that exists **twice**, once per engine binding: `BrawlerChaosBindingUImpl.cpp` :: `categoryChannels` (the Chaos query adapter's table) and `BrawlerJoltBindingUImpl.cpp` :: `categoryChannels` (the Jolt static-geometry import's table). The fence's two tables were the authority and client branches of the manager's `BeginPlay` in `OGBrawlerSimulationManager.cpp`; that code has since moved, and these two are what is left of it (re-pointed by og-ue-simulationcomponentandmanagersplit task 36). A category added here and nowhere else compiles, links, ships, and, under Chaos, produces a query that matches nothing — `toEngineChannel` answers `ECollisionChannel(0)` for it, which is a legitimate channel (see G-03). The list of constants is the only place an editor looks.
+**What breaks if it moves.** **Written for this entry (task 67 guard, not on the must-never-move list).** The category constants are here; the engine mapping is in another module entirely, in the engine binding's table `BrawlerJoltBindingUImpl.cpp` :: `categoryChannels` (the Jolt static-geometry import's table, and through `mappedCategories` the Jolt query adapter's mask). The fence's two tables were the authority and client branches of the manager's `BeginPlay` in `OGBrawlerSimulationManager.cpp`; that code has since moved (re-pointed by og-ue-simulationcomponentandmanagersplit task 36), and until og-session-runtime task 3 a second table, the Chaos binding's, stood beside the Jolt one. A category added here and nowhere else compiles, links and ships: no static carries it, and the query adapter drops it from every search that names it, with a `[SpatialQuery.PartialObjectQuery]` or `[SpatialQuery.EmptyObjectQuery]` error at registration. (In the former Chaos configuration it produced a query that matched nothing, the Chaos query adapter answering ECollisionChannel(0) for it, a legitimate channel: see the retired G-03, §R.) The list of constants is the only place an editor looks.
 
 ---
 
@@ -57,23 +57,6 @@ in the header; the engine channels live in the host game's two per-engine bindin
 ```
 
 **What breaks if it moves.** **Written for this entry (task 67 guard, not on the must-never-move list).** An absence fence. `PhysicsSetup::queryVolumes` returns exactly one descriptor — the shrunken ground probe. Nothing in the code says a wall probe was considered and rejected, so a reader debugging wall behaviour looks for the probe that is not there, and the reflex fix is to add a second volume — a second sweep every tick, re-deriving badly what the solver already does through the body shape's blocking mask. The phrase *"wall probe"* is kept in the text on purpose, as a grep handle, and then negated.
-
----
-
-## G-03 — The adapter's return value cannot tell you `world` is mapped
-
-**Tag site:** `CollisionCategoryConstants.h`, immediately above `constexpr uint32_t world = 4;`.
-**Taxonomy clause:** F6 + F5c (must-never-move **T2a-1**).
-
-**The fence, verbatim — these are the bytes it occupied in the header (lines 38-40 of the pre-conversion file):**
-
-```
-	// ⚠ ECC_WorldStatic is ECollisionChannel(0), which is ALSO the unmapped fallback,
-	// so the return value cannot tell you the mapping is there — only the table's size
-	// can. That caveat is spelled out in full at the authority table.
-```
-
-**What breaks if it moves.** The adapter's return value **cannot distinguish** "mapped to `WorldStatic`" from "never mapped" — both are `ECollisionChannel(0)`. An editor verifying a new category reads back `ECC_WorldStatic`, concludes it is wired, and ships a category whose bit `toObjectQueryParams` never tests: a well-formed query that matches **nothing**. The only correct check is `m_toEngine.size()`, and nothing at the call site says so.
 
 ---
 
@@ -117,20 +100,48 @@ in the header; the engine channels live in the host game's two per-engine bindin
 	// adapter tables and carry no ini row; an audit that reads only the ini reports them free.
 ```
 
-**What breaks if it moves.** **Written for this entry (task 67 guard, not on the must-never-move list).** The ini is the file an audit reads to answer "which trace channels are free?", and it lists two rows. Channels 2-5 are occupied by the two adapter tables and leave no trace in it at all, so the honest reading of the ini is off by four. The next person to claim a channel reads the ini, sees ch2 free, and collides with `body`.
+**What breaks if it moves.** **Written for this entry (task 67 guard, not on the must-never-move list).** The ini is the file an audit reads to answer "which trace channels are free?", and it lists two rows. Channels 2-5 are occupied by the Jolt binding's table, `BrawlerJoltBindingUImpl::categoryChannels` (one of two adapter tables until og-session-runtime tasks 3–6 removed the Chaos configuration), and leave no trace in it at all, so the honest reading of the ini is off by four. The next person to claim a channel reads the ini, sees ch2 free, and collides with `body`.
 
 ---
 
 ## §R Retired ids
 
-⭐ **Both of these were fences that became COMPILE ERRORS** (v2 §1.4: *"where a fence can
+⭐ **G-04 and G-07 were fences that became COMPILE ERRORS** (v2 §1.4: *"where a fence can
 be converted into a compile error, do that and write no guard at all"*). The prohibition now
 lives in a `static_assert` message in the header, on the declaration where the forbidden edit
 would be typed. That is strictly stronger than the sentence it replaces: it cannot be skimmed
 past and it cannot go stale.
 
-⛔ **These ids are spent.** They may be named — they are named in the two `static_assert`
+⛔ **These ids are spent.** They may be named — G-04 and G-07 are named in the two `static_assert`
 messages — but they must never again appear as a `⛔G-nn` tag in source.
+
+### G-03 — RETIRED (og-session-runtime task 7b, 2026-11-23): its premise was removed
+
+Was must-never-move **T2a-1** (F6 + F5c): *the adapter's return value cannot tell you `world` is mapped*.
+
+**Why it retired.** Successor: none: premise removed by og-session-runtime tasks 3–6. The ambiguous return value was
+the Chaos query adapter's category-to-channel lookup, where `ECollisionChannel(0)` meant both "mapped to `WorldStatic`"
+and "never mapped". Task 4 deleted that adapter, and no code in the tree maps a category to a channel and returns it:
+the Jolt configuration's mapping is a bit set, `BrawlerJoltBindingUImpl::mappedCategories`, built from
+`categoryChannels`, and the static-geometry import maps channels to categories, the other way. There is no return value
+left to misread.
+
+**The entry as it stood:**
+
+**Tag site:** `CollisionCategoryConstants.h`, immediately above `constexpr uint32_t world = 4;`.
+**Taxonomy clause:** F6 + F5c (must-never-move **T2a-1**).
+
+**The fence, verbatim — these are the bytes it occupied in the header (lines 38-40 of the pre-conversion file):**
+
+```
+	// ⚠ ECC_WorldStatic is ECollisionChannel(0), which is ALSO the unmapped fallback,
+	// so the return value cannot tell you the mapping is there — only the table's size
+	// can. That caveat is spelled out in full at the authority table.
+```
+
+**What breaks if it moves.** In the former Chaos configuration (its query adapter removed by og-session-runtime task 4) the adapter's return value **could not distinguish** "mapped to `WorldStatic`" from "never mapped" — both were `ECollisionChannel(0)`. An editor verifying a new category read back `ECC_WorldStatic`, concluded it was wired, and shipped a category whose bit the adapter's object-query builder (toObjectQueryParams) never tested: a well-formed query that matched **nothing**. The only correct check was the size of its channel table (m_toEngine), and nothing at the call site said so. The Jolt configuration has no such return value: a category is mapped exactly when its bit is in `BrawlerJoltBindingUImpl::mappedCategories`, which is built from `categoryChannels`, so `ECollisionChannel(0)` (the default channel of a `UEStaticCategoryChannel` row) is still a legitimate mapping there, not a sign of one.
+
+---
 
 ### G-04 — RETIRED, converted to a `static_assert`
 

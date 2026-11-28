@@ -6,8 +6,11 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <span>
 #include <string>
+#include <utility>
 #include <vector>
+#include "glm/geometric.hpp"
 #include "glm/vec2.hpp"
 #include "glm/vec3.hpp"
 #include "OGSimulation/SimulationDependencies.h"
@@ -98,6 +101,43 @@ inline std::array<glm::vec3, kMaxSpawnPoints> spawnPointsFromLevelPlacements(
     return merged;
 }
 
+inline constexpr float kSpawnPointKillPlaneMargin = 1.f;
+
+inline bool spawnPointClearsKillPlane(const glm::vec3& position, float killPlaneHeight)
+{
+    return simFrame::height(position) > killPlaneHeight + kSpawnPointKillPlaneMargin;
+}
+
+struct LevelSpawnSeed
+{
+    std::array<glm::vec3, kMaxSpawnPoints> spawnPoints{};
+    std::vector<LevelSpawnPoint> rejected;
+    uint32_t levelSlotCount = 0u;
+};
+
+inline LevelSpawnSeed seedFromLevelPlacements(
+    std::vector<LevelSpawnPoint> placements,
+    const std::array<glm::vec3, kMaxSpawnPoints>& authoredFallback,
+    float killPlaneHeight)
+{
+    LevelSpawnSeed seed;
+    std::vector<LevelSpawnPoint> accepted;
+    for (LevelSpawnPoint& placement : placements)
+    {
+        if (spawnPointClearsKillPlane(placement.position, killPlaneHeight))
+            accepted.push_back(std::move(placement));
+        else
+            seed.rejected.push_back(std::move(placement));
+    }
+
+    std::sort(seed.rejected.begin(), seed.rejected.end(), levelSpawnPointOrderBefore);
+
+    seed.levelSlotCount = static_cast<uint32_t>(
+        std::min(accepted.size(), static_cast<size_t>(kMaxSpawnPoints)));
+    seed.spawnPoints = spawnPointsFromLevelPlacements(std::move(accepted), authoredFallback);
+    return seed;
+}
+
 class InitialConditions
 {
 public:
@@ -120,6 +160,8 @@ static_assert(kFlagDead == (1u << 0),
     "free and are where a future ring-out signal goes.");
 
 inline bool isDead(const State& s) { return (s.flags & kFlagDead) != 0u; }
+
+inline bool respawnIsDue(const State& s, uint32_t tick) { return isDead(s) && tick >= s.respawnAtTick; }
 
 class DerivedState
 {
@@ -208,7 +250,7 @@ inline void integrate(const AllInput& input,
 
     derived.diedThisTick = false;
 
-    if (isDead(state) && tick >= state.respawnAtTick)
+    if (respawnIsDue(state, tick))
     {
         state.flags = static_cast<uint8_t>(state.flags & ~kFlagDead);
 
@@ -312,6 +354,34 @@ private:
 
     std::array<SlotEntry, kMaxSpawnPoints> m_slots{};
 };
+
+inline constexpr float kSpawnPointOccupiedRadius = 1.f;
+
+inline bool spawnPointIsOccupied(const glm::vec3& point, std::span<const glm::vec3> occupants)
+{
+    for (const glm::vec3& occupant : occupants)
+    {
+        const glm::vec3 offset = occupant - point;
+        if (glm::dot(offset, offset) < kSpawnPointOccupiedRadius * kSpawnPointOccupiedRadius)
+            return true;
+    }
+    return false;
+}
+
+inline uint32_t chooseRespawnSlot(uint32_t currentSlot,
+                                  const std::array<glm::vec3, kMaxSpawnPoints>& spawnPoints,
+                                  std::span<const glm::vec3> occupants)
+{
+    if (currentSlot >= kMaxSpawnPoints || !spawnPointIsOccupied(spawnPoints[currentSlot], occupants))
+        return currentSlot;
+
+    for (uint32_t slot = 0u; slot < kMaxSpawnPoints; ++slot)
+    {
+        if (!spawnPointIsOccupied(spawnPoints[slot], occupants))
+            return slot;
+    }
+    return currentSlot;
+}
 
 } // namespace brawlerRingout
 

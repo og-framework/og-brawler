@@ -20,8 +20,8 @@
 // composite. The transport changes it was blocked on (og-netcode-v1-impl Stage 1/2,
 // 60 Hz + split watermark-trimmed buffers) landed 2026-06-22, and the T13 closed-form
 // projectile State redesign shrank the per-character wire footprint (115 B vs 196 B).
-// FSimulationStateSyncBuffer::kBufferBytes was bumped to 384 (T14) to fit the re-wired
-// composite (~304 B).
+// FSimulationStateSyncBuffer::kBufferBytes (deleted by og-input-latency task P5-9; og-sim's
+// CorrectionStateBuffer::kBufferBytes now) was bumped to 384 (T14) to fit the re-wired composite (~304 B).
 #include "OGBrawler/BrawlerProjectileSimulation.h"
 // [hit-resolution T2] Inbound-hit signal carried on the composite DerivedState. Off-wire
 // (no SerializableFields specialization), so including it here adds no bytes to the State
@@ -201,7 +201,7 @@ public:
                         { 0.5f, -1.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
                         { 0.6f, -3.f * PI / 8.f, DAttackRadialSequenceState::WindDown }
                     }
-                    , 0.1, simFrame::kTurnAxis
+                    , 0.1f, simFrame::kTurnAxis
                 },
                 { // from idle to rightAttack
                     {
@@ -211,7 +211,7 @@ public:
                         { 0.5f, 1.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
                         { 0.6f, 3.f * PI / 8.f, DAttackRadialSequenceState::WindDown }
                     }
-                    , 0.1, simFrame::kTurnAxis
+                    , 0.1f, simFrame::kTurnAxis
                 },
                 { // from leftAttack to leftAttack
                     {
@@ -223,7 +223,7 @@ public:
                         { 0.3f,  (-16.f * PI / 8.f) + (2.f  * PI / 8.f), DAttackRadialSequenceState::Damaging },
                         { 0.4f,  (-16.f * PI / 8.f) - (1.f  * PI / 8.f), DAttackRadialSequenceState::WindDown }
                     }
-                    , 0.1, simFrame::kTurnAxis
+                    , 0.1f, simFrame::kTurnAxis
                 },
                 { // from rightAttack to rightAttack
                     {
@@ -235,7 +235,7 @@ public:
                         { 0.3f,  (16.f * PI / 8.f) - (2.f  * PI / 8.f), DAttackRadialSequenceState::Damaging },
                         { 0.4f,  (2.f * PI) + (1.f * PI / 8.f),           DAttackRadialSequenceState::WindDown }
                     }
-                    , 0.1, simFrame::kTurnAxis
+                    , 0.1f, simFrame::kTurnAxis
                 },
                 { // from idle to rightAttack (vertical)
                     {
@@ -244,7 +244,7 @@ public:
                         { 0.4f,  -1.f * PI / 8.f, DAttackRadialSequenceState::Damaging },
                         { 0.42f, -1.5f * PI / 8.f, DAttackRadialSequenceState::WindDown }
                     }
-                    , 0.1, simFrame::kVerticalTurnAxis
+                    , 0.1f, simFrame::kVerticalTurnAxis
                 }
             }
         )

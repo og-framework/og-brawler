@@ -225,7 +225,8 @@ camera forward, so the aim turns with the camera. With the left stick alone (the
 the left stick is routed to move and to aim, and the camera does not turn.
 
 **Which camera forward.** The caller passes `m_camForwardCache`, the camera manager's rotation that
-`updateGameThreadCache` reads at the start of the character's `Tick`. That is the view on screen, one
+`updateGameThreadCache` reads at the start of the character's `Tick`; on the sim path it passes the input sample's copy of
+it, staged at the end of the same `updateGameThreadCache` (og-input-latency task P5-15). That is the view on screen, one
 frame old, not the boom this `Tick` is about to write. The reasons:
 
 * It is "where the camera looks" as the player sees it, also during a view-target blend and under the
@@ -256,9 +257,11 @@ straight down has none.
   camera, so the aim is the iso camera's forward, the top of the screen, and the look stick does not aim
   while BlockLook is held. The keyboard-and-mouse path already behaved this way: BlockLook clears the
   mouse aim, and the last fallback of `buildAimDirection` is the flattened camera forward.
-* **Threads.** `buildAimDirection` also runs on the physics thread (the sim input), where it now reads
-  `m_blockLook`, which the input handler writes on the game thread. That is the same unsynchronized
-  member read the sticks and the attack buttons already have.
+* **Threads.** `buildAimDirection` also runs for the sim input, on the physics thread. Since og-input-latency
+  task P5-15 it runs there on the input sample, so it reads the sample's copies of `m_blockLook` and the
+  camera forward, published once per frame, and not the members the input handler writes on the game
+  thread. Until then it read `m_blockLook` directly: the same unsynchronized member read the sticks and
+  the attack buttons had.
 
 `StickRoutingTest.cpp` in og-brawler-tests pins the function: the four cases tagged [CameraLookAim].
 

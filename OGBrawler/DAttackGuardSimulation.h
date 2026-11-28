@@ -21,6 +21,7 @@
 #include "OGBrawler/CollisionCategoryConstants.h"
 #include "OGSimulation/SimulationFrame.h"
 #include "OGSimulation/SurfaceFrame.h"
+#include "OGSimulation/SimTrig.h"
 
 #include "OGSimulation/CompilerControl.h"
 OGSIM_OPTIMIZE_OFF
@@ -286,7 +287,7 @@ void integrate(float deltaSeconds,
 	// When there is no aim input, fall back to default forward to avoid NaN from normalizing a zero vector.
 	const glm::vec3 aimDirection = (aimLen > 0.0001f) ? (rawAim / aimLen) : defaultForward;
 	const float aimDot = glm::clamp(glm::dot(aimDirection, defaultForward), -1.f, 1.f);
-	const float aimAngle = glm::acos(aimDot);
+	const float aimAngle = simTrig::acos(aimDot);
 
 	// [movement-sim task 29, F-G4] glm::abs, NOT unqualified abs.
 	//
@@ -331,7 +332,7 @@ void integrate(float deltaSeconds,
 	// (DAttackTargetVisualizationTwo.h) has its two draw calls commented out. Keeping
 	// the pose fresh is what makes the FIRST Idle tick after an attack correct with no
 	// special case.
-	glm::mat4 guardTransform = glm::rotate(glm::mat4(1.f), aimAngle, aimRotationAxis);
+	glm::mat4 guardTransform = simTrig::rotate(glm::mat4(1.f), aimAngle, aimRotationAxis);
 	// [og-ground-aligned-attacks task 6] G(n)·A(h): the tilt is applied to the rotation
 	// before the translation goes in, so the translation is still never rotated.
 	// [task 14] Taken on every tick, flat ground included (user ruling 2026-11-01: "Add group

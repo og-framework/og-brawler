@@ -75,7 +75,7 @@ horizontal plane; its assertions did not change.)*
 `surfaceFrame::surfaceUpOf(guardTransform)`, the pose's image of `simFrame::kUp` (the ground normal on
 a slope, by the task 6 pose above). `incoming = -spawnDir` is projected onto that plane
 (`incoming -= guardUp * dot(incoming, guardUp)`). A zero projection (a shot along the guard's up)
-returns `false`: the shot lands. Otherwise the projection is normalized, and the clamp, `glm::acos` and
+returns `false`: the shot lands. Otherwise the projection is normalized, and the clamp, `simTrig::acos` and
 half-angle test run on it.
 * **Why the plane.** Rotating a flat configuration by the ground tilt gives the same outcome on the slope
   (the conjugation identity, 2000 seeded shots). The 3-D angle does not: a shooter on flat ground firing

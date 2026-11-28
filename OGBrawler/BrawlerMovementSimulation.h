@@ -23,6 +23,7 @@
 #include "OGSimulation/SpatialQueryResult.h"
 #include "OGSimulation/OGAssert.h"
 #include "OGSimulation/SimulationFrame.h"
+#include "OGSimulation/SimTrig.h"
 #include "OGBrawler/CollisionCategoryConstants.h"
 #include "OGBrawler/BrawlerCharacterBindings.h"
 #include "OGBrawler/DAttackMachineSimulation.h"
@@ -96,7 +97,7 @@ public:
         , stepPeriodTicks(stepPeriodTicks)
         , stepSpeed(stepSpeed)
         , maxSlopeAngleDeg(maxSlopeAngleDeg)
-        , cosMaxSlope(glm::cos(glm::radians(maxSlopeAngleDeg)))
+        , cosMaxSlope(simTrig::cos(glm::radians(maxSlopeAngleDeg)))
         , gravity(gravity)
         , terminalFallSpeed(terminalFallSpeed)
         , rideHeight(rideHeight)

@@ -336,14 +336,15 @@ two rigs whose engine handles differ byte for byte. Planting the per-process roo
   the machine wrote it as 0 and nothing read it. It was the composite's first slice, so the
   removal moved every later offset (`kWireFormatVersion` 5 -> 6). The slice is 20 B.
 * **`initialAimAngle` and `initialAimRotationAxis` are the whole swing-frame rotation** (an angle and an
-  axis for `glm::rotate`), not only a turn about up. The machine writes `surfaceFrame::toAngleAxis` of
+  axis for `simTrig::rotate`), not only a turn about up. The machine writes `surfaceFrame::toAngleAxis` of
   the composite of the ground tilt and a turn of `simFrame::kForward` onto the local heading, about
   `±kUp` or the near-pole fallback axis (`DAttackMachineSimulation-rationale.md` §16), so the axis can
   point anywhere. It does so on every ground since og-ground-aligned-attacks task 14b. From task 5 until
-  then it did so on non-flat ground only, and flat ground wrote the turn itself. Every reader rebuilds the same `glm::rotate(angle, axis)` (this header's
-  `setInitialConditions` and `applyTorque`, `getAttackSegment`, `brawlerHitDetection::System`, routing's
-  `attackerAimRotation`, the radial visualization, and the UE `drawTrace` through `FQuat`), so none needed a
-  change. The swing plane's normal is the rotated up, `glm::mat3(glm::rotate(…)) * simFrame::kUp`, which
+  then it did so on non-flat ground only, and flat ground wrote the turn itself. Every reader rebuilds the same rotation from the pair: `simTrig::rotate(angle, axis)` in this header's
+  `setInitialConditions` and `applyTorque`, `getAttackSegment`, `brawlerHitDetection::System` and routing's
+  `attackerAimRotation` (og-input-latency task 22; `glm::rotate` before it), `glm::rotate` in the radial
+  visualization, and `FQuat` in the UE `drawTrace`, so none needed a change. The swing plane's normal is the
+  rotated up, `glm::mat3(simTrig::rotate(…)) * simFrame::kUp`, which
   is the ground normal: the turn keeps `kUp` and the tilt maps it to the normal. On flat ground the pair
   encodes the turn's rotation up to rounding. Since task 14b its bits are the round trip's, and on an
   exact ±`kForward` aim its axis is `+Y` where the turn's is `(0, -1, 0)`.
@@ -394,7 +395,7 @@ pose's image of `simFrame::kUp`. Since task 6 the guard pose is the ground tilt 
 * **The projection:** the direction from the overlap point to the attacker's pivot is projected onto the
   guard's plane (`d -= guardUp * dot(d, guardUp)`). A zero projection (the attacker straight above
   or below the guard along its up) returns `false`: the attack lands. Otherwise the dot is clamped
-  to [−1, 1] before `std::acos`, so rounding cannot make `td` NaN, and `side` is the
+  to [−1, 1] before `simTrig::acos` (which clamps again), so rounding cannot make `td` NaN, and `side` is the
   component of `glm::cross(nd, guardForward)` along `guardUp`. Both vectors lie in the guard's plane, so
   the cross product lies along `guardUp`. Its turn component therefore has the same sign as `side`
   (the up component of a walkable normal is at least `cosMaxSlope`, cos 45° as authored), so
@@ -497,17 +498,19 @@ pinned by `DAttackRadialAimLogTest.cpp`.
 
 **`up=` on `[Radial.setInitialConditions]`** (og-ground-aligned-attacks task 5c). The line ends in
 `up=(%.9g,%.9g,%.9g)`, the swing-plane normal `R_ic·kUp`: `setInitialConditions` rotates `simFrame::kUp`
-by the same `glm::rotate(glm::mat4(1.f), initialAimAngle, initialAimRotationAxis)` it builds the swing's
+by the same `simTrig::rotate(glm::mat4(1.f), initialAimAngle, initialAimRotationAxis)` it builds the swing's
 initial rotation from, before that rotation is built. The value is log-only and feeds no state. It is the
 attribution field of that initiative's class g (a correction whose first field is the radial IC while
 both peers started the same sequence on the same tick): a heading-only IC about the turn axis maps `kUp`
-to itself (the test sees `up=(0,1,0)` exactly), so a different `up=` means a different ground normal, and an equal one means the input. The rest
+to itself (the test saw `up=(0,1,0)` exactly under `/fp:fast`; since og-input-latency task 20, under `/fp:precise`, it is within
+one float ULP: 0.99999994 at a heading of π/2, the rounding of glm's `cos + (1 − cos)`), so a different `up=` means a different
+ground normal, and an equal one means the input. The rest
 of the line is unchanged, so prefix greps such as `[Radial.setInitialConditions] id=… tick=… seq=… aimAngle=`
 still match; the tag set is unchanged. The worst-case format is 322 characters, 352 with the
 `id=%u tick=%u ` prefix, under `ogblog::kLineBufferBytes` (1024); the `OGBLOG_G` `static_assert`
 checks it, with the `%g` bound of `OGBrawlerLog-rationale.md` §4.2. `%.9g` prints nine significant
 digits, which round-trip a float, so two peers' `up=` that differ by one float ULP print differently.
-`DAttackRadialAimLogTest.cpp` parses `up=`, requires exactly `kUp` for heading-only aims and the rotated
+`DAttackRadialAimLogTest.cpp` parses `up=`, requires `kUp` to one float ULP for heading-only aims and the rotated
 `kUp` for a tilted one, and requires the tilted token to reprint to itself with `%.9g`.
 
 ## 9. R0 — every false claim task 19 found, and what is true
@@ -548,10 +551,11 @@ bullet). They also stay right when the frame changes.
   `idleAxis` here). That is the constant-folding form: a runtime `const` copy of a `simFrame`
   constant is not folded into the arithmetic the way the literal it replaced was. It does not pin
   the sign of an exact-zero result under `/fp:fast`. The aim rotation axis this header stores
-  (`initialAimRotationAxis`, written by the machine) has exact-zero components whose signs come
-  from how the compiler optimises the machine's cross product, not from the source; three builds
-  gave three results (`DAttackMachineSimulation-rationale.md` §16). The brawler golden trace
-  therefore compares `+0` and `-0` as equal and counts that field separately.
+  (`initialAimRotationAxis`, written by the machine) has exact-zero components whose signs, under
+  `/fp:fast`, came from how the compiler optimised the machine's cross product, not from the source;
+  three builds gave three results (`DAttackMachineSimulation-rationale.md` §16). Under `/fp:precise`
+  (og-input-latency task 20) six builds recorded the same signs (§16 there). The brawler golden trace
+  compares `+0` and `-0` as equal and counts that field separately.
 * **Lengths.** The body sphere is `0.3f` (metres; task 5b's wrapped 30 cm, unwrapped by task 22),
   and `attachmentOffset` returns `simFrame::kUp * 0.3f`. A positive scale of an axis keeps its `+0`
   components, so this was the literal `(0, 0, 30)` bit for bit in the Z-up frame. The two query-volume radii
